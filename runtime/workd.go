@@ -724,7 +724,7 @@ func (s *S)studioInfo()map[string]any{
 func (s *S)studio(w http.ResponseWriter,r *http.Request){js(w,s.studioInfo())}
 func (s *S)pollStudioResult(){
  j,ok:=s.loadStudioPending();if !ok{return}
- u:="https://api.github.com/repos/Djaeger1/DJAEGER-Control-Center/releases/tags/"+url.PathEscape(j.RenderTag)
+ u:="https://api.github.com/repos/Djaeger1/DJAEGER-WORK/releases/tags/"+url.PathEscape(j.RenderTag)
  req,e:=http.NewRequest("GET",u,nil);if e!=nil{return};req.Header.Set("User-Agent","HERMES-WORK-Auto-Studio/1.0")
  cl:=androidHTTPClient();cl.Timeout=20*time.Second;resp,e:=cl.Do(req);if e!=nil{return};defer resp.Body.Close();if resp.StatusCode!=200{return}
  var gh struct{Assets []struct{Name string `json:"name"`;URL string `json:"browser_download_url"`} `json:"assets"`;PublishedAt string `json:"published_at"`}

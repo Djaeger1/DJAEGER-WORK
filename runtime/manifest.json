@@ -1,1 +1,1 @@
-{"version":"v2.5.2-isolated","description":"DJAEGER WORK isolated-repository baseline: complete runtime payload including bridge deploy helper, update channel owned by Djaeger1/DJAEGER-WORK, preserves remote-link behavior and rollback safeguards","restart":false}
+{"version":"v2.5.3-auto-studio","description":"DJAEGER WORK isolated runtime with HERMES AUTO STUDIO V1 renderer migrated into Djaeger1/DJAEGER-WORK; GitHub Actions + FFmpeg zero-card pipeline, new-repo release polling, remote-link and rollback safeguards preserved","restart":false}
