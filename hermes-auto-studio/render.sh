@@ -97,13 +97,23 @@ PY
 )"
 
   seg="studio/scenes/seg_$(printf '%02d' "$n").mp4"
-  ffmpeg -y -loglevel error -loop 1 -i "$img" -i "$audio" -t "$dur"     -vf "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,zoompan=z='min(zoom+0.0007,1.08)':d=1:s=1280x720:fps=30,format=yuv420p"     -c:v libx264 -preset veryfast -crf 22 -c:a aac -b:a 128k -shortest "$seg"
+  ffmpeg -y -loglevel error -loop 1 -i "$img" -i "$audio" -t "$dur"     -vf "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,zoompan=z='min(zoom+0.0007,1.08)':d=1:s=1280x720:fps=30,format=yuv420p"     -c:v libx264 -preset veryfast -crf 22 -c:a aac -b:a 128k -af "apad" "$seg"
   echo "file 'scenes/$(basename "$seg")'" >> studio/concat.txt
 done
 
 ffmpeg -y -loglevel error -f concat -safe 0 -i studio/concat.txt -c copy studio/final.mp4
 cp studio/scenes/scene_01.jpg studio/thumbnail.jpg
 ffprobe -v error -show_entries format=duration,size -of json studio/final.mp4 > studio/probe.json
+
+TARGET_DURATION="$(jq -r '.job.duration_sec // 0' studio/feed.json)"
+ACTUAL_DURATION="$(jq -r '.format.duration // 0' studio/probe.json)"
+python3 - "$TARGET_DURATION" "$ACTUAL_DURATION" <<'PY'
+import sys
+target=float(sys.argv[1] or 0)
+actual=float(sys.argv[2] or 0)
+if target > 0 and actual < target * 0.90:
+    raise SystemExit(f"Rendered duration too short: target={target:.2f}s actual={actual:.2f}s")
+PY
 
 bytes="$(stat -c%s studio/final.mp4)"
 if [ "$bytes" -lt 200000 ]; then
@@ -123,11 +133,14 @@ jq '{
   visual_provider:"POLLINATIONS_ANONYMOUS_OR_DETERMINISTIC_FALLBACK",
   voice_provider:"EDGE_TTS_OR_ESPEAK_FALLBACK",
   render_provider:"GITHUB_ACTIONS_FFMPEG",
+  target_duration_sec:(.job.duration_sec // 0),
   card_required:false,
   hermes_ai_used:false,
   neurons_used:0,
   repository:"Djaeger1/DJAEGER-WORK"
 }' studio/feed.json > studio/metadata.json
+jq --arg actual "$ACTUAL_DURATION" '. + {actual_duration_sec:($actual|tonumber)}' studio/metadata.json > studio/metadata.json.tmp
+mv studio/metadata.json.tmp studio/metadata.json
 
 echo "Rendered: $TITLE"
 cat studio/probe.json
