@@ -1,0 +1,35 @@
+name: HERMES YouTube Publisher
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17,47 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/youtube-publisher.yml'
+      - 'youtube-publisher/**'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hermes-youtube-publisher
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Run YouTube publisher
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          YT_PRIVACY_STATUS: ${{ vars.YT_PRIVACY_STATUS }}
+          YT_CHANNEL_LABEL: ${{ vars.YT_CHANNEL_LABEL }}
+        run: bash youtube-publisher/publish.sh

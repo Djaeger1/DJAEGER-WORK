@@ -92,7 +92,7 @@ func (s *S)schedulerLoop(){
  }
  studioTick:=0
  for{
-   studioTick++;if studioTick>=5{s.pollStudioResult();studioTick=0}
+   studioTick++;if studioTick>=5{s.pollStudioResult();s.pollPublicationResult();studioTick=0}
    cfg:=readenv(filepath.Join(s.Rel,"config","work.env"),"RESEARCH_SCHEDULE");if cfg==""{cfg="08:00"}
    now:=time.Now();day:=now.Format("2006-01-02");last:=strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_auto_research_date")))
    due:=now.Hour()*60+now.Minute()>=minutesOfDay(cfg)
@@ -648,8 +648,8 @@ func (s *S)jobDetail(w http.ResponseWriter,r *http.Request){
  var pack ProductionPack;hasPack:=false
  if b,e:=os.ReadFile(filepath.Join(s.productionDir(id),"manifest.json"));e==nil&&json.Unmarshal(b,&pack)==nil{hasPack=true}
  pubs:=[]PublicationRecord{};for _,p:=range s.loadPublications(){if p.PlannerID==id{pubs=append(pubs,p)}}
- var sv any=nil;if hasScript{sv=script};var pv any=nil;if hasPack{pv=pack}
- js(w,map[string]any{"state":"READY","engine":"JOB_DETAIL_V1","plan":plan,"script":sv,"production_pack":pv,"publications":pubs,"ai_used":false,"neurons_used":0})
+ var sv any=nil;if hasScript{sv=script};var pv any=nil;if hasPack{pv=pack};var rv any=nil;if sr,ok:=s.loadStudioResult(id);ok{rv=sr}
+ js(w,map[string]any{"state":"READY","engine":"JOB_DETAIL_V2","plan":plan,"script":sv,"production_pack":pv,"studio_result":rv,"publications":pubs,"ai_used":false,"neurons_used":0})
 }
 
 
@@ -776,6 +776,36 @@ func (s *S)publicationSummary()map[string]any{
  for _,p:=range a{plats[p.Platform]++;if p.RecordedAt>=latestAt{latestAt=p.RecordedAt;latestTopic=p.Topic;latestURL=p.URL}}
  state:="READY_WAITING_PUBLICATION";if len(a)>0{state="CONNECTED"}
  return map[string]any{"state":state,"engine":"PUBLICATION_V1","records":len(a),"platforms":plats,"latest_topic":latestTopic,"latest_url":latestURL,"latest_at":latestAt,"ai_used":false,"neurons_used":0}
+}
+
+func publicationAckTag(id string)string{return "hermes-published-"+strings.ToLower(strings.TrimSpace(id))}
+func (s *S)publicationExists(id,platform,external string)bool{
+ for _,p:=range s.loadPublications(){if p.PlannerID==id&&strings.EqualFold(p.Platform,platform)&&(external==""||p.ExternalID==external){return true}}
+ return false
+}
+func (s *S)pollPublicationResult(){
+ plans:=s.syncPlanner()
+ for _,p:=range plans{
+  if p.Stage!="UPLOAD_READY"{continue}
+  tag:=publicationAckTag(p.ID)
+  u:="https://api.github.com/repos/Djaeger1/DJAEGER-WORK/releases/tags/"+url.PathEscape(tag)
+  req,e:=http.NewRequest("GET",u,nil);if e!=nil{return};req.Header.Set("User-Agent","HERMES-WORK-Publication/1.0")
+  cl:=androidHTTPClient();cl.Timeout=20*time.Second;resp,e:=cl.Do(req);if e!=nil{return};if resp.StatusCode!=200{resp.Body.Close();return}
+  var gh struct{Body string `json:"body"`;PublishedAt string `json:"published_at"`}
+  de:=json.NewDecoder(io.LimitReader(resp.Body,1<<20)).Decode(&gh);resp.Body.Close();if de!=nil{return}
+  var a struct{Platform string `json:"platform"`;ExternalID string `json:"external_id"`;URL string `json:"url"`;Channel string `json:"channel"`;Status string `json:"status"`;PublishedAt string `json:"published_at"`}
+  if json.Unmarshal([]byte(strings.TrimSpace(gh.Body)),&a)!=nil{return}
+  a.Platform=strings.ToLower(strings.TrimSpace(a.Platform));if !validPlatform(a.Platform)||strings.TrimSpace(a.ExternalID)==""||strings.TrimSpace(a.URL)==""{return}
+  at:=a.PublishedAt;if at==""{at=gh.PublishedAt};if at==""{at=time.Now().Format(time.RFC3339)}
+  if !s.publicationExists(p.ID,a.Platform,a.ExternalID){
+   rec:=PublicationRecord{PlannerID:p.ID,Topic:p.Title,Platform:a.Platform,ExternalID:a.ExternalID,URL:a.URL,Channel:a.Channel,Status:a.Status,PublishedAt:at,RecordedAt:time.Now().Format(time.RFC3339)}
+   if rec.Status==""{rec.Status="PUBLISHED"}
+   if s.appendPublication(rec)!=nil{return}
+  }
+  for i:=range plans{if plans[i].ID==p.ID{plans[i].Stage="PUBLISHED";plans[i].UpdatedAt=time.Now().Format(time.RFC3339);break}}
+  _ = s.savePlan(plans)
+  return
+ }
 }
 func validPlatform(x string)bool{
  switch strings.ToLower(strings.TrimSpace(x)){case"youtube","youtube_shorts","tiktok","instagram","facebook","other":return true};return false
