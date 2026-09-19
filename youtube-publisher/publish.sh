@@ -15,23 +15,24 @@ if [ -z "${YT_CLIENT_ID:-}" ] || [ -z "${YT_CLIENT_SECRET:-}" ] || [ -z "${YT_RE
   exit 0
 fi
 
-mapfile -t studio_tags < <(
-  gh api "repos/$REPO/releases?per_page=50" --jq '.[] | select(.tag_name|startswith("hermes-studio-")) | .tag_name'
-)
-
-tag=""
-id=""
-for candidate in "${studio_tags[@]}"; do
-  cid="${candidate#hermes-studio-}"
-  if ! gh release view "hermes-published-$cid" --repo "$REPO" >/dev/null 2>&1; then
-    tag="$candidate"
-    id="$cid"
-    break
-  fi
-done
+PUBLISH_FEED="${PUBLISH_FEED:-https://hermes-work-chatgpt-relay-v3-production.up.railway.app/publish-feed}"
+feed="$(mktemp)"
+feed_code="$(curl -sS -o "$feed" -w '%{http_code}' --max-time 45 "$PUBLISH_FEED" || true)"
+if [ "$feed_code" != "200" ]; then
+  echo "Publication feed unavailable (HTTP $feed_code)."
+  exit 0
+fi
+id="$(jq -r '.job.planner_id // empty' "$feed")"
+tag="$(jq -r '.job.render_tag // empty' "$feed")"
+rm -f "$feed"
 
 if [ -z "$tag" ] || [ -z "$id" ]; then
-  echo "No unpublished rendered video."
+  echo "No device-confirmed UPLOAD_READY video."
+  exit 0
+fi
+
+if gh release view "hermes-published-$id" --repo "$REPO" >/dev/null 2>&1; then
+  echo "Publication already acknowledged for $id."
   exit 0
 fi
 

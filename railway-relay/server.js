@@ -195,6 +195,27 @@ async function migrationStudioCandidate() {
   });
 }
 
+async function publicationCandidate() {
+  if(!deviceFresh()) throw new Error("DEVICE_LINK_STALE");
+  const desk=decodeDeviceJson(await queueDeviceRead("/api/work/desk",12000));
+  const jobs=Array.isArray(desk?.jobs)?desk.jobs:[];
+  const j=jobs.find(x=>String(x?.handoff_state||"").toUpperCase()==="READY_TO_UPLOAD");
+  if(!j?.id) return null;
+  const pid=String(j.id).slice(0,80);
+  return {
+    state:"READY_TO_PUBLISH",
+    planner_id:pid,
+    topic:String(j.topic||"").slice(0,500),
+    category:String(j.category||"").slice(0,80),
+    video_title:String(j.video_title||j.topic||"HERMES WORK").slice(0,500),
+    language:String(j.language||"id").slice(0,16),
+    duration_sec:Number(j.duration_sec||0),
+    render_tag:"hermes-studio-"+pid.toLowerCase(),
+    ai_used:false,
+    neurons_used:0
+  };
+}
+
 function safeStudioJob(j) {
   if (!j || typeof j !== "object") return null;
   const scenes = Array.isArray(j.scenes) ? j.scenes.slice(0,12).map(s=>({
@@ -340,7 +361,7 @@ const server = http.createServer(async (req,res)=>{
     return send(res,200,{
       ok:true,
       service:"DJAEGER_WORK_REMOTE_RELAY",
-      version:"2.1.1",
+      version:"2.1.2",
       direct_fresh:!!(directSnapshot&&Date.now()-directReceivedAt<20*60*1000),
       remote_link:deviceFresh()?"CONNECTED":"WAITING_DEVICE"
     });
@@ -451,6 +472,16 @@ const server = http.createServer(async (req,res)=>{
     }
     if(!job||!job.planner_id)return send(res,200,{ok:true,state:snap?.studio_state||"WAITING",job:null,source});
     return send(res,200,{ok:true,state:"WAITING_RENDER",job,source});
+  }
+
+  if (u.pathname === "/publish-feed" && req.method === "GET") {
+    try{
+      const job=await publicationCandidate();
+      if(!job)return send(res,200,{ok:true,state:"WAITING_UPLOAD_READY",job:null,source:"live-device"});
+      return send(res,200,{ok:true,state:"READY_TO_PUBLISH",job,source:"live-device"});
+    }catch(e){
+      return send(res,503,{ok:false,state:"PUBLICATION_FEED_UNAVAILABLE",error:String(e?.message||e)});
+    }
   }
 
   if (u.pathname === "/ingest" && req.method === "POST") {
