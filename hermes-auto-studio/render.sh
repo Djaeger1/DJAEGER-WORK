@@ -5,7 +5,7 @@ STUDIO_FEED="${STUDIO_FEED:-https://hermes-work-chatgpt-relay-v3-production.up.r
 mkdir -p /tmp/hermes-studio
 FEED=/tmp/hermes-studio/feed.json
 
-code="$(curl -sS -o "$FEED" -w '%{http_code}' --max-time 20 "$STUDIO_FEED" || true)"
+code="$(curl -sS -o "$FEED" -w '%{http_code}' --max-time 60 "$STUDIO_FEED" || true)"
 if [ "$code" != "200" ]; then
   echo "No fresh Studio feed (HTTP $code)."
   exit 0
