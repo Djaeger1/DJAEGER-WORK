@@ -10,11 +10,6 @@ case "$PRIVACY" in
   *) echo "Invalid YT_PRIVACY_STATUS: $PRIVACY"; exit 1 ;;
 esac
 
-if [ -z "${YT_CLIENT_ID:-}" ] || [ -z "${YT_CLIENT_SECRET:-}" ] || [ -z "${YT_REFRESH_TOKEN:-}" ]; then
-  echo "WAITING_YOUTUBE_AUTH: add YT_CLIENT_ID, YT_CLIENT_SECRET, and YT_REFRESH_TOKEN as repository Actions secrets."
-  exit 0
-fi
-
 PUBLISH_FEED="${PUBLISH_FEED:-https://hermes-work-chatgpt-relay-v3-production.up.railway.app/publish-feed}"
 feed="$(mktemp)"
 feed_code="$(curl -sS -o "$feed" -w '%{http_code}' --max-time 45 "$PUBLISH_FEED" || true)"
@@ -33,6 +28,12 @@ fi
 
 if gh release view "hermes-published-$id" --repo "$REPO" >/dev/null 2>&1; then
   echo "Publication already acknowledged for $id."
+  exit 0
+fi
+
+echo "PUBLISH_READY planner_id=$id render_tag=$tag"
+if [ -z "${YT_CLIENT_ID:-}" ] || [ -z "${YT_CLIENT_SECRET:-}" ] || [ -z "${YT_REFRESH_TOKEN:-}" ]; then
+  echo "WAITING_YOUTUBE_AUTH: add YT_CLIENT_ID, YT_CLIENT_SECRET, and YT_REFRESH_TOKEN as repository Actions secrets."
   exit 0
 fi
 
