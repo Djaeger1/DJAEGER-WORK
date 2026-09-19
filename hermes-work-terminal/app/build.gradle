@@ -1,0 +1,47 @@
+plugins {
+    id 'com.android.application'
+}
+
+def signingPath = System.getenv("HERMES_WORK_KEYSTORE_PATH")
+def signingStorePassword = System.getenv("HERMES_WORK_STORE_PASSWORD")
+def signingKeyAlias = System.getenv("HERMES_WORK_KEY_ALIAS")
+def signingKeyPassword = System.getenv("HERMES_WORK_KEY_PASSWORD")
+def hasReleaseSigning =
+        signingPath != null && !signingPath.isEmpty() &&
+        signingStorePassword != null && !signingStorePassword.isEmpty() &&
+        signingKeyAlias != null && !signingKeyAlias.isEmpty() &&
+        signingKeyPassword != null && !signingKeyPassword.isEmpty() &&
+        file(signingPath).exists()
+
+android {
+    namespace 'com.hermes.workdashboard'
+    compileSdk 35
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(signingPath)
+                storePassword signingStorePassword
+                keyAlias signingKeyAlias
+                keyPassword signingKeyPassword
+            }
+        }
+    }
+
+    defaultConfig {
+        applicationId "com.hermes.workdashboard"
+        minSdk 23
+        targetSdk 35
+        versionCode 128
+        versionName "1.2.8"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+}
