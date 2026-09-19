@@ -156,6 +156,14 @@ function decodeDeviceJson(upstream) {
   const body=Buffer.from(String(upstream?.body_b64||""),"base64").toString("utf8");
   return JSON.parse(body||"{}");
 }
+function releaseAtLeast(release, major, minor, patch) {
+  const m=String(release||"").match(/v(\d+)\.(\d+)\.(\d+)/i);
+  if(!m) return false;
+  const got=[Number(m[1]),Number(m[2]),Number(m[3])];
+  const want=[major,minor,patch];
+  for(let i=0;i<3;i++){ if(got[i]>want[i]) return true; if(got[i]<want[i]) return false; }
+  return true;
+}
 async function migrationStudioCandidate() {
   if(!deviceFresh()) return null;
   const desk=decodeDeviceJson(await queueDeviceRead("/api/work/desk",12000));
@@ -332,7 +340,7 @@ const server = http.createServer(async (req,res)=>{
     return send(res,200,{
       ok:true,
       service:"DJAEGER_WORK_REMOTE_RELAY",
-      version:"2.1.0",
+      version:"2.1.1",
       direct_fresh:!!(directSnapshot&&Date.now()-directReceivedAt<20*60*1000),
       remote_link:deviceFresh()?"CONNECTED":"WAITING_DEVICE"
     });
@@ -433,7 +441,7 @@ const server = http.createServer(async (req,res)=>{
     }
     let job=safeStudioJob(snap?.studio_job);
     const release=String(snap?.release||"");
-    if((!job||!job.planner_id) && deviceFresh() && !release.includes("v2.5.4-auto-studio-cutover")){
+    if((!job||!job.planner_id) && deviceFresh() && !releaseAtLeast(release,2,5,4)){
       try{
         const candidate=await migrationStudioCandidate();
         if(candidate?.planner_id){job=candidate;source="device-production-desk-migration";}
