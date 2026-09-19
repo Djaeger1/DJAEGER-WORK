@@ -1,1 +1,1 @@
-{"version":"v2.5.1-repo-migration","description":"DJAEGER WORK repository migration baseline: preserves v2.5.0 remote-link behavior while moving update channel to the isolated DJAEGER-WORK repository; no modem/root framework changes","restart":false}
+{"version":"v2.5.2-isolated","description":"DJAEGER WORK isolated-repository baseline: complete runtime payload including bridge deploy helper, update channel owned by Djaeger1/DJAEGER-WORK, preserves remote-link behavior and rollback safeguards","restart":false}
