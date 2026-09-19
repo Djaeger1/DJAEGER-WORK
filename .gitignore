@@ -2,3 +2,12 @@ runtime/out/
 runtime/HERMES_WORK_RUNTIME_*.zip
 runtime/HERMES_WORK_RUNTIME_*.zip.sha256
 runtime/channel.json
+
+# Android build outputs and signing material
+hermes-work-terminal/.gradle/
+hermes-work-terminal/build/
+hermes-work-terminal/app/build/
+hermes-work-terminal/app/*.jks
+hermes-work-terminal/app/*.keystore
+hermes-work-terminal/signing/
+*.apk
