@@ -699,7 +699,8 @@ func (s *S)clearStudioPending(){os.Remove(s.studioPendingPath())}
 func (s *S)loadStudioResult(id string)(StudioResult,bool){
  var x StudioResult;b,e:=os.ReadFile(s.studioResultPath(id));if e!=nil||json.Unmarshal(b,&x)!=nil||x.PlannerID!=id{return x,false};return x,true
 }
-func (s *S)studioRenderedToday()bool{return strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_studio_render_date")))==time.Now().Format("2006-01-02")}
+const studioRendererRepo="Djaeger1/DJAEGER-WORK"
+func (s *S)studioRenderedToday()bool{return strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_studio_render_date")))==time.Now().Format("2006-01-02")&&strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_studio_renderer_repo")))==studioRendererRepo}
 func (s *S)buildStudioJob()(StudioJob,bool){
  plans:=s.syncPlanner()
  scripts:=s.ensureScripts();sm:=map[string]ScriptPackage{};for _,x:=range scripts{sm[x.PlannerID]=x}
@@ -739,6 +740,7 @@ func (s *S)pollStudioResult(){
  for i:=range plans{if plans[i].ID==j.PlannerID{plans[i].Stage="UPLOAD_READY";plans[i].UpdatedAt=now;changed=true;break}}
  if changed{_ = s.savePlan(plans)}
  _ = os.WriteFile(filepath.Join(s.Root,"state","last_studio_render_date"),[]byte(time.Now().Format("2006-01-02")+"\n"),0600)
+ _ = os.WriteFile(filepath.Join(s.Root,"state","last_studio_renderer_repo"),[]byte(studioRendererRepo+"\n"),0600)
  s.clearStudioPending()
 }
 type PublicationRecord struct{

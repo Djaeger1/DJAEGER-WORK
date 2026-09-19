@@ -273,7 +273,7 @@ const server = http.createServer(async (req,res)=>{
     return send(res,200,{
       ok:true,
       service:"DJAEGER_WORK_REMOTE_RELAY",
-      version:"2.0.0",
+      version:"2.0.1",
       direct_fresh:!!(directSnapshot&&Date.now()-directReceivedAt<20*60*1000),
       remote_link:deviceFresh()?"CONNECTED":"WAITING_DEVICE"
     });
@@ -358,13 +358,21 @@ const server = http.createServer(async (req,res)=>{
     }
   }
 
-  // Existing read-only relay remains backward compatible.
+  // Existing read-only Studio feed remains backward compatible, but can now
+  // fall back to the latest ntfy snapshot after a Railway restart or ingest gap.
   if (u.pathname === "/studio-feed" && req.method === "GET") {
+    let snap=null; let source="direct";
     const fresh=!!(directSnapshot&&Date.now()-directReceivedAt<20*60*1000);
-    if(!fresh)return send(res,503,{ok:false,state:"NO_FRESH_DEVICE_SNAPSHOT"});
-    const job=safeStudioJob(directSnapshot.studio_job);
-    if(!job||!job.planner_id)return send(res,200,{ok:true,state:directSnapshot.studio_state||"WAITING",job:null});
-    return send(res,200,{ok:true,state:directSnapshot.studio_state||"WAITING_RENDER",job});
+    if(fresh){
+      snap=directSnapshot;
+    }else{
+      source="ntfy";
+      try{ snap=await latestSnapshot(); }
+      catch(e){ return send(res,503,{ok:false,state:"NO_FRESH_DEVICE_SNAPSHOT",error:String(e?.message||e)}); }
+    }
+    const job=safeStudioJob(snap?.studio_job);
+    if(!job||!job.planner_id)return send(res,200,{ok:true,state:snap?.studio_state||"WAITING",job:null,source});
+    return send(res,200,{ok:true,state:snap?.studio_state||"WAITING_RENDER",job,source});
   }
 
   if (u.pathname === "/ingest" && req.method === "POST") {
