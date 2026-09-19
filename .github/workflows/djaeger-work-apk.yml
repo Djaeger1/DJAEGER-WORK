@@ -106,8 +106,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APK=hermes-work-terminal/app/build/outputs/apk/release/app-release.apk
-          test -s "$APK"
+          SIGNED_APK=hermes-work-terminal/app/build/outputs/apk/release/app-release.apk
+          UNSIGNED_APK=hermes-work-terminal/app/build/outputs/apk/release/app-release-unsigned.apk
+          if [ -s "$SIGNED_APK" ]; then
+            APK="$SIGNED_APK"
+          elif [ -s "$UNSIGNED_APK" ]; then
+            APK="$UNSIGNED_APK"
+          else
+            echo "Release APK not found" >&2
+            find hermes-work-terminal/app/build/outputs/apk -maxdepth 3 -type f -print || true
+            exit 1
+          fi
           unzip -t "$APK"
 
           BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
