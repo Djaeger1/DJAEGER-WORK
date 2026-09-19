@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+  <item android:top="18dp" android:bottom="18dp" android:left="13dp" android:right="13dp">
+    <bitmap android:src="@drawable/djaeger_logo" android:gravity="center" android:filter="true"/>
+  </item>
+</layer-list>
