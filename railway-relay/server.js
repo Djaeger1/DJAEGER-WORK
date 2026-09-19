@@ -130,6 +130,63 @@ function queueProxy(req,u,body) {
   });
 }
 
+function queueDeviceRead(pathname, waitMs=15000) {
+  const requestId=id();
+  const cmd={
+    id:requestId,
+    method:"GET",
+    path:pathname,
+    headers:{"content-type":"application/json","x-hermes-token":""},
+    body:"",
+    created_at:new Date().toISOString(),
+    expires_at:Date.now()+waitMs+2000
+  };
+  return new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>{
+      pending.delete(requestId);
+      reject(new Error("device_read_timeout"));
+    },waitMs);
+    pending.set(requestId,{resolve,reject,timer});
+    handCommand(cmd);
+  });
+}
+function decodeDeviceJson(upstream) {
+  const status=Number(upstream?.status||502);
+  if(status<200||status>=300) throw new Error("device_http_"+status);
+  const body=Buffer.from(String(upstream?.body_b64||""),"base64").toString("utf8");
+  return JSON.parse(body||"{}");
+}
+async function migrationStudioCandidate() {
+  if(!deviceFresh()) return null;
+  const desk=decodeDeviceJson(await queueDeviceRead("/api/work/desk",12000));
+  const pid=String(desk?.next_job_id||"").slice(0,80);
+  if(!pid) return null;
+  const detail=decodeDeviceJson(await queueDeviceRead("/api/work/job?id="+encodeURIComponent(pid),12000));
+  const plan=detail?.plan||{};
+  const script=detail?.script||{};
+  if(!Array.isArray(script.scenes)||script.scenes.length<1) return null;
+  return safeStudioJob({
+    state:"WAITING_RENDER",
+    engine:"AUTO_STUDIO_V1",
+    planner_id:pid,
+    topic:String(plan.title||desk.next_job||script.topic||"").slice(0,500),
+    category:String(plan.category||"").slice(0,80),
+    language:String(script.language||"id").slice(0,16),
+    video_title:String(script.video_title||plan.title||desk.next_job||"HERMES WORK").slice(0,500),
+    description:String(script.description||"").slice(0,4000),
+    duration_sec:Number(script.duration_sec||0),
+    scenes:script.scenes,
+    hashtags:Array.isArray(script.hashtags)?script.hashtags:[],
+    render_tag:"hermes-studio-"+pid.toLowerCase(),
+    visual_provider:"FREE_FIRST_AI_WITH_DETERMINISTIC_FALLBACK",
+    voice_provider:"NO_CARD_TTS_WITH_LOCAL_FALLBACK",
+    render_provider:"GITHUB_ACTIONS_FFMPEG",
+    created_at:new Date().toISOString(),
+    ai_used:false,
+    neurons_used:0
+  });
+}
+
 function safeStudioJob(j) {
   if (!j || typeof j !== "object") return null;
   const scenes = Array.isArray(j.scenes) ? j.scenes.slice(0,12).map(s=>({
@@ -275,7 +332,7 @@ const server = http.createServer(async (req,res)=>{
     return send(res,200,{
       ok:true,
       service:"DJAEGER_WORK_REMOTE_RELAY",
-      version:"2.0.1",
+      version:"2.1.0",
       direct_fresh:!!(directSnapshot&&Date.now()-directReceivedAt<20*60*1000),
       remote_link:deviceFresh()?"CONNECTED":"WAITING_DEVICE"
     });
@@ -360,8 +417,10 @@ const server = http.createServer(async (req,res)=>{
     }
   }
 
-  // Existing read-only Studio feed remains backward compatible, but can now
-  // fall back to the latest ntfy snapshot after a Railway restart or ingest gap.
+  // Existing read-only Studio feed remains backward compatible. During the
+  // repository cutover, a pre-cutover device may already have met today's old
+  // repository target; in that case the relay can read the Production Desk and
+  // expose exactly one zero-write migration candidate for the new renderer.
   if (u.pathname === "/studio-feed" && req.method === "GET") {
     let snap=null; let source="direct";
     const fresh=!!(directSnapshot&&Date.now()-directReceivedAt<20*60*1000);
@@ -372,9 +431,18 @@ const server = http.createServer(async (req,res)=>{
       try{ snap=await latestSnapshot(); }
       catch(e){ return send(res,503,{ok:false,state:"NO_FRESH_DEVICE_SNAPSHOT",error:String(e?.message||e)}); }
     }
-    const job=safeStudioJob(snap?.studio_job);
+    let job=safeStudioJob(snap?.studio_job);
+    const release=String(snap?.release||"");
+    if((!job||!job.planner_id) && deviceFresh() && !release.includes("v2.5.4-auto-studio-cutover")){
+      try{
+        const candidate=await migrationStudioCandidate();
+        if(candidate?.planner_id){job=candidate;source="device-production-desk-migration";}
+      }catch(e){
+        return send(res,503,{ok:false,state:"MIGRATION_CANDIDATE_UNAVAILABLE",error:String(e?.message||e),source});
+      }
+    }
     if(!job||!job.planner_id)return send(res,200,{ok:true,state:snap?.studio_state||"WAITING",job:null,source});
-    return send(res,200,{ok:true,state:snap?.studio_state||"WAITING_RENDER",job,source});
+    return send(res,200,{ok:true,state:"WAITING_RENDER",job,source});
   }
 
   if (u.pathname === "/ingest" && req.method === "POST") {
