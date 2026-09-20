@@ -9,8 +9,15 @@ QUARANTINE="$(sed -n 's/^EMERGENCY_QUARANTINE=//p' "$REL/config/work.env" 2>/dev
 if [ "$QUARANTINE" = "1" ]; then
   printf '%s\n' "EMERGENCY_CPU_THERMAL_QUARANTINE" > "$ROOT/state/safe_mode"
   printf '%s\n' "EMERGENCY_CPU_THERMAL_QUARANTINE" > "$ROOT/state/worker_paused"
-  if [ -f "$REL/worker/process-converge.sh" ]; then
-    HERMES_ROOT="$ROOT" /system/bin/sh "$REL/worker/process-converge.sh" >>"$ROOT/logs/process-converge.log" 2>&1 || true
+  # Convergence is expensive; run it once per release, never on every bootstrap tick.
+  MARK="$ROOT/state/process-converge-$(
+    basename "$REL"
+  ).done"
+  if [ ! -f "$MARK" ] && [ -f "$REL/worker/process-converge.sh" ]; then
+    if HERMES_ROOT="$ROOT" /system/bin/sh "$REL/worker/process-converge.sh" >>"$ROOT/logs/process-converge.log" 2>&1; then
+      : > "$MARK"
+      chmod 600 "$MARK" 2>/dev/null
+    fi
   fi
   if ! { [ -f "$PID" ] && kill -0 "$(cat "$PID" 2>/dev/null)" 2>/dev/null; }; then
     nohup "$REL/bin/workd" --root "$ROOT" --release "$REL" >>"$LOG" 2>&1 &
