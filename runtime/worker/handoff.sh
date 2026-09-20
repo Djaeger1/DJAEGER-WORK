@@ -1,6 +1,11 @@
 #!/system/bin/sh
 ROOT="$1"; VER="$2"; PREV="$3"; DEST="$ROOT/releases/$VER"; LOG="$ROOT/logs/handoff.log"; PID="$ROOT/state/workd.pid"
 PORT=8766
+HANDOFF_LOCK="$ROOT/state/handoff.lock"
+mkdir -p "$ROOT/state" "$ROOT/logs"
+: > "$HANDOFF_LOCK"
+cleanup_handoff_lock(){ rm -f "$HANDOFF_LOCK" 2>/dev/null; }
+trap cleanup_handoff_lock EXIT HUP INT TERM
 ts(){ date '+%Y-%m-%dT%H:%M:%S%z'; }
 log(){ echo "$(ts) $*" >> "$LOG"; }
 
@@ -41,12 +46,21 @@ for P in /proc/[0-9]*; do
   esac
 done
 
-# Give the old listener time to release 8766.
+# Give the old listener time to release 8766, then hard-stop only stale HERMES WORK workd if needed.
 TRY=0
-while [ "$TRY" -lt 10 ]; do
+while [ "$TRY" -lt 5 ]; do
   /system/bin/wget -qO- "http://127.0.0.1:$PORT/api/work/status" >/dev/null 2>&1 || break
   sleep 1; TRY=$((TRY+1))
 done
+if /system/bin/wget -qO- "http://127.0.0.1:$PORT/api/work/status" >/dev/null 2>&1; then
+  for P in /proc/[0-9]*; do
+    N="${P#/proc/}"
+    [ "$N" = "$" ] && continue
+    CMD="$(tr '\000' ' ' < "$P/cmdline" 2>/dev/null)"
+    case "$CMD" in *"$ROOT/releases/"*"/bin/workd"* ) kill -9 "$N" 2>/dev/null ;; esac
+  done
+  sleep 1
+fi
 
 nohup "$DEST/bin/workd" --root "$ROOT" --release "$DEST" >>"$ROOT/logs/workd.log" 2>&1 &
 NEW=$!
