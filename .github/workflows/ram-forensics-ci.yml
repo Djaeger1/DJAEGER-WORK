@@ -1,0 +1,70 @@
+name: RAM forensics CI
+
+on:
+  push:
+    branches: [ram-forensics-v1]
+  pull_request:
+    branches: [main]
+    paths:
+      - "runtime/workd.go"
+      - "runtime/manifest.json"
+      - "runtime/worker/autoupdate.sh"
+      - ".github/workflows/release.yml"
+      - ".github/workflows/ram-forensics-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ram-forensics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.23.x'
+          cache: false
+
+      - name: Cross-compile ARMv7 runtime
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -o /tmp/workd ./runtime/workd.go
+
+      - name: Verify Android-safe process fallback
+        run: |
+          grep -q 'status_fallback' runtime/workd.go
+          grep -q 'RssAnon' runtime/workd.go
+          grep -q 'VmSwap' runtime/workd.go
+          grep -q 'topAnonProcesses(10)' runtime/workd.go
+          grep -q 'memoryPressureSummary()' runtime/workd.go
+          grep -q 'swapSummary()' runtime/workd.go
+          grep -q 'filepath.Glob("/sys/block/zram\*/mm_stat")' runtime/workd.go
+
+      - name: Verify periodic telemetry stays lightweight
+        run: |
+          ! sed -n '/func (s \*S)bridgeSnapshot()/,/func (s \*S)ntfyTopic/p' runtime/workd.go | grep -q '"process_memory"'
+          sed -n '/func (s \*S)bridgeSnapshot()/,/func (s \*S)ntfyTopic/p' runtime/workd.go | grep -q '"top_anon"'
+          sed -n '/func (s \*S)bridgeSnapshot()/,/func (s \*S)ntfyTopic/p' runtime/workd.go | grep -q '"memory_pressure"'
+
+      - name: Verify no aggressive RAM mutation
+        run: |
+          ! grep -Eq 'drop_caches|killall|pkill|am force-stop|echo[[:space:]]+[123][[:space:]]*>.*/drop_caches' runtime/workd.go
+          ! grep -Eq 'drop_caches|killall|pkill|am force-stop' runtime/worker/autoupdate.sh
+
+      - name: Verify safety guards unchanged
+        run: |
+          grep -q 'MAX_TEMP_RAW=430' runtime/worker/autoupdate.sh
+          grep -q '\[ "$FORCE_MODE" = "REPAIR" \] && MAX_TEMP_RAW=480' runtime/worker/autoupdate.sh
+          grep -q '\*memory-forensics\*' runtime/worker/autoupdate.sh
+          grep -q '"version":"v2.5.16-memory-forensics"' runtime/manifest.json
+
+      - name: Verify release packaging
+        run: |
+          grep -q 'HERMES_WORK_RUNTIME_v2.5.16_MEMORY_FORENSICS' .github/workflows/release.yml
+          grep -q 'v2.5.16-memory-forensics' .github/workflows/release.yml
+
+      - name: Report
+        run: |
+          echo "RAM_FORENSICS=PASS"
+          echo "PROCESS_KILLING=DISABLED"
+          echo "DROP_CACHE=DISABLED"
+          echo "THERMAL_GUARD=UNCHANGED"
