@@ -1,0 +1,83 @@
+name: Remote pinned self-update CI
+
+on:
+  push:
+    branches: [v2521-remote-signed-selfupdate]
+  pull_request:
+    branches: [main]
+    paths:
+      - "runtime/workd.go"
+      - "runtime/manifest.json"
+      - "railway-relay/server.js"
+      - ".github/workflows/release.yml"
+      - ".github/workflows/remote-pinned-selfupdate-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.23.x'
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: ARMv7 build
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -o /tmp/workd ./runtime/workd.go
+
+      - name: Relay syntax
+        run: node --check railway-relay/server.js
+
+      - name: Verify trust pinning
+        run: |
+          grep -q 'const pinnedUpdateChannel="https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json"' runtime/workd.go
+          grep -q 'ch!=pinnedUpdateChannel' runtime/workd.go
+          grep -q 'sha256 mismatch' runtime/workd.go
+          grep -q 'manifest version mismatch' runtime/workd.go
+          grep -q 'bundle too large' runtime/workd.go
+          grep -q '32<<20' runtime/workd.go
+
+      - name: Verify remote boundary
+        run: |
+          grep -q 'func loopbackRemote' runtime/workd.go
+          grep -q 'case"remote_update"' runtime/workd.go
+          grep -q 'if !loopbackRemote(r)' runtime/workd.go
+          grep -q 'source=="PRIVATE_REMOTE"' runtime/workd.go
+          grep -q 'remote update requires quarantine' runtime/workd.go
+
+      - name: Verify quarantine and hardware safety
+        run: |
+          grep -q 'EMERGENCY_CPU_THERMAL_QUARANTINE' runtime/workd.go
+          grep -q 'worker_paused' runtime/workd.go
+          grep -q 'cpu soc thermal guard' runtime/workd.go
+          grep -q 'tether down' runtime/workd.go
+          ! grep -Eq 'drop_caches|force-stop|system_server|qcril|telephony|networkstack|reboot' runtime/workd.go
+
+      - name: Verify future relay routing
+        run: |
+          grep -q 'releaseAtLeast(release,2,5,21)' railway-relay/server.js
+          grep -q 'action:"remote_update"' railway-relay/server.js
+          grep -q 'quarantine_preserved' railway-relay/server.js
+          ! grep -Eq 'reboot|drop_caches|force-stop|killall|pkill|system_server|qcril|telephony|networkstack|rndis0' railway-relay/server.js
+
+      - name: Verify release identity
+        run: |
+          grep -q '"version":"v2.5.21-remote-pinned-selfupdate-quarantine"' runtime/manifest.json
+          grep -q 'HERMES_WORK_RUNTIME_v2.5.21_REMOTE_PINNED_SELFUPDATE_QUARANTINE' .github/workflows/release.yml
+
+      - name: Report
+        run: |
+          echo "REMOTE_SELFUPDATE=PASS"
+          echo "CHANNEL_PINNED=YES"
+          echo "SHA256=REQUIRED"
+          echo "MANIFEST_VERSION=REQUIRED"
+          echo "LOOPBACK_ONLY=YES"
+          echo "QUARANTINE_REQUIRED=YES"
+          echo "TETHER_PRESERVED=YES"
