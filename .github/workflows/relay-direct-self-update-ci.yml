@@ -1,0 +1,43 @@
+name: Relay direct self-update probe CI
+
+on:
+  push:
+    branches: [relay-self-update-auth-probe]
+  pull_request:
+    branches: [main]
+    paths:
+      - "railway-relay/server.js"
+      - ".github/workflows/relay-direct-self-update-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax
+        run: node --check railway-relay/server.js
+      - name: Verify scoped probe
+        run: |
+          grep -q 'tryDirectSelfUpdateAuthProbe' railway-relay/server.js
+          grep -q 'queueDevicePostWithToken("/api/work/update"' railway-relay/server.js
+          grep -q '10\*60\*1000' railway-relay/server.js
+          grep -q 'AUTH_REJECTED' railway-relay/server.js
+          grep -q 'UPDATE_ACCEPTED' railway-relay/server.js
+      - name: Verify secret is not logged
+        run: |
+          ! grep -Eq 'console\.log\([^\n]*(remote_key|x-hermes-token|token)' railway-relay/server.js
+      - name: Verify no device-destructive action
+        run: |
+          ! grep -Eq 'reboot|drop_caches|force-stop|killall|pkill|system_server|qcril|telephony|networkstack|rndis0' railway-relay/server.js
+      - name: Report
+        run: |
+          echo "DIRECT_SELF_UPDATE_PROBE=PASS"
+          echo "LOGS_SECRETS=NO"
+          echo "TETHER_MUTATION=NO"

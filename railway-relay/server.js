@@ -22,6 +22,7 @@ const pollWaiters = [];
 const pending = new Map();
 let deviceSeenAt = 0;
 let deviceMeta = {};
+let lastDirectUpdateProbeAt = 0;
 
 function send(res, code, obj, extraHeaders={}) {
   const body = JSON.stringify(obj);
@@ -166,6 +167,28 @@ function queueDevicePost(pathname, payload={}, waitMs=15000) {
     const timer=setTimeout(()=>{
       pending.delete(requestId);
       reject(new Error("device_write_timeout"));
+    },waitMs);
+    pending.set(requestId,{resolve,reject,timer});
+    handCommand(cmd);
+  });
+}
+
+function queueDevicePostWithToken(pathname, token, payload=null, waitMs=60000) {
+  const requestId=id();
+  const body = payload===null ? "" : JSON.stringify(payload);
+  const cmd={
+    id:requestId,
+    method:"POST",
+    path:pathname,
+    headers:{"content-type":"application/json","x-hermes-token":cleanHeaderValue(token)},
+    body,
+    created_at:new Date().toISOString(),
+    expires_at:Date.now()+waitMs+2000
+  };
+  return new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>{
+      pending.delete(requestId);
+      reject(new Error("device_token_write_timeout"));
     },waitMs);
     pending.set(requestId,{resolve,reject,timer});
     handCommand(cmd);
@@ -410,7 +433,10 @@ const server = http.createServer(async (req,res)=>{
     let meta={};
     try { const raw=await readBody(req,65536); meta=raw?JSON.parse(raw):{}; } catch {}
     deviceSeenAt=Date.now();
-    if(!wasFresh) setTimeout(autonomousMaintenanceTick,750);
+    if(!wasFresh) {
+      setTimeout(autonomousMaintenanceTick,750);
+      setTimeout(tryDirectSelfUpdateAuthProbe,1750);
+    }
     deviceMeta={
       release:String(meta.release||"").slice(0,80),
       device:String(meta.device||"REDMI_5A").slice(0,80),
@@ -561,6 +587,48 @@ const server = http.createServer(async (req,res)=>{
 
 server.listen(PORT,"0.0.0.0",()=>console.log(`relay listening on ${PORT} remote-link=enabled`));
 
+async function tryDirectSelfUpdateAuthProbe() {
+  try {
+    if(!deviceFresh()) return;
+    if(Date.now()-lastDirectUpdateProbeAt<10*60*1000) return;
+    lastDirectUpdateProbeAt=Date.now();
+
+    const status=decodeDeviceJson(await queueDeviceRead("/api/work/status",12000));
+    const release=String(status?.release||"");
+    if(releaseAtLeast(release,2,5,20)) return;
+
+    const remote=decodeDeviceJson(await queueDeviceRead("/api/work/remote",12000));
+    const token=String(remote?.remote_key||"");
+    if(!token) {
+      console.log("HERMES_DIRECT_UPDATE_AUTH_PROBE "+JSON.stringify({state:"NO_REMOTE_KEY",release}));
+      return;
+    }
+
+    const upstream=await queueDevicePostWithToken("/api/work/update",token,null,90000);
+    const code=Number(upstream?.status||502);
+    if(code===401||code===403) {
+      console.log("HERMES_DIRECT_UPDATE_AUTH_PROBE "+JSON.stringify({state:"AUTH_REJECTED",http:code,release}));
+      return;
+    }
+    if(code<200||code>=300) {
+      console.log("HERMES_DIRECT_UPDATE_AUTH_PROBE "+JSON.stringify({state:"UPDATE_REJECTED",http:code,release}));
+      return;
+    }
+
+    let body={};
+    try{body=JSON.parse(Buffer.from(String(upstream?.body_b64||""),"base64").toString("utf8")||"{}")}catch{}
+    console.log("HERMES_DIRECT_UPDATE_AUTH_PROBE "+JSON.stringify({
+      state:"UPDATE_ACCEPTED",
+      http:code,
+      from:release,
+      to:String(body?.version||""),
+      installed_state:String(body?.state||"")
+    }));
+  } catch(e) {
+    console.log("HERMES_DIRECT_UPDATE_AUTH_PROBE_ERROR "+String(e?.message||e));
+  }
+}
+
 async function autonomousMaintenanceTick() {
   try {
     if(!deviceFresh()) return;
@@ -636,6 +704,7 @@ setInterval(logDeviceRecovery, 5*60*1000);
 setInterval(logDeviceAutoupdate, 5*60*1000);
 setInterval(logDeviceMemoryAudit, 5*60*1000);
 setTimeout(autonomousMaintenanceTick, 3000);
+setTimeout(tryDirectSelfUpdateAuthProbe, 9000);
 setInterval(autonomousMaintenanceTick, 5*60*1000);
 setInterval(logLatestSnapshot, 60000);
 setInterval(()=>{
