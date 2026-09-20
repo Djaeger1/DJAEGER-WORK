@@ -57,8 +57,8 @@ jobs:
 
       - name: Verify release
         run: |
-          grep -q '"version":"v2.5.17-memory-process-convergence"' runtime/manifest.json
-          grep -q 'HERMES_WORK_RUNTIME_v2.5.17_MEMORY_PROCESS_CONVERGENCE' .github/workflows/release.yml
+          grep -Eq '"version":"v2\.5\.(17-memory-process-convergence|19-self-enforced-quarantine)"' runtime/manifest.json
+          grep -Eq 'HERMES_WORK_RUNTIME_v2\.5\.(17_MEMORY_PROCESS_CONVERGENCE|19_SELF_ENFORCED_QUARANTINE)' .github/workflows/release.yml
           grep -q 'cp worker/process-converge.sh out/payload/worker/process-converge.sh' .github/workflows/release.yml
 
       - name: Report
