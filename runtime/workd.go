@@ -69,7 +69,7 @@ func (s *S)bridgeSnapshot()map[string]any{
  pub:=s.publicationSummary();fb:=s.performanceSummary()
  return map[string]any{
   "sent_at":time.Now().Format(time.RFC3339),"release":runtimeRelease(s),"configured_release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),
-  "tether_state":ts,"temperature_c":temp(),"mem_available_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),
+  "tether_state":ts,"temperature_c":temp(),"mem_available_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"memory_pressure":memoryPressureSummary(),"process_memory":cachedProcessMemorySummary(),"swap":swapSummary(),
   "zram":zramStats(),"top_rss":topRSSProcesses(10),
   "worker_state":worker,"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),
   "research_total":s.researchTotal(),"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research"))),"research_engine":"SUGGEST_MULTI_V2",
@@ -121,31 +121,90 @@ func memBreakdown()map[string]int64{
  for _,l:=range strings.Split(string(b),"\n"){f:=strings.Fields(l);if len(f)<2{continue};k:=strings.TrimSuffix(f[0],":");if !wanted[k]{continue};n,_:=strconv.ParseInt(f[1],10,64);out[k]=n/1024}
  return out
 }
-type ProcPSS struct{PID int `json:"pid"`;Name string `json:"name"`;PSSMB int64 `json:"pss_mb"`;RSSMB int64 `json:"rss_mb"`;SwapPSSMB int64 `json:"swap_pss_mb"`}
-type PSSSummary struct{ProcessCount int `json:"process_count"`;TotalPSSMB int64 `json:"total_pss_mb"`;TotalRSSMB int64 `json:"total_rss_mb"`;TotalSwapPSSMB int64 `json:"total_swap_pss_mb"`;Top []ProcPSS `json:"top_pss"`}
+type ProcPSS struct{
+ PID int `json:"pid"`
+ Name string `json:"name"`
+ PSSMB int64 `json:"pss_mb"`
+ RSSMB int64 `json:"rss_mb"`
+ AnonMB int64 `json:"anon_mb"`
+ FileMB int64 `json:"file_mb"`
+ ShmemMB int64 `json:"shmem_mb"`
+ SwapMB int64 `json:"swap_mb"`
+ SwapPSSMB int64 `json:"swap_pss_mb"`
+ DetailSource string `json:"detail_source"`
+}
+type PSSSummary struct{
+ ProcessCount int `json:"process_count"`
+ PSSAvailableCount int `json:"pss_available_count"`
+ RSSFallbackCount int `json:"rss_fallback_count"`
+ TotalPSSMB int64 `json:"total_pss_mb"`
+ TotalRSSMB int64 `json:"total_rss_mb"`
+ TotalAnonMB int64 `json:"total_anon_mb"`
+ TotalFileMB int64 `json:"total_file_mb"`
+ TotalShmemMB int64 `json:"total_shmem_mb"`
+ TotalSwapMB int64 `json:"total_swap_mb"`
+ TotalSwapPSSMB int64 `json:"total_swap_pss_mb"`
+ Top []ProcPSS `json:"top_processes"`
+}
 func processMemorySummary(limit int)PSSSummary{
  ents,_:=os.ReadDir("/proc");out:=PSSSummary{Top:[]ProcPSS{}}
  for _,ent:=range ents{
   if !ent.IsDir(){continue};pid,e:=strconv.Atoi(ent.Name());if e!=nil{continue}
   status,e:=os.ReadFile(filepath.Join("/proc",ent.Name(),"status"));if e!=nil{continue}
-  name:="";rss:=int64(0)
+  name:="";rss:=int64(0);anon:=int64(0);fileMB:=int64(0);shmem:=int64(0);swapMB:=int64(0)
   for _,l:=range strings.Split(string(status),"\n"){
-   if strings.HasPrefix(l,"Name:"){f:=strings.Fields(l);if len(f)>1{name=f[1]}}
-   if strings.HasPrefix(l,"VmRSS:"){f:=strings.Fields(l);if len(f)>1{n,_:=strconv.ParseInt(f[1],10,64);rss=n/1024}}
+   f:=strings.Fields(l);if len(f)<2{continue}
+   val:=func()int64{n,_:=strconv.ParseInt(f[1],10,64);return n/1024}
+   switch strings.TrimSuffix(f[0],":"){
+   case"Name":name=f[1]
+   case"VmRSS":rss=val()
+   case"RssAnon":anon=val()
+   case"RssFile":fileMB=val()
+   case"RssShmem":shmem=val()
+   case"VmSwap":swapMB=val()
+   }
   }
-  sm,e:=os.ReadFile(filepath.Join("/proc",ent.Name(),"smaps_rollup"));if e!=nil{continue}
-  pss:=int64(0);swapPss:=int64(0)
-  for _,l:=range strings.Split(string(sm),"\n"){
-   if strings.HasPrefix(l,"Pss:"){f:=strings.Fields(l);if len(f)>1{n,_:=strconv.ParseInt(f[1],10,64);pss=n/1024}}
-   if strings.HasPrefix(l,"SwapPss:"){f:=strings.Fields(l);if len(f)>1{n,_:=strconv.ParseInt(f[1],10,64);swapPss=n/1024}}
+
+  pss:=int64(0);swapPss:=int64(0);source:="status_fallback"
+  if sm,e:=os.ReadFile(filepath.Join("/proc",ent.Name(),"smaps_rollup"));e==nil{
+   source="smaps_rollup"
+   for _,l:=range strings.Split(string(sm),"\n"){
+    if strings.HasPrefix(l,"Pss:"){f:=strings.Fields(l);if len(f)>1{n,_:=strconv.ParseInt(f[1],10,64);pss=n/1024}}
+    if strings.HasPrefix(l,"SwapPss:"){f:=strings.Fields(l);if len(f)>1{n,_:=strconv.ParseInt(f[1],10,64);swapPss=n/1024}}
+   }
   }
-  if pss<=0&&rss<=0{continue}
-  out.ProcessCount++;out.TotalPSSMB+=pss;out.TotalRSSMB+=rss;out.TotalSwapPSSMB+=swapPss
-  out.Top=append(out.Top,ProcPSS{PID:pid,Name:name,PSSMB:pss,RSSMB:rss,SwapPSSMB:swapPss})
+
+  if pss<=0&&rss<=0&&anon<=0&&fileMB<=0&&shmem<=0&&swapMB<=0{continue}
+  out.ProcessCount++
+  if source=="smaps_rollup"{out.PSSAvailableCount++}else{out.RSSFallbackCount++}
+  out.TotalPSSMB+=pss;out.TotalRSSMB+=rss;out.TotalAnonMB+=anon;out.TotalFileMB+=fileMB;out.TotalShmemMB+=shmem;out.TotalSwapMB+=swapMB;out.TotalSwapPSSMB+=swapPss
+  out.Top=append(out.Top,ProcPSS{PID:pid,Name:name,PSSMB:pss,RSSMB:rss,AnonMB:anon,FileMB:fileMB,ShmemMB:shmem,SwapMB:swapMB,SwapPSSMB:swapPss,DetailSource:source})
  }
- sort.Slice(out.Top,func(i,j int)bool{return out.Top[i].PSSMB>out.Top[j].PSSMB})
+ score:=func(p ProcPSS)int64{if p.PSSMB>0{return p.PSSMB};if p.AnonMB>0{return p.AnonMB};return p.RSSMB}
+ sort.Slice(out.Top,func(i,j int)bool{return score(out.Top[i])>score(out.Top[j])})
  if limit>0&&len(out.Top)>limit{out.Top=out.Top[:limit]}
  return out
+}
+func swapSummary()map[string]any{
+ m:=memBreakdown();total:=m["SwapTotal"];free:=m["SwapFree"];used:=total-free;if used<0{used=0}
+ out:=map[string]any{"total_mb":total,"free_mb":free,"used_mb":used,"devices":[]map[string]any{}}
+ b,e:=os.ReadFile("/proc/swaps");if e!=nil{return out}
+ devs:=[]map[string]any{}
+ for i,l:=range strings.Split(strings.TrimSpace(string(b)),"\n"){
+  if i==0||strings.TrimSpace(l)==""{continue}
+  f:=strings.Fields(l);if len(f)<5{continue}
+  sizeKB,_:=strconv.ParseInt(f[2],10,64);usedKB,_:=strconv.ParseInt(f[3],10,64);prio,_:=strconv.Atoi(f[4])
+  devs=append(devs,map[string]any{"device":f[0],"type":f[1],"size_mb":sizeKB/1024,"used_mb":usedKB/1024,"priority":prio})
+ }
+ out["devices"]=devs
+ return out
+}
+func memoryPressureSummary()map[string]any{
+ m:=memBreakdown();avail:=m["MemAvailable"];swapUsed:=m["SwapTotal"]-m["SwapFree"];if swapUsed<0{swapUsed=0}
+ reclaim:=m["Cached"]+m["Buffers"]+m["SReclaimable"]-m["Shmem"];if reclaim<0{reclaim=0}
+ level:="NORMAL"
+ if avail<160{level="CRITICAL"}else if avail<220{level="HIGH"}else if avail<300{level="CONSTRAINED"}
+ return map[string]any{"level":level,"mem_available_mb":avail,"anon_mb":m["AnonPages"],"swap_used_mb":swapUsed,"reclaimable_file_mb":reclaim,"work_guard_low_ram_mb":220}
 }
 var memoryAuditMu sync.Mutex
 var memoryAuditAt time.Time
@@ -156,9 +215,17 @@ func cachedProcessMemorySummary()PSSSummary{
  memoryAuditCache=processMemorySummary(15);memoryAuditAt=time.Now();return memoryAuditCache
 }
 func zramStats()map[string]int64{
- out:=map[string]int64{};b,e:=os.ReadFile("/sys/block/zram0/mm_stat");if e!=nil{return out}
- f:=strings.Fields(string(b));names:=[]string{"orig_data_bytes","compr_data_bytes","mem_used_bytes","mem_limit_bytes","mem_used_max_bytes","same_pages","pages_compacted"}
- for i,n:=range names{if i>=len(f){break};v,_:=strconv.ParseInt(f[i],10,64);if strings.HasSuffix(n,"_bytes"){out[strings.TrimSuffix(n,"_bytes")+"_mb"]=v/(1024*1024)}else{out[n]=v}}
+ out:=map[string]int64{"device_count":0}
+ paths,_:=filepath.Glob("/sys/block/zram*/mm_stat")
+ for _,p:=range paths{
+  b,e:=os.ReadFile(p);if e!=nil{continue}
+  f:=strings.Fields(string(b));names:=[]string{"orig_data_bytes","compr_data_bytes","mem_used_bytes","mem_limit_bytes","mem_used_max_bytes","same_pages","pages_compacted"}
+  out["device_count"]++
+  for i,n:=range names{
+   if i>=len(f){break};v,_:=strconv.ParseInt(f[i],10,64)
+   if strings.HasSuffix(n,"_bytes"){out[strings.TrimSuffix(n,"_bytes")+"_mb"]+=v/(1024*1024)}else{out[n]+=v}
+  }
+ }
  return out
 }
 type ProcTreeRow struct{PID int `json:"pid"`;PPID int `json:"ppid"`;Name string `json:"name"`;RSSMB int64 `json:"rss_mb"`;Threads int64 `json:"threads"`;Role string `json:"role"`}
@@ -248,9 +315,9 @@ func (s *S)maintenance(w http.ResponseWriter,r *http.Request){
 }
 func (s *S)memoryAudit(w http.ResponseWriter,r *http.Request){
  if !privateRemote(r)&&!s.auth(r){http.Error(w,"unauthorized",401);return}
- js(w,map[string]any{"time":time.Now().Format(time.RFC3339),"temp_c":temp(),"mem_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"hermes_processes":hermesProcessSummary(),"process_memory":processMemorySummary(20),"zram":zramStats(),"top_rss":topRSSProcesses(20),"release":runtimeRelease(s)})
+ js(w,map[string]any{"time":time.Now().Format(time.RFC3339),"temp_c":temp(),"mem_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"hermes_processes":hermesProcessSummary(),"memory_pressure":memoryPressureSummary(),"process_memory":processMemorySummary(20),"swap":swapSummary(),"zram":zramStats(),"top_rss":topRSSProcesses(20),"release":runtimeRelease(s)})
 }
-func (s *S)diag(w http.ResponseWriter,r *http.Request){if !s.auth(r){http.Error(w,"unauthorized",401);return};ts,ip:=iface("rndis0");js(w,map[string]any{"time":time.Now().Format(time.RFC3339),"temp_c":temp(),"mem_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"process_memory":processMemorySummary(15),"zram":zramStats(),"top_rss":topRSSProcesses(10),"rndis":ts,"rndis_ip":ip,"release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"bootstrap_log_tail":tail(filepath.Join(s.Root,"logs","hermesd.log"),60),"work_log_tail":tail(filepath.Join(s.Root,"logs","workd.log"),60)})}
+func (s *S)diag(w http.ResponseWriter,r *http.Request){if !s.auth(r){http.Error(w,"unauthorized",401);return};ts,ip:=iface("rndis0");js(w,map[string]any{"time":time.Now().Format(time.RFC3339),"temp_c":temp(),"mem_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"memory_pressure":memoryPressureSummary(),"process_memory":processMemorySummary(15),"swap":swapSummary(),"zram":zramStats(),"top_rss":topRSSProcesses(10),"rndis":ts,"rndis_ip":ip,"release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"bootstrap_log_tail":tail(filepath.Join(s.Root,"logs","hermesd.log"),60),"work_log_tail":tail(filepath.Join(s.Root,"logs","workd.log"),60)})}
 func copyf(src,dst string)error{in,e:=os.Open(src);if e!=nil{return e};defer in.Close();if e=os.MkdirAll(filepath.Dir(dst),0700);e!=nil{return e};out,e:=os.OpenFile(dst,os.O_CREATE|os.O_TRUNC|os.O_WRONLY,0700);if e!=nil{return e};_,e=io.Copy(out,in);ce:=out.Close();if e!=nil{return e};return ce}
 func unzipPayload(bundle,stage string)error{z,e:=zip.OpenReader(bundle);if e!=nil{return e};defer z.Close();for _,f:=range z.File{n:=filepath.Clean(f.Name);if n=="manifest.json"||strings.HasPrefix(n,"payload/"){if strings.Contains(n,".."){return fmt.Errorf("unsafe path")};dst:=filepath.Join(stage,n);if f.FileInfo().IsDir(){os.MkdirAll(dst,0700);continue};rc,e:=f.Open();if e!=nil{return e};if e=os.MkdirAll(filepath.Dir(dst),0700);e!=nil{rc.Close();return e};o,e:=os.OpenFile(dst,os.O_CREATE|os.O_TRUNC|os.O_WRONLY,0700);if e!=nil{rc.Close();return e};_,e=io.Copy(o,rc);o.Close();rc.Close();if e!=nil{return e}}};return nil}
 var androidTransportOnce sync.Once
