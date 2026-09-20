@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -Fq 'UPDATE_CHANNEL_URL=https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json' runtime/config/work.env
-          grep -Fq '"version":"v2.5.22-thermal-quarantine-fix"' runtime/manifest.json
+          grep -Fq '"version":"v2.5.23-bridge-observability"' runtime/manifest.json
           sh -n runtime/worker/tick.sh
           sh -n runtime/worker/handoff.sh
           sh -n runtime/worker/autoupdate.sh
@@ -121,16 +121,16 @@ jobs:
           cp config/work.env out/payload/config/work.env
           chmod 755 out/payload/bin/workd out/payload/worker/*.sh
           cd out
-          zip -Xqr ../HERMES_WORK_RUNTIME_v2.5.22_THERMAL_QUARANTINE_FIX.zip manifest.json payload
+          zip -Xqr ../HERMES_WORK_RUNTIME_v2.5.23_BRIDGE_OBSERVABILITY.zip manifest.json payload
           cd ..
-          sha256sum HERMES_WORK_RUNTIME_v2.5.22_THERMAL_QUARANTINE_FIX.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v2.5.22_THERMAL_QUARANTINE_FIX.zip.sha256
-          printf '{"channel":"stable","version":"v2.5.22-thermal-quarantine-fix","bundle":"HERMES_WORK_RUNTIME_v2.5.22_THERMAL_QUARANTINE_FIX.zip","sha256":"%s"}\n' "$(cat HERMES_WORK_RUNTIME_v2.5.22_THERMAL_QUARANTINE_FIX.zip.sha256)" > channel.json
+          sha256sum HERMES_WORK_RUNTIME_v2.5.23_BRIDGE_OBSERVABILITY.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v2.5.23_BRIDGE_OBSERVABILITY.zip.sha256
+          printf '{"channel":"stable","version":"v2.5.23-bridge-observability","bundle":"HERMES_WORK_RUNTIME_v2.5.23_BRIDGE_OBSERVABILITY.zip","sha256":"%s"}\n' "$(cat HERMES_WORK_RUNTIME_v2.5.23_BRIDGE_OBSERVABILITY.zip.sha256)" > channel.json
 
       - name: Upload installable package
         uses: actions/upload-artifact@v4
         with:
-          name: HERMES_WORK_RUNTIME_v2.5.22_THERMAL_QUARANTINE_FIX
-          path: runtime/HERMES_WORK_RUNTIME_v2.5.22_THERMAL_QUARANTINE_FIX.zip
+          name: HERMES_WORK_RUNTIME_v2.5.23_BRIDGE_OBSERVABILITY
+          path: runtime/HERMES_WORK_RUNTIME_v2.5.23_BRIDGE_OBSERVABILITY.zip
           retention-days: 30
 
       - name: Publish isolated stable channel
@@ -138,8 +138,8 @@ jobs:
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"
-          cp runtime/HERMES_WORK_RUNTIME_v2.5.22_THERMAL_QUARANTINE_FIX.zip "$tmp/"
-          cp runtime/HERMES_WORK_RUNTIME_v2.5.22_THERMAL_QUARANTINE_FIX.zip.sha256 "$tmp/"
+          cp runtime/HERMES_WORK_RUNTIME_v2.5.23_BRIDGE_OBSERVABILITY.zip "$tmp/"
+          cp runtime/HERMES_WORK_RUNTIME_v2.5.23_BRIDGE_OBSERVABILITY.zip.sha256 "$tmp/"
           cp runtime/channel.json "$tmp/"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -148,15 +148,15 @@ jobs:
             git fetch origin main
             git checkout -B main origin/main
             mkdir -p release
-            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.22_THERMAL_QUARANTINE_FIX.zip" release/
-            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.22_THERMAL_QUARANTINE_FIX.zip.sha256" release/
+            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.23_BRIDGE_OBSERVABILITY.zip" release/
+            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.23_BRIDGE_OBSERVABILITY.zip.sha256" release/
             cp "$tmp/channel.json" release/
             git add release/
             if git diff --cached --quiet; then
               echo "Release channel already current."
               exit 0
             fi
-            git commit -m "Publish DJAEGER WORK v2.5.22 thermal quarantine fix"
+            git commit -m "Publish DJAEGER WORK v2.5.23 bridge observability"
             if git push origin HEAD:main; then
               exit 0
             fi
