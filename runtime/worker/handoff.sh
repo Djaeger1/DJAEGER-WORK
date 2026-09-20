@@ -82,7 +82,13 @@ if [ "$HEALTHY" = 1 ]; then
   [ -n "$PREV" ] && [ "$PREV" != "$VER" ] && printf '%s\n' "$PREV" > "$ROOT/previous_release"
   publish_updater_ok
   log "PASS $VER pid=$NEW verified_release=$VER"
+  if [ -f "$DEST/worker/process-converge.sh" ]; then
+    HERMES_ROOT="$ROOT" /system/bin/sh "$DEST/worker/process-converge.sh" >>"$ROOT/logs/process-converge.log" 2>&1 || true
+  fi
   restart_single_updater
+  if [ -f "$DEST/worker/tick.sh" ]; then
+    HERMES_ROOT="$ROOT" HERMES_RELEASE="$DEST" /system/bin/sh "$DEST/worker/tick.sh" >/dev/null 2>&1 || true
+  fi
   exit 0
 fi
 
