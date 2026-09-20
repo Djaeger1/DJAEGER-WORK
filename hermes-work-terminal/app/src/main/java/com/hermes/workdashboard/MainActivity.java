@@ -842,19 +842,177 @@ public class MainActivity extends Activity {
     }
 
     private void showYouTubeVideoManager() {
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(12),dp(8),dp(12),dp(8));
-        EditText search=field("Cari judul / ID video","",false);box.addView(search);
-        LinearLayout filters=row();Button filter=actionButton("FILTER: SEMUA",false);Button find=actionButton("CARI",false);filters.addView(filter);filters.addView(find);box.addView(filters);
-        TextView info=text("Memuat video…",12,MUTED,false);box.addView(info);
-        ScrollView scroll=new ScrollView(this);LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);scroll.addView(list);box.addView(scroll,new LinearLayout.LayoutParams(-1,dp(390)));
-        LinearLayout pager=row();Button prev=actionButton("‹ SEBELUMNYA",false);Button next=actionButton("BERIKUTNYA ›",false);pager.addView(prev);pager.addView(next);box.addView(pager);
-        final int[] page={1};final String[] privacy={"all"};final Runnable[] load={null};
-        load[0]=()->{String q=search.getText().toString().trim();String path="/api/work/youtube/videos?page="+page[0]+"&limit=10&privacy="+privacy[0];if(!q.isEmpty())try{path+="&q="+java.net.URLEncoder.encode(q,"UTF-8");}catch(Exception ignored){}
-            apiAsync("GET",path,null,false,(code,response)->{list.removeAllViews();if(code<200||code>=300){info.setText("Gagal memuat daftar video. HTTP "+code);return;}try{JSONObject j=new JSONObject(response);JSONArray items=j.optJSONArray("items");int total=j.optInt("total",0);boolean more=j.optBoolean("has_more",false);info.setText("Halaman "+page[0]+" · "+total+" video");prev.setEnabled(page[0]>1);next.setEnabled(more);if(items==null||items.length()==0){list.addView(text("Tidak ada video pada filter ini.",12,MUTED,false));return;}for(int i=0;i<items.length();i++){JSONObject v=items.getJSONObject(i);final String pid=v.optString("publication_id");final String title=v.optString("topic","Tanpa judul");final String pr=v.optString("privacy","private").toUpperCase(Locale.US);LinearLayout vc=card();vc.addView(text(title,14,TEXT,true));vc.addView(text(pr+" · "+v.optString("status","—")+"\n"+v.optString("updated_at",""),11,MUTED,false));Button pb=actionButton("UBAH PRIVASI",false);vc.addView(pb);list.addView(vc);pb.setOnClickListener(x->showYouTubePrivacyDialog(pid,title,load[0]));}}catch(Exception e){info.setText("Data Video Manager tidak valid.");}});};
-        filter.setOnClickListener(v->{String p=privacy[0];privacy[0]=p.equals("all")?"private":p.equals("private")?"unlisted":p.equals("unlisted")?"public":"all";filter.setText("FILTER: "+(privacy[0].equals("all")?"SEMUA":privacy[0].toUpperCase(Locale.US)));page[0]=1;load[0].run();});
-        find.setOnClickListener(v->{page[0]=1;load[0].run();});prev.setOnClickListener(v->{if(page[0]>1){page[0]--;load[0].run();}});next.setOnClickListener(v->{page[0]++;load[0].run();});
-        AlertDialog d=new AlertDialog.Builder(this).setTitle("KELOLA VIDEO").setView(box).setNegativeButton("TUTUP",null).create();d.setOnShowListener(x->load[0].run());d.show();
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(12), dp(8), dp(12), dp(8));
+
+        EditText search = field("Cari judul / ID video", "", false);
+        box.addView(search);
+
+        LinearLayout filters = row();
+        Button filter = actionButton("FILTER: SEMUA", false);
+        Button find = actionButton("CARI", false);
+        setVideoManagerRowButton(filter, true);
+        setVideoManagerRowButton(find, false);
+        filters.addView(filter);
+        filters.addView(find);
+        box.addView(filters);
+
+        TextView info = text("Memuat video…", 12, MUTED, false);
+        box.addView(info);
+
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(list);
+        box.addView(scroll, new LinearLayout.LayoutParams(-1, dp(390)));
+
+        LinearLayout pager = row();
+        Button prev = actionButton("‹ SEBELUMNYA", false);
+        Button next = actionButton("BERIKUTNYA ›", false);
+        setVideoManagerRowButton(prev, true);
+        setVideoManagerRowButton(next, false);
+        prev.setEnabled(false);
+        next.setEnabled(false);
+        pager.addView(prev);
+        pager.addView(next);
+        box.addView(pager);
+
+        final int[] page = {1};
+        final String[] privacy = {"all"};
+        final Runnable[] load = {null};
+
+        load[0] = () -> {
+            String q = search.getText().toString().trim();
+            String pathApi = "/api/work/youtube/videos?page=" + page[0] + "&limit=10&privacy=" + privacy[0];
+            if (!q.isEmpty()) {
+                try { pathApi += "&q=" + java.net.URLEncoder.encode(q, "UTF-8"); }
+                catch (Exception ignored) {}
+            }
+            apiAsync("GET", pathApi, null, false, (code, response) -> {
+                list.removeAllViews();
+                if (code < 200 || code >= 300) {
+                    info.setText("Gagal memuat daftar video. HTTP " + code);
+                    prev.setEnabled(page[0] > 1);
+                    next.setEnabled(false);
+                    return;
+                }
+                try {
+                    JSONObject j = new JSONObject(response);
+                    JSONArray items = j.optJSONArray("items");
+                    JSONObject counts = j.optJSONObject("counts");
+                    int total = j.optInt("total", 0);
+                    boolean more = j.optBoolean("has_more", false);
+
+                    String summary = "Halaman " + page[0] + " · " + total + " video";
+                    if (counts != null && "all".equals(privacy[0])) {
+                        summary += " · " + counts.optInt("private", 0) + " PRIVATE"
+                                + " · " + counts.optInt("unlisted", 0) + " UNLISTED"
+                                + " · " + counts.optInt("public", 0) + " PUBLIC";
+                    }
+                    info.setText(summary);
+                    prev.setEnabled(page[0] > 1);
+                    next.setEnabled(more);
+
+                    if (items == null || items.length() == 0) {
+                        list.addView(text("Tidak ada video pada filter ini.", 12, MUTED, false));
+                        return;
+                    }
+
+                    for (int i = 0; i < items.length(); i++) {
+                        JSONObject v = items.getJSONObject(i);
+                        final String pid = v.optString("publication_id");
+                        final String videoId = v.optString("video_id");
+                        final String title = v.optString("topic", "Tanpa judul");
+                        final String pr = v.optString("privacy", "private").toUpperCase(Locale.US);
+                        String status = v.optString("status", "—");
+                        String updated = v.optString("updated_at", "");
+                        String thumbState = v.optString("thumbnail_state", "");
+
+                        LinearLayout vc = card();
+                        LinearLayout head = row();
+                        head.setPadding(0, 0, 0, 0);
+
+                        ImageView thumb = new ImageView(this);
+                        thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                        thumb.setBackground(solidBg(Color.rgb(5, 17, 29), LINE, dp(9)));
+                        LinearLayout.LayoutParams thumbLp = new LinearLayout.LayoutParams(dp(112), dp(63));
+                        thumbLp.setMargins(0, 0, dp(10), 0);
+                        head.addView(thumb, thumbLp);
+
+                        LinearLayout meta = new LinearLayout(this);
+                        meta.setOrientation(LinearLayout.VERTICAL);
+                        meta.addView(text(title, 14, TEXT, true));
+                        String detail = pr + " · " + status;
+                        if (!thumbState.isEmpty()) detail += "\nThumbnail: " + localizeStatus(thumbState);
+                        if (!updated.isEmpty()) detail += "\n" + updated;
+                        meta.addView(text(detail, 11, MUTED, false));
+                        head.addView(meta, new LinearLayout.LayoutParams(0, -2, 1f));
+                        vc.addView(head);
+
+                        Button pb = actionButton("UBAH PRIVASI", false);
+                        vc.addView(pb);
+                        list.addView(vc);
+
+                        pb.setOnClickListener(x -> showYouTubePrivacyDialog(pid, title, load[0]));
+                        loadYouTubeThumbnail(thumb, videoId);
+                    }
+                } catch (Exception e) {
+                    info.setText("Data Video Manager tidak valid · " + e.getClass().getSimpleName());
+                }
+            });
+        };
+
+        filter.setOnClickListener(v -> {
+            String p = privacy[0];
+            privacy[0] = p.equals("all") ? "private"
+                    : p.equals("private") ? "unlisted"
+                    : p.equals("unlisted") ? "public" : "all";
+            filter.setText("FILTER: " + (privacy[0].equals("all") ? "SEMUA" : privacy[0].toUpperCase(Locale.US)));
+            page[0] = 1;
+            load[0].run();
+        });
+        find.setOnClickListener(v -> { page[0] = 1; load[0].run(); });
+        search.setOnEditorActionListener((v, actionId, event) -> { page[0] = 1; load[0].run(); return true; });
+        prev.setOnClickListener(v -> { if (page[0] > 1) { page[0]--; load[0].run(); } });
+        next.setOnClickListener(v -> { if (next.isEnabled()) { page[0]++; load[0].run(); } });
+
+        AlertDialog d = new AlertDialog.Builder(this)
+                .setTitle("KELOLA VIDEO")
+                .setView(box)
+                .setNegativeButton("TUTUP", null)
+                .create();
+        d.setOnShowListener(x -> load[0].run());
+        d.show();
     }
+
+    private void setVideoManagerRowButton(Button b, boolean first) {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, dp(48), 1f);
+        p.setMargins(first ? 0 : dp(4), dp(8), first ? dp(4) : 0, 0);
+        b.setLayoutParams(p);
+    }
+
+    private void loadYouTubeThumbnail(ImageView view, String videoId) {
+        if (videoId == null || videoId.trim().isEmpty()) return;
+        final String id = videoId.trim();
+        io.execute(() -> {
+            HttpURLConnection c = null;
+            try {
+                URL u = new URL("https://i.ytimg.com/vi/" + java.net.URLEncoder.encode(id, "UTF-8") + "/mqdefault.jpg");
+                c = (HttpURLConnection) u.openConnection();
+                c.setConnectTimeout(5000);
+                c.setReadTimeout(7000);
+                c.setRequestProperty("User-Agent", "DJAEGER-WORK/1.3.7");
+                if (c.getResponseCode() != 200) return;
+                final android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeStream(c.getInputStream());
+                if (bmp != null) runOnUiThread(() -> view.setImageBitmap(bmp));
+            } catch (Exception ignored) {
+            } finally {
+                if (c != null) c.disconnect();
+            }
+        });
+    }
+
     private void showYouTubePrivacyDialog(String publicationId,String title,Runnable reload){
         String[] opts={"PRIVATE","UNLISTED","PUBLIC"};new AlertDialog.Builder(this).setTitle(title).setSingleChoiceItems(opts,-1,(dialog,which)->{String target=opts[which].toLowerCase(Locale.US);dialog.dismiss();Runnable apply=()->{try{JSONObject p=new JSONObject();p.put("publication_id",publicationId);p.put("privacy",target);apiAsync("POST","/api/work/youtube/privacy",p.toString(),true,(code,response)->{Toast.makeText(this,code>=200&&code<300?"Privasi diubah ke "+target.toUpperCase(Locale.US):"Gagal mengubah privasi · HTTP "+code,Toast.LENGTH_LONG).show();if(code>=200&&code<300)reload.run();});}catch(Exception ignored){}};if("public".equals(target))new AlertDialog.Builder(this).setTitle("Publikasikan video?").setMessage("Video ini akan menjadi PUBLIC di YouTube.").setNegativeButton("BATAL",null).setPositiveButton("PUBLIKASIKAN",(d,w)->apply.run()).show();else apply.run();}).setNegativeButton("BATAL",null).show();
     }
@@ -1023,7 +1181,7 @@ public class MainActivity extends Activity {
         io.execute(() -> {
             StringBuilder report = new StringBuilder();
             report.append("===== HASIL PEMBARUAN DJAEGER WORK =====\n");
-            report.append("APP_VERSION=1.3.6\n");
+            report.append("APP_VERSION=1.3.7\n");
             report.append("RUNTIME_URL=").append(runtimeUrl()).append("\n");
             report.append("GENERATED_AT=").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new java.util.Date())).append("\n\n");
 
