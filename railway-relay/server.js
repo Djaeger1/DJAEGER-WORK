@@ -23,6 +23,7 @@ const pending = new Map();
 let deviceSeenAt = 0;
 let deviceMeta = {};
 let lastDirectUpdateProbeAt = 0;
+let directUpdateAuthRejectedRelease = "";
 
 function send(res, code, obj, extraHeaders={}) {
   const body = JSON.stringify(obj);
@@ -591,11 +592,12 @@ async function tryDirectSelfUpdateAuthProbe() {
   try {
     if(!deviceFresh()) return;
     if(Date.now()-lastDirectUpdateProbeAt<10*60*1000) return;
-    lastDirectUpdateProbeAt=Date.now();
 
     const status=decodeDeviceJson(await queueDeviceRead("/api/work/status",12000));
     const release=String(status?.release||"");
     if(releaseAtLeast(release,2,5,20)) return;
+    if(directUpdateAuthRejectedRelease===release) return;
+    lastDirectUpdateProbeAt=Date.now();
 
     const remote=decodeDeviceJson(await queueDeviceRead("/api/work/remote",12000));
     const token=String(remote?.remote_key||"");
@@ -607,7 +609,8 @@ async function tryDirectSelfUpdateAuthProbe() {
     const upstream=await queueDevicePostWithToken("/api/work/update",token,null,90000);
     const code=Number(upstream?.status||502);
     if(code===401||code===403) {
-      console.log("HERMES_DIRECT_UPDATE_AUTH_PROBE "+JSON.stringify({state:"AUTH_REJECTED",http:code,release}));
+      directUpdateAuthRejectedRelease=release;
+      console.log("HERMES_DIRECT_UPDATE_AUTH_PROBE "+JSON.stringify({state:"AUTH_REJECTED",http:code,release,retry:"DISABLED_UNTIL_RELEASE_CHANGES"}));
       return;
     }
     if(code<200||code>=300) {
