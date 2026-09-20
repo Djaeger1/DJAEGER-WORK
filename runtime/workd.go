@@ -1432,6 +1432,37 @@ func (s *S)youtubePrivacy(w http.ResponseWriter,r *http.Request){
  js(w,map[string]any{"ok":true,"video_id":q.VideoID,"privacy":p,"state":"SUCCESS"})
 }
 
+type YouTubeVideoRecord struct {
+ PlannerID string `json:"planner_id"`
+ VideoID string `json:"video_id"`
+ Topic string `json:"topic"`
+ URL string `json:"url"`
+ Privacy string `json:"privacy"`
+ Status string `json:"status"`
+ ThumbnailState string `json:"thumbnail_state"`
+ CreatedAt string `json:"created_at"`
+ UpdatedAt string `json:"updated_at"`
+}
+func (s *S)youtubeVideoRegistry()[]YouTubeVideoRecord{
+ pubs:=s.loadPublications();seen:=map[string]bool{};out:=[]YouTubeVideoRecord{}
+ state:=s.youtubePublishStatus()
+ for i:=len(pubs)-1;i>=0;i--{p:=pubs[i];if p.Platform!="youtube"||p.ExternalID==""||seen[p.ExternalID]{continue};seen[p.ExternalID]=true
+  privacy:="private";status:=p.Status;updated:=p.RecordedAt;thumb:=""
+  if fmt.Sprint(state["video_id"])==p.ExternalID{if x:=strings.TrimSpace(fmt.Sprint(state["privacy"]));x!=""&&x!="<nil>"{privacy=x};if x:=strings.TrimSpace(fmt.Sprint(state["status"]));x!=""&&x!="<nil>"{status=x};if x:=strings.TrimSpace(fmt.Sprint(state["updated_at"]));x!=""&&x!="<nil>"{updated=x};thumb=strings.TrimSpace(fmt.Sprint(state["thumbnail_state"]))}
+  out=append(out,YouTubeVideoRecord{PlannerID:p.PlannerID,VideoID:p.ExternalID,Topic:p.Topic,URL:p.URL,Privacy:privacy,Status:status,ThumbnailState:thumb,CreatedAt:p.RecordedAt,UpdatedAt:updated})
+ }
+ return out
+}
+func (s *S)youtubeVideos(w http.ResponseWriter,r *http.Request){
+ if r.Method!="GET"{http.Error(w,"method not allowed",405);return}
+ q:=strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")));filter:=strings.ToLower(strings.TrimSpace(r.URL.Query().Get("privacy")))
+ page,_:=strconv.Atoi(r.URL.Query().Get("page"));if page<1{page=1};limit,_:=strconv.Atoi(r.URL.Query().Get("limit"));if limit<1||limit>50{limit=10}
+ all:=s.youtubeVideoRegistry();filtered:=[]YouTubeVideoRecord{}
+ for _,v:=range all{if filter!=""&&filter!="all"&&v.Privacy!=filter{continue};if q!=""&&!strings.Contains(strings.ToLower(v.Topic+" "+v.VideoID),q){continue};filtered=append(filtered,v)}
+ total:=len(filtered);start:=(page-1)*limit;if start>total{start=total};end:=start+limit;if end>total{end=total}
+ js(w,map[string]any{"state":"READY","engine":"YOUTUBE_VIDEO_MANAGER_V3","page":page,"limit":limit,"total":total,"has_more":end<total,"items":filtered[start:end]})
+}
+
 func (s *S)youtubeOAuthStatus()map[string]any{
  c,ok:=s.loadYouTubeOAuth();state:="NOT_CONFIGURED";verifiedAt:=""
  if ok{state="CONFIGURED";var v map[string]any;if b,e:=os.ReadFile(s.youtubeOAuthStatePath());e==nil&&json.Unmarshal(b,&v)==nil{if x:=strings.TrimSpace(fmt.Sprint(v["state"]));x!=""&&x!="<nil>"{state=x};verifiedAt=strings.TrimSpace(fmt.Sprint(v["verified_at"]))}}
@@ -1682,7 +1713,7 @@ func convergeHermesWorkersNative(s *S){
  b,_:=json.Marshal(v);_ = os.WriteFile(filepath.Join(s.Root,"state","process-converge.json"),b,0600)
 }
 
-func main(){root:=flag.String("root","/data/adb/hermes_work","");rel:=flag.String("release","","");flag.Parse();p:=8766;if x:=readenv(filepath.Join(*rel,"config","work.env"),"WORK_PORT");x!=""{p,_=strconv.Atoi(x)};s:=&S{Root:*root,Rel:*rel,Port:p,Token:readenv(filepath.Join(*root,"config.env"),"ADMIN_TOKEN")};enforceEmergencyQuarantine(s);m:=http.NewServeMux();m.HandleFunc("/",s.index);m.HandleFunc("/api/work/status",s.status);m.HandleFunc("/api/work/action",s.action);m.HandleFunc("/api/work/diagnostics",s.diag);m.HandleFunc("/api/work/memory-audit",s.memoryAudit);m.HandleFunc("/api/work/maintenance",s.maintenance);m.HandleFunc("/api/work/update",s.update);m.HandleFunc("/api/work/collect",s.collect);m.HandleFunc("/api/work/research",s.research);m.HandleFunc("/api/work/brief",s.brief);m.HandleFunc("/api/work/opportunities",s.opportunities);m.HandleFunc("/api/work/planner",s.planner);m.HandleFunc("/api/work/script-prep",s.scriptPrep);m.HandleFunc("/api/work/scripts",s.scripts);m.HandleFunc("/api/work/production",s.production);m.HandleFunc("/api/work/production/download",s.productionDownload);m.HandleFunc("/api/work/handoff",s.handoff);m.HandleFunc("/api/work/desk",s.desk);m.HandleFunc("/api/work/job",s.jobDetail);m.HandleFunc("/api/work/studio",s.studio);m.HandleFunc("/api/work/publication",s.publication);m.HandleFunc("/api/work/youtube/oauth",s.youtubeOAuth);m.HandleFunc("/api/work/youtube/publish",s.youtubePublish);m.HandleFunc("/api/work/youtube/privacy",s.youtubePrivacy);m.HandleFunc("/api/work/channel/import",s.channelImport);m.HandleFunc("/api/work/performance",s.performance);m.HandleFunc("/api/work/schedule",s.schedule);m.HandleFunc("/api/work/run-research",s.runResearch);m.HandleFunc("/api/work/daily",s.daily);m.HandleFunc("/api/work/channel",s.channel);m.HandleFunc("/api/work/knowledge",s.knowledge);m.HandleFunc("/api/work/recovery",s.recovery);m.HandleFunc("/api/work/bridge",s.bridgeStatus);m.HandleFunc("/api/work/autoupdate",s.autoUpdateStatus);m.HandleFunc("/api/work/remote",s.remoteInfo);if readenv(filepath.Join(s.Rel,"config","work.env"),"EMERGENCY_QUARANTINE")=="1"{go func(){time.Sleep(2*time.Second);convergeHermesWorkersNative(s)}()};go s.schedulerLoop();go s.bridgeLoop();go s.remoteLinkLoop();http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d",p),m)}
+func main(){root:=flag.String("root","/data/adb/hermes_work","");rel:=flag.String("release","","");flag.Parse();p:=8766;if x:=readenv(filepath.Join(*rel,"config","work.env"),"WORK_PORT");x!=""{p,_=strconv.Atoi(x)};s:=&S{Root:*root,Rel:*rel,Port:p,Token:readenv(filepath.Join(*root,"config.env"),"ADMIN_TOKEN")};enforceEmergencyQuarantine(s);m:=http.NewServeMux();m.HandleFunc("/",s.index);m.HandleFunc("/api/work/status",s.status);m.HandleFunc("/api/work/action",s.action);m.HandleFunc("/api/work/diagnostics",s.diag);m.HandleFunc("/api/work/memory-audit",s.memoryAudit);m.HandleFunc("/api/work/maintenance",s.maintenance);m.HandleFunc("/api/work/update",s.update);m.HandleFunc("/api/work/collect",s.collect);m.HandleFunc("/api/work/research",s.research);m.HandleFunc("/api/work/brief",s.brief);m.HandleFunc("/api/work/opportunities",s.opportunities);m.HandleFunc("/api/work/planner",s.planner);m.HandleFunc("/api/work/script-prep",s.scriptPrep);m.HandleFunc("/api/work/scripts",s.scripts);m.HandleFunc("/api/work/production",s.production);m.HandleFunc("/api/work/production/download",s.productionDownload);m.HandleFunc("/api/work/handoff",s.handoff);m.HandleFunc("/api/work/desk",s.desk);m.HandleFunc("/api/work/job",s.jobDetail);m.HandleFunc("/api/work/studio",s.studio);m.HandleFunc("/api/work/publication",s.publication);m.HandleFunc("/api/work/youtube/oauth",s.youtubeOAuth);m.HandleFunc("/api/work/youtube/publish",s.youtubePublish);m.HandleFunc("/api/work/youtube/privacy",s.youtubePrivacy);m.HandleFunc("/api/work/youtube/videos",s.youtubeVideos);m.HandleFunc("/api/work/channel/import",s.channelImport);m.HandleFunc("/api/work/performance",s.performance);m.HandleFunc("/api/work/schedule",s.schedule);m.HandleFunc("/api/work/run-research",s.runResearch);m.HandleFunc("/api/work/daily",s.daily);m.HandleFunc("/api/work/channel",s.channel);m.HandleFunc("/api/work/knowledge",s.knowledge);m.HandleFunc("/api/work/recovery",s.recovery);m.HandleFunc("/api/work/bridge",s.bridgeStatus);m.HandleFunc("/api/work/autoupdate",s.autoUpdateStatus);m.HandleFunc("/api/work/remote",s.remoteInfo);if readenv(filepath.Join(s.Rel,"config","work.env"),"EMERGENCY_QUARANTINE")=="1"{go func(){time.Sleep(2*time.Second);convergeHermesWorkersNative(s)}()};go s.schedulerLoop();go s.bridgeLoop();go s.remoteLinkLoop();http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d",p),m)}
 const page=`<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HERMES WORK</title>
