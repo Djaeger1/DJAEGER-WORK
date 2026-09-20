@@ -1,5 +1,5 @@
 package main
-import("archive/zip";"crypto/rand";"crypto/sha256";"crypto/tls";"crypto/x509";"encoding/base64";"encoding/hex";"encoding/json";"flag";"fmt";"io";"net";"net/http";"net/url";"os";"path/filepath";"sort";"strconv";"strings";"sync";"syscall";"time")
+import("archive/zip";"bytes";"crypto/rand";"crypto/sha256";"crypto/tls";"crypto/x509";"encoding/base64";"encoding/hex";"encoding/json";"flag";"fmt";"io";"net";"net/http";"net/url";"os";"path/filepath";"sort";"strconv";"strings";"sync";"syscall";"time")
 type S struct{Root,Rel string;Port int;Token string}
 func runtimeRelease(s *S)string{v:=filepath.Base(filepath.Clean(s.Rel));if v==""||v=="."||v=="/"{return"UNKNOWN"};return v}
 func readenv(p,k string)string{b,_:=os.ReadFile(p);for _,l:=range strings.Split(string(b),"\n"){x:=strings.SplitN(l,"=",2);if len(x)==2&&x[0]==k{return strings.TrimSpace(x[1])}};return ""}
@@ -1330,17 +1330,11 @@ func downloadYouTubeAsset(raw string,maxBytes int64)([]byte,error){
  return b,nil
 }
 func uploadYouTubeThumbnail(token,videoID,raw string)error{
- if strings.TrimSpace(raw)==""{return nil}
- img,e:=downloadYouTubeAsset(raw,8<<20);if e!=nil{return e}
- boundary:="djaegerthumb"+strconv.FormatInt(time.Now().UnixNano(),10)
- var body strings.Builder
- body.WriteString("--"+boundary+"\r\n")
- body.WriteString("Content-Disposition: form-data; name=\"media\"; filename=\"thumbnail.jpg\"\r\n")
- body.WriteString("Content-Type: image/jpeg\r\n\r\n")
- head:=[]byte(body.String());tail:=[]byte("\r\n--"+boundary+"--\r\n")
- payload:=make([]byte,0,len(head)+len(img)+len(tail));payload=append(payload,head...);payload=append(payload,img...);payload=append(payload,tail...)
- req,e:=http.NewRequest("POST","https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId="+url.QueryEscape(videoID)+"&uploadType=multipart",strings.NewReader(string(payload)));if e!=nil{return e}
- req.Header.Set("Authorization","Bearer "+token);req.Header.Set("Content-Type","multipart/form-data; boundary="+boundary)
+ if strings.TrimSpace(raw)==""{return fmt.Errorf("thumbnail source missing")}
+ img,e:=downloadYouTubeAsset(raw,50<<20);if e!=nil{return e}
+ mime:=http.DetectContentType(img);if strings.HasPrefix(mime,"image/jpeg"){mime="image/jpeg"}else if strings.HasPrefix(mime,"image/png"){mime="image/png"}else{return fmt.Errorf("unsupported thumbnail mime: %s",mime)}
+ req,e:=http.NewRequest("POST","https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId="+url.QueryEscape(videoID)+"&uploadType=media",bytes.NewReader(img));if e!=nil{return e}
+ req.ContentLength=int64(len(img));req.Header.Set("Authorization","Bearer "+token);req.Header.Set("Content-Type",mime)
  cl:=androidHTTPClient();cl.Timeout=90*time.Second;resp,e:=cl.Do(req);if e!=nil{return e};defer resp.Body.Close()
  b,_:=io.ReadAll(io.LimitReader(resp.Body,262144));if resp.StatusCode<200||resp.StatusCode>=300{return fmt.Errorf("%s",youtubeAPIError(b,resp.StatusCode))}
  return nil
@@ -1435,6 +1429,25 @@ func (s *S)youtubePrivacy(w http.ResponseWriter,r *http.Request){
  rec.Privacy=p;rec.Status="PRIVACY_"+strings.ToUpper(p);if e=s.upsertYouTubeVideoRecord(rec);e!=nil{http.Error(w,"privacy changed but registry update failed",500);return}
  s.writeYouTubePublishState(map[string]any{"state":"SUCCESS","privacy":p,"planner_id":rec.PlannerID,"topic":rec.Topic,"video_id":rec.VideoID,"url":rec.URL,"status":rec.Status,"thumbnail_state":rec.ThumbnailState,"engine":"YOUTUBE_DEVICE_PUBLISHER_V3"})
  js(w,map[string]any{"ok":true,"publication_id":rec.PublicationID,"video_id":rec.VideoID,"privacy":p,"state":"SUCCESS"})
+}
+
+func (s *S)youtubeThumbnail(w http.ResponseWriter,r *http.Request){
+ if r.Method!="POST"{http.Error(w,"method not allowed",405);return}
+ if !s.auth(r){http.Error(w,"unauthorized",401);return}
+ if !privateRemote(r)||loopbackRemote(r){http.Error(w,"local_lan_only",403);return}
+ var q struct{PublicationID string `json:"publication_id"`}
+ if json.NewDecoder(io.LimitReader(r.Body,65536)).Decode(&q)!=nil{http.Error(w,"invalid json",400);return}
+ q.PublicationID=strings.TrimSpace(q.PublicationID);if q.PublicationID==""{http.Error(w,"publication_id required",400);return}
+ rec,ok:=s.findYouTubeVideoRecord(q.PublicationID);if !ok||rec.VideoID==""{http.Error(w,"publication not found",404);return}
+ sr,ok:=s.loadStudioResult(rec.PlannerID);if !ok||strings.TrimSpace(sr.ThumbnailURL)==""{http.Error(w,"thumbnail source not found",409);return}
+ c,ok:=s.loadYouTubeOAuth();if !ok{http.Error(w,"youtube oauth not configured",409);return}
+ token,_,e:=youtubeAccessToken(c);if e!=nil{http.Error(w,"oauth refresh failed: "+e.Error(),401);return}
+ if e=uploadYouTubeThumbnail(token,rec.VideoID,sr.ThumbnailURL);e!=nil{
+  rec.ThumbnailState="FAILED";rec.ThumbnailError=youtubeClip(e.Error(),300);_ = s.upsertYouTubeVideoRecord(rec)
+  http.Error(w,"thumbnail upload failed: "+rec.ThumbnailError,502);return
+ }
+ rec.ThumbnailState="SUCCESS";rec.ThumbnailError="";if e=s.upsertYouTubeVideoRecord(rec);e!=nil{http.Error(w,"thumbnail uploaded but registry update failed",500);return}
+ js(w,map[string]any{"ok":true,"publication_id":rec.PublicationID,"video_id":rec.VideoID,"thumbnail_state":"SUCCESS","state":"SUCCESS"})
 }
 
 type YouTubeVideoRecord struct {
@@ -1741,7 +1754,7 @@ func convergeHermesWorkersNative(s *S){
  b,_:=json.Marshal(v);_ = os.WriteFile(filepath.Join(s.Root,"state","process-converge.json"),b,0600)
 }
 
-func main(){root:=flag.String("root","/data/adb/hermes_work","");rel:=flag.String("release","","");flag.Parse();p:=8766;if x:=readenv(filepath.Join(*rel,"config","work.env"),"WORK_PORT");x!=""{p,_=strconv.Atoi(x)};s:=&S{Root:*root,Rel:*rel,Port:p,Token:readenv(filepath.Join(*root,"config.env"),"ADMIN_TOKEN")};enforceEmergencyQuarantine(s);m:=http.NewServeMux();m.HandleFunc("/",s.index);m.HandleFunc("/api/work/status",s.status);m.HandleFunc("/api/work/action",s.action);m.HandleFunc("/api/work/diagnostics",s.diag);m.HandleFunc("/api/work/memory-audit",s.memoryAudit);m.HandleFunc("/api/work/maintenance",s.maintenance);m.HandleFunc("/api/work/update",s.update);m.HandleFunc("/api/work/collect",s.collect);m.HandleFunc("/api/work/research",s.research);m.HandleFunc("/api/work/brief",s.brief);m.HandleFunc("/api/work/opportunities",s.opportunities);m.HandleFunc("/api/work/planner",s.planner);m.HandleFunc("/api/work/script-prep",s.scriptPrep);m.HandleFunc("/api/work/scripts",s.scripts);m.HandleFunc("/api/work/production",s.production);m.HandleFunc("/api/work/production/download",s.productionDownload);m.HandleFunc("/api/work/handoff",s.handoff);m.HandleFunc("/api/work/desk",s.desk);m.HandleFunc("/api/work/job",s.jobDetail);m.HandleFunc("/api/work/studio",s.studio);m.HandleFunc("/api/work/publication",s.publication);m.HandleFunc("/api/work/youtube/oauth",s.youtubeOAuth);m.HandleFunc("/api/work/youtube/publish",s.youtubePublish);m.HandleFunc("/api/work/youtube/privacy",s.youtubePrivacy);m.HandleFunc("/api/work/youtube/videos",s.youtubeVideos);m.HandleFunc("/api/work/channel/import",s.channelImport);m.HandleFunc("/api/work/performance",s.performance);m.HandleFunc("/api/work/schedule",s.schedule);m.HandleFunc("/api/work/run-research",s.runResearch);m.HandleFunc("/api/work/daily",s.daily);m.HandleFunc("/api/work/channel",s.channel);m.HandleFunc("/api/work/knowledge",s.knowledge);m.HandleFunc("/api/work/recovery",s.recovery);m.HandleFunc("/api/work/bridge",s.bridgeStatus);m.HandleFunc("/api/work/autoupdate",s.autoUpdateStatus);m.HandleFunc("/api/work/remote",s.remoteInfo);if readenv(filepath.Join(s.Rel,"config","work.env"),"EMERGENCY_QUARANTINE")=="1"{go func(){time.Sleep(2*time.Second);convergeHermesWorkersNative(s)}()};go s.schedulerLoop();go s.bridgeLoop();go s.remoteLinkLoop();http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d",p),m)}
+func main(){root:=flag.String("root","/data/adb/hermes_work","");rel:=flag.String("release","","");flag.Parse();p:=8766;if x:=readenv(filepath.Join(*rel,"config","work.env"),"WORK_PORT");x!=""{p,_=strconv.Atoi(x)};s:=&S{Root:*root,Rel:*rel,Port:p,Token:readenv(filepath.Join(*root,"config.env"),"ADMIN_TOKEN")};enforceEmergencyQuarantine(s);m:=http.NewServeMux();m.HandleFunc("/",s.index);m.HandleFunc("/api/work/status",s.status);m.HandleFunc("/api/work/action",s.action);m.HandleFunc("/api/work/diagnostics",s.diag);m.HandleFunc("/api/work/memory-audit",s.memoryAudit);m.HandleFunc("/api/work/maintenance",s.maintenance);m.HandleFunc("/api/work/update",s.update);m.HandleFunc("/api/work/collect",s.collect);m.HandleFunc("/api/work/research",s.research);m.HandleFunc("/api/work/brief",s.brief);m.HandleFunc("/api/work/opportunities",s.opportunities);m.HandleFunc("/api/work/planner",s.planner);m.HandleFunc("/api/work/script-prep",s.scriptPrep);m.HandleFunc("/api/work/scripts",s.scripts);m.HandleFunc("/api/work/production",s.production);m.HandleFunc("/api/work/production/download",s.productionDownload);m.HandleFunc("/api/work/handoff",s.handoff);m.HandleFunc("/api/work/desk",s.desk);m.HandleFunc("/api/work/job",s.jobDetail);m.HandleFunc("/api/work/studio",s.studio);m.HandleFunc("/api/work/publication",s.publication);m.HandleFunc("/api/work/youtube/oauth",s.youtubeOAuth);m.HandleFunc("/api/work/youtube/publish",s.youtubePublish);m.HandleFunc("/api/work/youtube/privacy",s.youtubePrivacy);m.HandleFunc("/api/work/youtube/thumbnail",s.youtubeThumbnail);m.HandleFunc("/api/work/youtube/videos",s.youtubeVideos);m.HandleFunc("/api/work/channel/import",s.channelImport);m.HandleFunc("/api/work/performance",s.performance);m.HandleFunc("/api/work/schedule",s.schedule);m.HandleFunc("/api/work/run-research",s.runResearch);m.HandleFunc("/api/work/daily",s.daily);m.HandleFunc("/api/work/channel",s.channel);m.HandleFunc("/api/work/knowledge",s.knowledge);m.HandleFunc("/api/work/recovery",s.recovery);m.HandleFunc("/api/work/bridge",s.bridgeStatus);m.HandleFunc("/api/work/autoupdate",s.autoUpdateStatus);m.HandleFunc("/api/work/remote",s.remoteInfo);if readenv(filepath.Join(s.Rel,"config","work.env"),"EMERGENCY_QUARANTINE")=="1"{go func(){time.Sleep(2*time.Second);convergeHermesWorkersNative(s)}()};go s.schedulerLoop();go s.bridgeLoop();go s.remoteLinkLoop();http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d",p),m)}
 const page=`<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HERMES WORK</title>
