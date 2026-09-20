@@ -33,6 +33,9 @@ jobs:
           grep -q 'case"safe_mode","quarantine"' runtime/workd.go
           grep -q 'tether_preserved' runtime/workd.go
           grep -q 'EMERGENCY_QUARANTINE.*5\*time.Minute' runtime/workd.go
+          grep -q 'convergeHermesWorkersNative' runtime/workd.go
+          grep -q 'HERMES_WORK_RELEASE_WORKERS_NATIVE' runtime/workd.go
+          ! grep -q 'process-converge.sh' runtime/worker/tick.sh
       - name: Verify release
         run: |
           grep -q '"version":"v2.5.19-self-enforced-quarantine"' runtime/manifest.json
