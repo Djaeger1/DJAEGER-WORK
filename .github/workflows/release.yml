@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -Fq 'UPDATE_CHANNEL_URL=https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json' runtime/config/work.env
-          grep -Fq '"version":"v2.5.15-github-shadow-readonly"' runtime/manifest.json
+          grep -Fq '"version":"v2.5.16-memory-forensics"' runtime/manifest.json
           sh -n runtime/worker/tick.sh
           sh -n runtime/worker/handoff.sh
           sh -n runtime/worker/autoupdate.sh
@@ -49,7 +49,7 @@ jobs:
           grep -Fq 'memBreakdown()' runtime/workd.go
           grep -Fq 'processMemorySummary(15)' runtime/workd.go
           grep -Fq 'smaps_rollup' runtime/workd.go
-          grep -Fq '/sys/block/zram0/mm_stat' runtime/workd.go
+          grep -Fq 'filepath.Glob("/sys/block/zram*/mm_stat")' runtime/workd.go
           grep -Fq 'echo $$ > "$PID"' runtime/worker/autoupdate.sh
           grep -Fq 'DAEMON_LOCK="$STATE/autoupdate.daemon.lock"' runtime/worker/autoupdate.sh
           ! grep -Fq 'echo $ > "$PID"' runtime/worker/autoupdate.sh
@@ -74,6 +74,15 @@ jobs:
           grep -Fq 'worker=reason' runtime/workd.go
           ! sed -n '/func (s \*S)bridgeSnapshot()/,/func (s \*S)ntfyTopic/p' runtime/workd.go | grep -Fq 'process_memory'
           grep -Fq 'MIN_MEM_KB=163840' runtime/worker/autoupdate.sh
+          grep -Fq '*memory-forensics*' runtime/worker/autoupdate.sh
+          grep -Fq 'status_fallback' runtime/workd.go
+          grep -Fq 'RssAnon' runtime/workd.go
+          grep -Fq 'VmSwap' runtime/workd.go
+          grep -Fq 'memoryPressureSummary()' runtime/workd.go
+          grep -Fq 'swapSummary()' runtime/workd.go
+          grep -Fq 'topAnonProcesses(10)' runtime/workd.go
+          ! sed -n '/func (s \*S)bridgeSnapshot()/,/func (s \*S)ntfyTopic/p' runtime/workd.go | grep -Fq '"process_memory"'
+          grep -Fq 'MAX_TEMP_RAW=430' runtime/worker/autoupdate.sh
 
       - name: Build ARMv7 runtime
         shell: bash
@@ -92,16 +101,16 @@ jobs:
           cp config/work.env out/payload/config/work.env
           chmod 755 out/payload/bin/workd out/payload/worker/*.sh
           cd out
-          zip -Xqr ../HERMES_WORK_RUNTIME_v2.5.15_GITHUB_SHADOW_READONLY.zip manifest.json payload
+          zip -Xqr ../HERMES_WORK_RUNTIME_v2.5.16_MEMORY_FORENSICS.zip manifest.json payload
           cd ..
-          sha256sum HERMES_WORK_RUNTIME_v2.5.15_GITHUB_SHADOW_READONLY.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v2.5.15_GITHUB_SHADOW_READONLY.zip.sha256
-          printf '{"channel":"stable","version":"v2.5.15-github-shadow-readonly","bundle":"HERMES_WORK_RUNTIME_v2.5.15_GITHUB_SHADOW_READONLY.zip","sha256":"%s"}\n' "$(cat HERMES_WORK_RUNTIME_v2.5.15_GITHUB_SHADOW_READONLY.zip.sha256)" > channel.json
+          sha256sum HERMES_WORK_RUNTIME_v2.5.16_MEMORY_FORENSICS.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v2.5.16_MEMORY_FORENSICS.zip.sha256
+          printf '{"channel":"stable","version":"v2.5.16-memory-forensics","bundle":"HERMES_WORK_RUNTIME_v2.5.16_MEMORY_FORENSICS.zip","sha256":"%s"}\n' "$(cat HERMES_WORK_RUNTIME_v2.5.16_MEMORY_FORENSICS.zip.sha256)" > channel.json
 
       - name: Upload installable package
         uses: actions/upload-artifact@v4
         with:
-          name: HERMES_WORK_RUNTIME_v2.5.15_GITHUB_SHADOW_READONLY
-          path: runtime/HERMES_WORK_RUNTIME_v2.5.15_GITHUB_SHADOW_READONLY.zip
+          name: HERMES_WORK_RUNTIME_v2.5.16_MEMORY_FORENSICS
+          path: runtime/HERMES_WORK_RUNTIME_v2.5.16_MEMORY_FORENSICS.zip
           retention-days: 30
 
       - name: Publish isolated stable channel
@@ -109,8 +118,8 @@ jobs:
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"
-          cp runtime/HERMES_WORK_RUNTIME_v2.5.15_GITHUB_SHADOW_READONLY.zip "$tmp/"
-          cp runtime/HERMES_WORK_RUNTIME_v2.5.15_GITHUB_SHADOW_READONLY.zip.sha256 "$tmp/"
+          cp runtime/HERMES_WORK_RUNTIME_v2.5.16_MEMORY_FORENSICS.zip "$tmp/"
+          cp runtime/HERMES_WORK_RUNTIME_v2.5.16_MEMORY_FORENSICS.zip.sha256 "$tmp/"
           cp runtime/channel.json "$tmp/"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -119,15 +128,15 @@ jobs:
             git fetch origin main
             git checkout -B main origin/main
             mkdir -p release
-            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.15_GITHUB_SHADOW_READONLY.zip" release/
-            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.15_GITHUB_SHADOW_READONLY.zip.sha256" release/
+            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.16_MEMORY_FORENSICS.zip" release/
+            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.16_MEMORY_FORENSICS.zip.sha256" release/
             cp "$tmp/channel.json" release/
             git add release/
             if git diff --cached --quiet; then
               echo "Release channel already current."
               exit 0
             fi
-            git commit -m "Publish DJAEGER WORK v2.5.15 github shadow readonly"
+            git commit -m "Publish DJAEGER WORK v2.5.16 memory forensics"
             if git push origin HEAD:main; then
               exit 0
             fi
