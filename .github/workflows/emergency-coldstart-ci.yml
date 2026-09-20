@@ -53,8 +53,8 @@ jobs:
 
       - name: Verify release
         run: |
-          grep -q '"version":"v2.5.18-emergency-coldstart-quarantine"' runtime/manifest.json
-          grep -q 'HERMES_WORK_RUNTIME_v2.5.18_EMERGENCY_COLDSTART_QUARANTINE' .github/workflows/release.yml
+          grep -Eq '"version":"v2\.5\.(18-emergency-coldstart-quarantine|19-self-enforced-quarantine)"' runtime/manifest.json
+          grep -Eq 'HERMES_WORK_RUNTIME_v2\.5\.(18_EMERGENCY_COLDSTART_QUARANTINE|19_SELF_ENFORCED_QUARANTINE)' .github/workflows/release.yml
 
       - name: Report
         run: |
