@@ -1,0 +1,64 @@
+name: Emergency cold-start quarantine CI
+
+on:
+  push:
+    branches: [emergency-coldstart-quarantine-v2518]
+  pull_request:
+    branches: [main]
+    paths:
+      - "runtime/**"
+      - ".github/workflows/release.yml"
+      - ".github/workflows/emergency-coldstart-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.23.x'
+          cache: false
+
+      - name: ARMv7 build
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -o /tmp/workd ./runtime/workd.go
+
+      - name: Shell syntax
+        run: |
+          sh -n runtime/worker/tick.sh
+          sh -n runtime/worker/handoff.sh
+          sh -n runtime/worker/process-converge.sh
+          sh -n runtime/worker/autoupdate.sh
+
+      - name: Verify quarantine defaults
+        run: |
+          grep -qx 'EMERGENCY_QUARANTINE=1' runtime/config/work.env
+          grep -qx 'GITHUB_CONTROL_SHADOW=0' runtime/config/work.env
+          grep -q 'EMERGENCY_CPU_THERMAL_QUARANTINE' runtime/worker/tick.sh
+          grep -q 'EMERGENCY_CPU_THERMAL_QUARANTINE' runtime/worker/handoff.sh
+          grep -q 'EMERGENCY_QUARANTINE' runtime/workd.go
+          grep -q 'emergency_quarantine' runtime/workd.go
+
+      - name: Verify helper suppression
+        run: |
+          grep -q 'process-converge.sh' runtime/worker/tick.sh
+          grep -q 'process-converge.sh' runtime/worker/handoff.sh
+          grep -q 'rm -f "$ROOT/state/autoupdate.pid"' runtime/worker/tick.sh
+          grep -q 'rm -rf "$ROOT/state/autoupdate.daemon.lock"' runtime/worker/tick.sh
+          ! grep -Eq 'reboot|setprop|drop_caches|system_server|telephony|networkstack|qcril|force-stop' runtime/worker/tick.sh
+
+      - name: Verify release
+        run: |
+          grep -q '"version":"v2.5.18-emergency-coldstart-quarantine"' runtime/manifest.json
+          grep -q 'HERMES_WORK_RUNTIME_v2.5.18_EMERGENCY_COLDSTART_QUARANTINE' .github/workflows/release.yml
+
+      - name: Report
+        run: |
+          echo "COLDSTART_QUARANTINE=PASS"
+          echo "HEAVY_WORKERS=OFF"
+          echo "REMOTE_CONTROL=CORE_ONLY"
+          echo "ANDROID_MODEM_SYSTEM=UNTOUCHED"
