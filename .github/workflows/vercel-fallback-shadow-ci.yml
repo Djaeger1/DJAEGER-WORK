@@ -28,11 +28,14 @@ jobs:
           bash -n runtime/worker/github-control-shadow.sh
           bash -n runtime/worker/tick.sh
 
-      - name: Verify shadow remains disabled by default
+      - name: Verify observer activation remains read-only
         run: |
-          grep -qx 'GITHUB_CONTROL_SHADOW=0' runtime/config/work.env
+          grep -qx 'GITHUB_CONTROL_SHADOW=1' runtime/config/work.env
           grep -q 'GITHUB_CONTROL_INTERVAL_SECONDS=300' runtime/config/work.env
           grep -q 'DJAEGER-Vercel-Gateway/main/control/desired.json' runtime/config/work.env
+          grep -q 'v2.5.15-github-shadow-readonly' runtime/manifest.json
+          grep -q 'github_control_state' runtime/workd.go
+          grep -q 'github_control_writes_allowed' runtime/workd.go
 
       - name: Verify read-only contract
         run: |
@@ -50,4 +53,4 @@ jobs:
         run: |
           echo "SHADOW_SAFETY=PASS"
           echo "DEVICE_WRITES=BLOCKED"
-          echo "DEFAULT_ACTIVATION=OFF"
+          echo "OBSERVER_ACTIVATION=ON_READ_ONLY"
