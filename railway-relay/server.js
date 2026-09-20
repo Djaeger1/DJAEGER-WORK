@@ -573,7 +573,7 @@ async function autonomousMaintenanceTick() {
     const ch=await chResp.json();
     const latest=String(ch?.version||"");
     if(!latest || latest===release) return;
-    const repair=/memory|recovery|forensics|pressure-guard|autonomous-maintenance/i.test(latest);
+    const repair=/memory|recovery|forensics|pressure-guard|autonomous-maintenance|emergency|coldstart|quarantine|process-convergence/i.test(latest);
     const r=decodeDeviceJson(await queueDevicePost("/api/work/maintenance",{action:"update",mode:repair?"REPAIR":"NORMAL"},12000));
     console.log("HERMES_MAINTENANCE "+JSON.stringify({action:"update",mode:repair?"REPAIR":"NORMAL",state:r?.state||null,from:release,to:latest}));
   } catch(e) {
@@ -630,7 +630,7 @@ setTimeout(logDeviceMemoryAudit, 5000);
 setInterval(logDeviceRecovery, 5*60*1000);
 setInterval(logDeviceAutoupdate, 5*60*1000);
 setInterval(logDeviceMemoryAudit, 5*60*1000);
-setTimeout(autonomousMaintenanceTick, 15000);
+setTimeout(autonomousMaintenanceTick, 3000);
 setInterval(autonomousMaintenanceTick, 5*60*1000);
 setInterval(logLatestSnapshot, 60000);
 setInterval(()=>{
