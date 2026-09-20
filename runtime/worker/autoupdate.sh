@@ -8,14 +8,27 @@ PID="$STATE/autoupdate.pid"
 OWNER="$STATE/autoupdate.owner"
 LOCK="$STATE/autoupdate.lock"
 FAILED="$STATE/autoupdate_failed_version"
+DAEMON_LOCK="$STATE/autoupdate.daemon.lock"
 mkdir -p "$STATE" "$ROOT/logs" "$ROOT/updates" "$ROOT/releases" "$ROOT/backups"
+SELF=$$
+if ! mkdir "$DAEMON_LOCK" 2>/dev/null; then
+  LOCK_PID="$(cat "$DAEMON_LOCK/pid" 2>/dev/null)"
+  case "$LOCK_PID" in *[!0-9]*|'') LOCK_PID=0;; esac
+  if [ "$LOCK_PID" -gt 1 ] 2>/dev/null && [ "$LOCK_PID" != "$SELF" ] && kill -0 "$LOCK_PID" 2>/dev/null; then
+    echo "$(date '+%Y-%m-%dT%H:%M:%S%z') duplicate updater exit owner=$LOCK_PID self=$SELF" >> "$LOG"
+    exit 0
+  fi
+  rm -rf "$DAEMON_LOCK" 2>/dev/null
+  mkdir "$DAEMON_LOCK" 2>/dev/null || exit 0
+fi
+echo "$SELF" > "$DAEMON_LOCK/pid"
 OLD_OWNER="$(cat "$OWNER" 2>/dev/null)"
-if [ -n "$OLD_OWNER" ] && [ "$OLD_OWNER" != "$" ] && kill -0 "$OLD_OWNER" 2>/dev/null; then
-  echo "$(date '+%Y-%m-%dT%H:%M:%S%z') duplicate updater exit owner=$OLD_OWNER self=$" >> "$LOG"
+if [ -n "$OLD_OWNER" ] && [ "$OLD_OWNER" != "$$" ] && kill -0 "$OLD_OWNER" 2>/dev/null; then
+  echo "$(date '+%Y-%m-%dT%H:%M:%S%z') duplicate updater exit owner=$OLD_OWNER self=$$" >> "$LOG"
   exit 0
 fi
-echo $ > "$OWNER"
-echo $ > "$PID"
+echo $$ > "$OWNER"
+echo $$ > "$PID"
 
 ts(){ date '+%Y-%m-%dT%H:%M:%S%z'; }
 log(){ echo "$(ts) $*" >> "$LOG"; }
@@ -35,7 +48,7 @@ publish(){
   mv -f "$TMP" "$STATE/autoupdate.json"
 }
 cleanup(){ rm -rf "$LOCK" 2>/dev/null; }
-owner_cleanup(){ cleanup; CUR_OWNER="$(cat "$OWNER" 2>/dev/null)"; [ "$CUR_OWNER" = "$" ] && rm -f "$OWNER" 2>/dev/null; }
+owner_cleanup(){ cleanup; CUR_OWNER="$(cat "$OWNER" 2>/dev/null)"; [ "$CUR_OWNER" = "$$" ] && rm -f "$OWNER" "$PID" 2>/dev/null; LOCK_PID="$(cat "$DAEMON_LOCK/pid" 2>/dev/null)"; [ "$LOCK_PID" = "$$" ] && rm -rf "$DAEMON_LOCK" 2>/dev/null; }
 trap owner_cleanup EXIT HUP INT TERM
 
 initial="$(cfg AUTO_UPDATE_INITIAL_DELAY_SECONDS)"; [ -n "$initial" ] || initial=45
