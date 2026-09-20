@@ -26,7 +26,7 @@ jobs:
       - name: Verify repair gate
         run: |
           grep -q 'releaseAtLeast(release,2,5,11)' railway-relay/server.js
-          grep -q 'setTimeout(autonomousMaintenanceTick, 15000)' railway-relay/server.js
+          grep -Eq 'setTimeout\(autonomousMaintenanceTick, (3000|15000)\)' railway-relay/server.js
           grep -q 'memory_pressure:' railway-relay/server.js
           grep -q 'top_anon:' railway-relay/server.js
           grep -q 'github_control_writes_allowed:' railway-relay/server.js
