@@ -640,12 +640,17 @@ public class MainActivity extends Activity {
         yt.addView(ytPublish);
         Button ytUnlisted = actionButton("UBAH KE UNLISTED", false);
         Button ytPublic = actionButton("PUBLIKASIKAN KE YOUTUBE", true);
-        yt.addView(ytUnlisted);
-        yt.addView(ytPublic);
-        TextView ytPublishOut = mono("Publisher: memeriksa…");
-        yt.addView(ytPublishOut);
+        ytUnlisted.setVisibility(View.GONE); ytPublic.setVisibility(View.GONE);
+        TextView ytVideoSummary = text("Video: memeriksa…", 12, MUTED, false); yt.addView(ytVideoSummary);
+        Button ytManage = actionButton("KELOLA VIDEO", true); yt.addView(ytManage);
+        TextView ytPublishOut = mono("Publisher: memeriksa…"); yt.addView(ytPublishOut);
         final String[] ytVideoId = {""};
+        ytManage.setOnClickListener(v -> showYouTubeVideoManager());
         body.addView(yt);
+
+        apiAsync("GET", "/api/work/youtube/videos?page=1&limit=10", null, false, (code, response) -> {
+            if (code >= 200 && code < 300) try { JSONObject j=new JSONObject(response); JSONObject c=j.optJSONObject("counts"); int total=j.optInt("total",0); ytVideoSummary.setText("Video tersimpan: "+total+(c==null?"":" · PRIVATE "+c.optInt("private",0)+" · UNLISTED "+c.optInt("unlisted",0)+" · PUBLIC "+c.optInt("public",0))); } catch(Exception ignored){}
+        });
 
         apiAsync("GET", "/api/work/youtube/oauth", null, false, (code, response) -> {
             try {
@@ -836,6 +841,24 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void showYouTubeVideoManager() {
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(12),dp(8),dp(12),dp(8));
+        EditText search=field("Cari judul / ID video","",false);box.addView(search);
+        LinearLayout filters=row();Button filter=actionButton("FILTER: SEMUA",false);Button find=actionButton("CARI",false);filters.addView(filter);filters.addView(find);box.addView(filters);
+        TextView info=text("Memuat video…",12,MUTED,false);box.addView(info);
+        ScrollView scroll=new ScrollView(this);LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);scroll.addView(list);box.addView(scroll,new LinearLayout.LayoutParams(-1,dp(390)));
+        LinearLayout pager=row();Button prev=actionButton("‹ SEBELUMNYA",false);Button next=actionButton("BERIKUTNYA ›",false);pager.addView(prev);pager.addView(next);box.addView(pager);
+        final int[] page={1};final String[] privacy={"all"};final Runnable[] load={null};
+        load[0]=()->{String q=search.getText().toString().trim();String path="/api/work/youtube/videos?page="+page[0]+"&limit=10&privacy="+privacy[0];if(!q.isEmpty())try{path+="&q="+java.net.URLEncoder.encode(q,"UTF-8");}catch(Exception ignored){}
+            apiAsync("GET",path,null,false,(code,response)->{list.removeAllViews();if(code<200||code>=300){info.setText("Gagal memuat daftar video. HTTP "+code);return;}try{JSONObject j=new JSONObject(response);JSONArray items=j.optJSONArray("items");int total=j.optInt("total",0);boolean more=j.optBoolean("has_more",false);info.setText("Halaman "+page[0]+" · "+total+" video");prev.setEnabled(page[0]>1);next.setEnabled(more);if(items==null||items.length()==0){list.addView(text("Tidak ada video pada filter ini.",12,MUTED,false));return;}for(int i=0;i<items.length();i++){JSONObject v=items.getJSONObject(i);final String pid=v.optString("publication_id");final String title=v.optString("topic","Tanpa judul");final String pr=v.optString("privacy","private").toUpperCase(Locale.US);LinearLayout vc=card();vc.addView(text(title,14,TEXT,true));vc.addView(text(pr+" · "+v.optString("status","—")+"\n"+v.optString("updated_at",""),11,MUTED,false));Button pb=actionButton("UBAH PRIVASI",false);vc.addView(pb);list.addView(vc);pb.setOnClickListener(x->showYouTubePrivacyDialog(pid,title,load[0]));}}catch(Exception e){info.setText("Data Video Manager tidak valid.");}});};
+        filter.setOnClickListener(v->{String p=privacy[0];privacy[0]=p.equals("all")?"private":p.equals("private")?"unlisted":p.equals("unlisted")?"public":"all";filter.setText("FILTER: "+(privacy[0].equals("all")?"SEMUA":privacy[0].toUpperCase(Locale.US)));page[0]=1;load[0].run();});
+        find.setOnClickListener(v->{page[0]=1;load[0].run();});prev.setOnClickListener(v->{if(page[0]>1){page[0]--;load[0].run();}});next.setOnClickListener(v->{page[0]++;load[0].run();});
+        AlertDialog d=new AlertDialog.Builder(this).setTitle("KELOLA VIDEO").setView(box).setNegativeButton("TUTUP",null).create();d.setOnShowListener(x->load[0].run());d.show();
+    }
+    private void showYouTubePrivacyDialog(String publicationId,String title,Runnable reload){
+        String[] opts={"PRIVATE","UNLISTED","PUBLIC"};new AlertDialog.Builder(this).setTitle(title).setSingleChoiceItems(opts,-1,(dialog,which)->{String target=opts[which].toLowerCase(Locale.US);dialog.dismiss();Runnable apply=()->{try{JSONObject p=new JSONObject();p.put("publication_id",publicationId);p.put("privacy",target);apiAsync("POST","/api/work/youtube/privacy",p.toString(),true,(code,response)->{Toast.makeText(this,code>=200&&code<300?"Privasi diubah ke "+target.toUpperCase(Locale.US):"Gagal mengubah privasi · HTTP "+code,Toast.LENGTH_LONG).show();if(code>=200&&code<300)reload.run();});}catch(Exception ignored){}};if("public".equals(target))new AlertDialog.Builder(this).setTitle("Publikasikan video?").setMessage("Video ini akan menjadi PUBLIC di YouTube.").setNegativeButton("BATAL",null).setPositiveButton("PUBLIKASIKAN",(d,w)->apply.run()).show();else apply.run();}).setNegativeButton("BATAL",null).show();
+    }
+
     private void buildUpdate(LinearLayout body) {
         body.addView(sectionTitle("Pembaruan & Pemulihan", "Halaman terakhir khusus pembaruan, cadangan, pengembalian versi, mode aman, dan diagnostik."));
 
@@ -1000,7 +1023,7 @@ public class MainActivity extends Activity {
         io.execute(() -> {
             StringBuilder report = new StringBuilder();
             report.append("===== HASIL PEMBARUAN DJAEGER WORK =====\n");
-            report.append("APP_VERSION=1.3.5\n");
+            report.append("APP_VERSION=1.3.6\n");
             report.append("RUNTIME_URL=").append(runtimeUrl()).append("\n");
             report.append("GENERATED_AT=").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new java.util.Date())).append("\n\n");
 
