@@ -595,40 +595,66 @@ async function tryDirectSelfUpdateAuthProbe() {
 
     const status=decodeDeviceJson(await queueDeviceRead("/api/work/status",12000));
     const release=String(status?.release||"");
-    if(releaseAtLeast(release,2,5,20)) return;
+    if(releaseAtLeast(release,2,5,21)) return;
     if(directUpdateAuthRejectedRelease===release) return;
     lastDirectUpdateProbeAt=Date.now();
 
-    const remote=decodeDeviceJson(await queueDeviceRead("/api/work/remote",12000));
-    const token=String(remote?.remote_key||"");
-    if(!token) {
-      console.log("HERMES_DIRECT_UPDATE_AUTH_PROBE "+JSON.stringify({state:"NO_REMOTE_KEY",release}));
+    const sha256hex=v=>crypto.createHash("sha256").update(String(v||"")).digest("hex");
+    const candidates=[
+      ["NTFY_TOPIC",TOPIC],
+      ["SHA256_NTFY_TOPIC",TOPIC?sha256hex(TOPIC):""],
+      ["ACCESS_PATH",ACCESS_PATH],
+      ["SHA256_ACCESS_PATH",ACCESS_PATH?sha256hex(ACCESS_PATH):""],
+      ["REMOTE_CLIENT_KEY",remoteClientKey()]
+    ];
+    const seen=new Set();
+    const results=[];
+    for(const [label,token] of candidates){
+      if(!token||seen.has(token)) continue;
+      seen.add(token);
+      const upstream=await queueDevicePostWithToken("/api/work/update",token,null,90000);
+      const code=Number(upstream?.status||502);
+      results.push({label,http:code});
+      if(code===401||code===403) continue;
+
+      let body={};
+      try{body=JSON.parse(Buffer.from(String(upstream?.body_b64||""),"base64").toString("utf8")||"{}")}catch{}
+      console.log("HERMES_BOUNDED_AUTH_BRIDGE "+JSON.stringify({
+        state:code>=200&&code<300?"UPDATE_ACCEPTED":"AUTH_ACCEPTED_UPDATE_REJECTED",
+        candidate:label,
+        http:code,
+        from:release,
+        to:String(body?.version||""),
+        installed_state:String(body?.state||"")
+      }));
+
+      if(code>=200&&code<300){
+        setTimeout(async()=>{
+          try{
+            const st=decodeDeviceJson(await queueDeviceRead("/api/work/status",15000));
+            const rc=decodeDeviceJson(await queueDeviceRead("/api/work/recovery",15000));
+            console.log("HERMES_BOUNDED_AUTH_BRIDGE_VERIFY "+JSON.stringify({
+              release:String(st?.release||""),
+              configured:String(st?.configured_release||rc?.current||""),
+              safe_mode:!!st?.safe_mode||!!rc?.safe_mode,
+              worker_paused:!!st?.worker_paused||!!rc?.worker_paused,
+              tether_state:String(st?.tether_state||"")
+            }));
+          }catch(e){console.log("HERMES_BOUNDED_AUTH_BRIDGE_VERIFY_ERROR "+String(e?.message||e))}
+        },12000);
+      }
       return;
     }
 
-    const upstream=await queueDevicePostWithToken("/api/work/update",token,null,90000);
-    const code=Number(upstream?.status||502);
-    if(code===401||code===403) {
-      directUpdateAuthRejectedRelease=release;
-      console.log("HERMES_DIRECT_UPDATE_AUTH_PROBE "+JSON.stringify({state:"AUTH_REJECTED",http:code,release,retry:"DISABLED_UNTIL_RELEASE_CHANGES"}));
-      return;
-    }
-    if(code<200||code>=300) {
-      console.log("HERMES_DIRECT_UPDATE_AUTH_PROBE "+JSON.stringify({state:"UPDATE_REJECTED",http:code,release}));
-      return;
-    }
-
-    let body={};
-    try{body=JSON.parse(Buffer.from(String(upstream?.body_b64||""),"base64").toString("utf8")||"{}")}catch{}
-    console.log("HERMES_DIRECT_UPDATE_AUTH_PROBE "+JSON.stringify({
-      state:"UPDATE_ACCEPTED",
-      http:code,
-      from:release,
-      to:String(body?.version||""),
-      installed_state:String(body?.state||"")
+    directUpdateAuthRejectedRelease=release;
+    console.log("HERMES_BOUNDED_AUTH_BRIDGE "+JSON.stringify({
+      state:"ALL_BOUNDED_CANDIDATES_REJECTED",
+      release,
+      results,
+      retry:"DISABLED_UNTIL_RELEASE_CHANGES"
     }));
   } catch(e) {
-    console.log("HERMES_DIRECT_UPDATE_AUTH_PROBE_ERROR "+String(e?.message||e));
+    console.log("HERMES_BOUNDED_AUTH_BRIDGE_ERROR "+String(e?.message||e));
   }
 }
 
