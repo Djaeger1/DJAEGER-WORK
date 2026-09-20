@@ -109,7 +109,10 @@ jobs:
           grep -Fq '/api/work/youtube/publish' runtime/workd.go
           grep -Fq '/api/work/youtube/privacy' runtime/workd.go
           grep -Fq 'uploadYouTubeThumbnail' runtime/workd.go
-          grep -Fq 'YOUTUBE_DEVICE_PUBLISHER_V2' runtime/workd.go
+          grep -Fq 'YOUTUBE_DEVICE_PUBLISHER_V3' runtime/workd.go
+          grep -Fq '/api/work/youtube/videos' runtime/workd.go
+          grep -Fq 'youtubeVideoRegistryPath()' runtime/workd.go
+          grep -Fq 'publication_id required' runtime/workd.go
 
       - name: Build ARMv7 runtime
         shell: bash
