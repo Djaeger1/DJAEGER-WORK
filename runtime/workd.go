@@ -160,6 +160,26 @@ func zramStats()map[string]int64{
  for i,n:=range names{if i>=len(f){break};v,_:=strconv.ParseInt(f[i],10,64);if strings.HasSuffix(n,"_bytes"){out[strings.TrimSuffix(n,"_bytes")+"_mb"]=v/(1024*1024)}else{out[n]=v}}
  return out
 }
+type ProcRSSSummary struct{ProcessCount int `json:"process_count"`;ThreadCount int64 `json:"thread_count"`;TotalRSSMB int64 `json:"total_rss_mb"`;Top []ProcRSS `json:"top_rss"`}
+func processRSSSummary(limit int)ProcRSSSummary{
+ ents,_:=os.ReadDir("/proc");out:=ProcRSSSummary{Top:[]ProcRSS{}}
+ for _,ent:=range ents{
+  if !ent.IsDir(){continue};pid,e:=strconv.Atoi(ent.Name());if e!=nil{continue}
+  b,e:=os.ReadFile(filepath.Join("/proc",ent.Name(),"status"));if e!=nil{continue}
+  name:="";rss:=int64(0);threads:=int64(0)
+  for _,l:=range strings.Split(string(b),"\n"){
+   if strings.HasPrefix(l,"Name:"){f:=strings.Fields(l);if len(f)>1{name=f[1]}}
+   if strings.HasPrefix(l,"VmRSS:"){f:=strings.Fields(l);if len(f)>1{n,_:=strconv.ParseInt(f[1],10,64);rss=n/1024}}
+   if strings.HasPrefix(l,"Threads:"){f:=strings.Fields(l);if len(f)>1{threads,_=strconv.ParseInt(f[1],10,64)}}
+  }
+  if name==""{continue}
+  out.ProcessCount++;out.ThreadCount+=threads;out.TotalRSSMB+=rss
+  out.Top=append(out.Top,ProcRSS{PID:pid,Name:name,RSSMB:rss})
+ }
+ sort.Slice(out.Top,func(i,j int)bool{return out.Top[i].RSSMB>out.Top[j].RSSMB})
+ if limit>0&&len(out.Top)>limit{out.Top=out.Top[:limit]}
+ return out
+}
 func topRSSProcesses(limit int)[]ProcRSS{
  ents,_:=os.ReadDir("/proc");out:=[]ProcRSS{}
  for _,ent:=range ents{
@@ -182,7 +202,7 @@ func (s *S)action(w http.ResponseWriter,r *http.Request){if !s.auth(r){http.Erro
 func tail(p string,n int)string{b,_:=os.ReadFile(p);a:=strings.Split(string(b),"\n");if len(a)>n{a=a[len(a)-n:]};return strings.Join(a,"\n")}
 func (s *S)memoryAudit(w http.ResponseWriter,r *http.Request){
  if !privateRemote(r)&&!s.auth(r){http.Error(w,"unauthorized",401);return}
- js(w,map[string]any{"time":time.Now().Format(time.RFC3339),"temp_c":temp(),"mem_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"process_memory":processMemorySummary(20),"zram":zramStats(),"top_rss":topRSSProcesses(20),"release":runtimeRelease(s)})
+ js(w,map[string]any{"time":time.Now().Format(time.RFC3339),"temp_c":temp(),"mem_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"process_rss":processRSSSummary(50),"process_memory":processMemorySummary(20),"zram":zramStats(),"top_rss":topRSSProcesses(20),"release":runtimeRelease(s)})
 }
 func (s *S)diag(w http.ResponseWriter,r *http.Request){if !s.auth(r){http.Error(w,"unauthorized",401);return};ts,ip:=iface("rndis0");js(w,map[string]any{"time":time.Now().Format(time.RFC3339),"temp_c":temp(),"mem_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"process_memory":processMemorySummary(15),"zram":zramStats(),"top_rss":topRSSProcesses(10),"rndis":ts,"rndis_ip":ip,"release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"bootstrap_log_tail":tail(filepath.Join(s.Root,"logs","hermesd.log"),60),"work_log_tail":tail(filepath.Join(s.Root,"logs","workd.log"),60)})}
 func copyf(src,dst string)error{in,e:=os.Open(src);if e!=nil{return e};defer in.Close();if e=os.MkdirAll(filepath.Dir(dst),0700);e!=nil{return e};out,e:=os.OpenFile(dst,os.O_CREATE|os.O_TRUNC|os.O_WRONLY,0700);if e!=nil{return e};_,e=io.Copy(out,in);ce:=out.Close();if e!=nil{return e};return ce}
