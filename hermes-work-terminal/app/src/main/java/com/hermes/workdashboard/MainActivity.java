@@ -654,7 +654,11 @@ public class MainActivity extends Activity {
                 ytState.setText("Status OAuth: " + localizeStatus(state));
                 ytState.setTextColor("VERIFIED".equals(state) ? OK : WARN);
                 String verified = j.optString("verified_at", "");
-                if (!verified.isEmpty()) ytOut.setText("Terverifikasi: " + verified + "\nScope: youtube.upload");
+                if (!verified.isEmpty()) {
+                    String scope = j.optString("scope", "https://www.googleapis.com/auth/youtube.force-ssl");
+                    if (scope.startsWith("https://www.googleapis.com/auth/")) scope = scope.substring("https://www.googleapis.com/auth/".length());
+                    ytOut.setText("Terverifikasi: " + verified + "\nScope: " + scope);
+                }
             } catch (Exception e) {
                 ytState.setText("Status OAuth: belum tersedia");
                 ytState.setTextColor(WARN);
@@ -671,7 +675,10 @@ public class MainActivity extends Activity {
                     String msg = "Publisher: " + localizeStatus(state);
                     if (!topic.isEmpty()) msg += "\nSiap diuji: " + topic;
                     if ("SUCCESS".equals(state)) {
-                        msg += "\nUpload PRIVATE berhasil.";
+                        String privacy = j.optString("privacy", "private").toUpperCase(Locale.US);
+                        String status = j.optString("status", "");
+                        if (status.startsWith("PRIVACY_")) msg += "\nPrivasi YouTube: " + privacy + ".";
+                        else msg += "\nUpload " + privacy + " berhasil.";
                         String url = j.optString("url", "");
                         if (!url.isEmpty()) msg += "\n" + url;
                     } else if ("FAILED".equals(state)) {
