@@ -723,13 +723,12 @@ public class MainActivity extends Activity {
         }));
 
         loadRecovery(current, previous);
-        generateUpdateReport(out, null);
     }
 
     private void bootstrapFallbackUpdate(TextView out, Button update, TextView current, TextView previous) {
         io.execute(() -> {
             try {
-                String channelUrl = "https://raw.githubusercontent.com/Djaeger1/DJAEGER-Control-Center/hermes-work-release-channel/hermes-work-runtime/channel.json";
+                String channelUrl = "https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json";
                 HttpResult ch = request("GET", channelUrl, null, false);
                 if (ch.code != 200) throw new Exception("HTTP kanal " + ch.code);
                 JSONObject j = new JSONObject(ch.body);
@@ -739,7 +738,7 @@ public class MainActivity extends Activity {
                 if (!ver.matches("[A-Za-z0-9._-]+") || !bundle.matches("[A-Za-z0-9._-]+") || !sha.matches("[0-9a-f]{64}")) {
                     throw new Exception("Metadata rilis tidak valid");
                 }
-                String raw = "https://raw.githubusercontent.com/Djaeger1/DJAEGER-Control-Center/hermes-work-release-channel/hermes-work-runtime/" + bundle;
+                String raw = "https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/" + bundle;
                 String cmd =
                         "ROOT=/data/adb/hermes_work; " +
                         "VER='" + ver + "'; URL='" + raw + "'; SHA='" + sha + "'; " +
@@ -767,18 +766,26 @@ public class MainActivity extends Activity {
                 HttpResult ex = request("POST", bootstrapUrl() + "/api/exec", body.toString(), true);
                 if (ex.code < 200 || ex.code >= 300) throw new Exception("HTTP bootstrap " + ex.code + "\\n" + ex.body);
                 ui(() -> {
-                    out.setText("PEMBARUAN BOOTSTRAP BERHASIL\\n\\n" + ex.body.trim() + "\\n\\nMemverifikasi rilis aktif…");
-                    loadRecovery(current, previous);
+                    out.setText("PEMBARUAN TERPASANG\\n\\nTarget: " + ver + "\\nMenunggu handoff runtime…");
                     refreshOnlineOnly();
                     out.postDelayed(() -> {
-                        generateUpdateReport(out, report -> {
-                            if (report.contains("RELEASE=" + ver) && report.contains("CURRENT=" + ver)) {
-                                Toast.makeText(this, "Rilis terbaru aktif: " + ver, Toast.LENGTH_LONG).show();
+                        loadRecovery(current, previous);
+                        apiAsync("GET", "/api/work/status", null, false, (code, bodyText) -> {
+                            if (code >= 200 && code < 300) {
+                                try {
+                                    JSONObject st = new JSONObject(bodyText);
+                                    String active = st.optString("release", "—");
+                                    String state = ver.equals(active) ? "TERVERIFIKASI" : "MENUNGGU HANDOFF";
+                                    out.setText("PEMBARUAN SELESAI\\n\\nRilis aktif: " + active + "\\nTarget: " + ver + "\\nStatus: " + state);
+                                    if (ver.equals(active)) Toast.makeText(this, "Rilis terbaru aktif: " + ver, Toast.LENGTH_LONG).show();
+                                } catch (Exception parseErr) {
+                                    out.setText("Pembaruan terpasang. Runtime aktif, tetapi status belum dapat dibaca.");
+                                }
                             } else {
-                                Toast.makeText(this, "Verifikasi rilis belum cocok. Tekan SEGARKAN HASIL PEMBARUAN.", Toast.LENGTH_LONG).show();
+                                out.setText("Pembaruan terpasang. Runtime sedang handoff; tekan ↻ beberapa detik lagi.");
                             }
                         });
-                    }, 5000);
+                    }, 3500);
                     update.setEnabled(true);
                 });
             } catch (Exception e) {
@@ -797,12 +804,12 @@ public class MainActivity extends Activity {
         io.execute(() -> {
             StringBuilder report = new StringBuilder();
             report.append("===== HASIL PEMBARUAN DJAEGER WORK =====\n");
-            report.append("APP_VERSION=1.2.7\n");
+            report.append("APP_VERSION=1.3.0\n");
             report.append("RUNTIME_URL=").append(runtimeUrl()).append("\n");
             report.append("GENERATED_AT=").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new java.util.Date())).append("\n\n");
 
             try {
-                HttpResult st = request("GET", runtimeUrl() + "/api/work/status", null, false);
+                HttpResult st = requestWithTimeout("GET", runtimeUrl() + "/api/work/status", null, false, "", 2500, 8000);
                 report.append("[STATUS]\nHTTP=").append(st.code).append("\n");
                 if (st.code == 200) {
                     JSONObject j = new JSONObject(st.body);
@@ -829,7 +836,7 @@ public class MainActivity extends Activity {
             }
 
             try {
-                HttpResult rec = request("GET", runtimeUrl() + "/api/work/recovery", null, false);
+                HttpResult rec = requestWithTimeout("GET", runtimeUrl() + "/api/work/recovery", null, false, "", 2500, 8000);
                 report.append("\n[RECOVERY]\nHTTP=").append(rec.code).append("\n");
                 if (rec.code == 200) {
                     JSONObject j = new JSONObject(rec.body);
@@ -845,7 +852,7 @@ public class MainActivity extends Activity {
             }
 
             try {
-                HttpResult br = request("GET", runtimeUrl() + "/api/work/bridge", null, false);
+                HttpResult br = requestWithTimeout("GET", runtimeUrl() + "/api/work/bridge", null, false, "", 2500, 8000);
                 report.append("\n[BRIDGE]\nHTTP=").append(br.code).append("\n");
                 if (br.code == 200) {
                     JSONObject j = new JSONObject(br.body);
