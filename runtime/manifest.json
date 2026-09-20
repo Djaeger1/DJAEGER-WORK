@@ -1,5 +1,5 @@
 {
-  "version": "v2.5.29-youtube-thumbnail-repair",
-  "description": "YouTube Video Manager V3 with corrected raw-media custom thumbnail upload, per-video thumbnail retry, persistent registry, stable publication identity, and safe privacy controls.",
+  "version": "v2.5.30-youtube-trusted-remote-actions",
+  "description": "YouTube Video Manager V3 remote-action gate fix: authenticated relay tunnel can perform per-video privacy, thumbnail retry, publisher, and OAuth actions while preserving token checks and stable per-video identity.",
   "restart": false
 }
