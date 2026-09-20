@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -Fq 'UPDATE_CHANNEL_URL=https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json' runtime/config/work.env
-          grep -Fq '"version":"v2.5.27-youtube-publisher-v2"' runtime/manifest.json
+          grep -Fq '"version": "v2.5.28-youtube-video-manager-v3"' runtime/manifest.json
           sh -n runtime/worker/tick.sh
           sh -n runtime/worker/handoff.sh
           sh -n runtime/worker/autoupdate.sh
