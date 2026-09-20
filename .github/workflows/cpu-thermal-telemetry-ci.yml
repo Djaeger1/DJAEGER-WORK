@@ -1,0 +1,79 @@
+name: CPU thermal telemetry CI
+
+on:
+  push:
+    branches: [v2520-cpu-thermal-telemetry]
+  pull_request:
+    branches: [main]
+    paths:
+      - "runtime/workd.go"
+      - "runtime/manifest.json"
+      - "runtime/config/work.env"
+      - "railway-relay/server.js"
+      - ".github/workflows/release.yml"
+      - ".github/workflows/cpu-thermal-telemetry-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  telemetry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.23.x'
+          cache: false
+
+      - name: ARMv7 build
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -o /tmp/workd ./runtime/workd.go
+
+      - name: Verify CPU source
+        run: |
+          grep -q 'func cpuUsageSummary()' runtime/workd.go
+          grep -q 'os.ReadFile("/proc/stat")' runtime/workd.go
+          grep -q '"source":"/proc/stat"' runtime/workd.go
+          grep -q '"sample_ms":250' runtime/workd.go
+
+      - name: Verify thermal source
+        run: |
+          grep -q 'func thermalSummary()' runtime/workd.go
+          grep -q 'filepath.Glob("/sys/class/thermal/thermal_zone\*")' runtime/workd.go
+          grep -q 'cpu_soc_max_c' runtime/workd.go
+          grep -q 'cpu_soc_sensor' runtime/workd.go
+          grep -q 'battery_temp_c' runtime/workd.go
+
+      - name: Verify quarantine preserved
+        run: |
+          grep -qx 'EMERGENCY_QUARANTINE=1' runtime/config/work.env
+          grep -qx 'GITHUB_CONTROL_SHADOW=0' runtime/config/work.env
+          grep -q 'enforceEmergencyQuarantine(s)' runtime/workd.go
+          grep -q 'EMERGENCY_QUARANTINE.*5\*time.Minute' runtime/workd.go
+          grep -q 'convergeHermesWorkersNative' runtime/workd.go
+          ! grep -q 'process-converge.sh' runtime/worker/tick.sh
+
+      - name: Verify relay carries telemetry
+        run: |
+          node --check railway-relay/server.js
+          grep -q 'battery_temp_c:' railway-relay/server.js
+          grep -q 'cpu_usage:' railway-relay/server.js
+          grep -q 'thermal:' railway-relay/server.js
+
+      - name: Verify no dangerous mutation
+        run: |
+          ! grep -Eq 'drop_caches|force-stop|system_server|qcril|telephony|networkstack|reboot' runtime/workd.go
+          ! grep -Eq 'drop_caches|force-stop|system_server|qcril|telephony|networkstack|reboot' railway-relay/server.js
+
+      - name: Verify release
+        run: |
+          grep -q '"version":"v2.5.20-cpu-thermal-telemetry-quarantine"' runtime/manifest.json
+          grep -q 'HERMES_WORK_RUNTIME_v2.5.20_CPU_THERMAL_TELEMETRY_QUARANTINE' .github/workflows/release.yml
+
+      - name: Report
+        run: |
+          echo "CPU_TELEMETRY=PASS"
+          echo "THERMAL_ZONE_TELEMETRY=PASS"
+          echo "QUARANTINE=PRESERVED"
+          echo "TETHER_MUTATION=NONE"
