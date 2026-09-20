@@ -83,7 +83,7 @@ func (s *S)bridgeSnapshot()map[string]any{
   "studio_state":studio["state"],"studio_engine":"AUTO_STUDIO_V1","studio_job":studio["job"],
   "publication_state":pub["state"],"publications_total":pub["records"],"publication_engine":"PUBLICATION_V1",
   "feedback_state":fb["state"],"performance_records":fb["records"],"strong_signal":fb["strong_signal"],"weak_signal":fb["weak_signal"],"feedback_engine":"FEEDBACK_V1",
-  "auto_update_state":au["state"],"auto_update_last_check":au["last_check"],"github_control_state":gc["state"],"github_control_reason":gc["reason"],"github_control_generation":gc["generation"],"github_control_writes_allowed":false,"process_convergence":s.processConvergenceInfo(),"bridge_agent":"HERMES_WORK_DATA_BRIDGE_v3","ai_used":false,"neurons_used":0,
+  "auto_update_state":au["state"],"auto_update_last_check":au["last_check"],"github_control_state":gc["state"],"github_control_reason":gc["reason"],"github_control_generation":gc["generation"],"github_control_writes_allowed":false,"process_convergence":s.processConvergenceInfo(),"bridge_agent":"HERMES_WORK_DATA_BRIDGE_v3","bridge_state":s.bridgeInfo()["state"],"bridge_reason":s.bridgeInfo()["reason"],"bridge_last_sync":s.bridgeInfo()["last_sync"],"ai_used":false,"neurons_used":0,
  }
 }
 func (s *S)ntfyTopic(key string)string{h:=sha256.Sum256([]byte("HERMES_WORK_NTFY:"+key));return "hermes-work-"+hex.EncodeToString(h[:24])}
