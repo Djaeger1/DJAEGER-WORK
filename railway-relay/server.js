@@ -529,6 +529,22 @@ const server = http.createServer(async (req,res)=>{
 
 server.listen(PORT,"0.0.0.0",()=>console.log(`relay listening on ${PORT} remote-link=enabled`));
 
+async function logDeviceRecovery() {
+  try {
+    if(!deviceFresh()) { console.log("HERMES_RECOVERY DEVICE_LINK_STALE"); return; }
+    const r=decodeDeviceJson(await queueDeviceRead("/api/work/recovery",12000));
+    const out={
+      current:String(r?.current||"").slice(0,120),
+      previous:String(r?.previous||"").slice(0,120),
+      safe_mode:!!r?.safe_mode,
+      worker_paused:!!r?.worker_paused,
+      handoff_log:String(r?.handoff_log||"").slice(-8000)
+    };
+    console.log("HERMES_RECOVERY "+JSON.stringify(out));
+  } catch(e) {
+    console.log("HERMES_RECOVERY_ERROR "+String(e?.message||e));
+  }
+}
 async function logLatestSnapshot() {
   try {
     const snap = safeSnapshot(await latestSnapshot());
@@ -538,6 +554,8 @@ async function logLatestSnapshot() {
   }
 }
 setTimeout(logLatestSnapshot, 3000);
+setTimeout(logDeviceRecovery, 12000);
+setInterval(logDeviceRecovery, 5*60*1000);
 setInterval(logLatestSnapshot, 60000);
 setInterval(()=>{
   pruneQueue();
