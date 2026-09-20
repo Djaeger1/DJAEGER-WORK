@@ -1302,7 +1302,7 @@ func (s *S)writeYouTubePublishState(v map[string]any){
  b,_:=json.Marshal(v);os.MkdirAll(filepath.Dir(s.youtubePublishStatePath()),0700);tmp:=s.youtubePublishStatePath()+".tmp";_ = os.WriteFile(tmp,b,0600);_ = os.Rename(tmp,s.youtubePublishStatePath())
 }
 func (s *S)youtubePublishStatus()map[string]any{
- v:=map[string]any{"state":"IDLE","privacy":"private","engine":"YOUTUBE_DEVICE_PUBLISHER_V1","ai_used":false,"neurons_used":0}
+ v:=map[string]any{"state":"IDLE","privacy":"private","engine":"YOUTUBE_DEVICE_PUBLISHER_V2","ai_used":false,"neurons_used":0}
  if b,e:=os.ReadFile(s.youtubePublishStatePath());e==nil{_ = json.Unmarshal(b,&v)}
  nextID:="";nextTopic:="";for _,p:=range s.loadPlan(){if p.Stage=="UPLOAD_READY"{nextID=p.ID;nextTopic=p.Title;break}}
  _,oauth:=s.loadYouTubeOAuth();v["oauth_configured"]=oauth;v["next_planner_id"]=nextID;v["next_topic"]=nextTopic
@@ -1319,9 +1319,46 @@ func (s *S)youtubeCandidate(id string)(PlanItem,StudioResult,ScriptPackage,error
  if b,e:=os.ReadFile(filepath.Join(s.scriptDir(),p.ID+".json"));e!=nil||json.Unmarshal(b,&sp)!=nil{return p,sr,sp,fmt.Errorf("script metadata not found")}
  return p,sr,sp,nil
 }
+
+func downloadYouTubeAsset(raw string,maxBytes int64)([]byte,error){
+ if !youtubeAssetAllowed(raw){return nil,fmt.Errorf("asset url rejected")}
+ req,e:=http.NewRequest("GET",raw,nil);if e!=nil{return nil,e};req.Header.Set("User-Agent","HERMES-WORK-YouTube/1.1")
+ cl:=androidHTTPClient();cl.Timeout=90*time.Second;resp,e:=cl.Do(req);if e!=nil{return nil,e};defer resp.Body.Close()
+ if resp.StatusCode<200||resp.StatusCode>=300{return nil,fmt.Errorf("asset http %d",resp.StatusCode)}
+ if resp.ContentLength>maxBytes{return nil,fmt.Errorf("asset too large")}
+ b,e:=io.ReadAll(io.LimitReader(resp.Body,maxBytes+1));if e!=nil{return nil,e};if int64(len(b))>maxBytes{return nil,fmt.Errorf("asset too large")}
+ return b,nil
+}
+func uploadYouTubeThumbnail(token,videoID,raw string)error{
+ if strings.TrimSpace(raw)==""{return nil}
+ img,e:=downloadYouTubeAsset(raw,8<<20);if e!=nil{return e}
+ boundary:="djaegerthumb"+strconv.FormatInt(time.Now().UnixNano(),10)
+ var body strings.Builder
+ body.WriteString("--"+boundary+"\r\n")
+ body.WriteString("Content-Disposition: form-data; name=\"media\"; filename=\"thumbnail.jpg\"\r\n")
+ body.WriteString("Content-Type: image/jpeg\r\n\r\n")
+ head:=[]byte(body.String());tail:=[]byte("\r\n--"+boundary+"--\r\n")
+ payload:=make([]byte,0,len(head)+len(img)+len(tail));payload=append(payload,head...);payload=append(payload,img...);payload=append(payload,tail...)
+ req,e:=http.NewRequest("POST","https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId="+url.QueryEscape(videoID)+"&uploadType=multipart",strings.NewReader(string(payload)));if e!=nil{return e}
+ req.Header.Set("Authorization","Bearer "+token);req.Header.Set("Content-Type","multipart/form-data; boundary="+boundary)
+ cl:=androidHTTPClient();cl.Timeout=90*time.Second;resp,e:=cl.Do(req);if e!=nil{return e};defer resp.Body.Close()
+ b,_:=io.ReadAll(io.LimitReader(resp.Body,262144));if resp.StatusCode<200||resp.StatusCode>=300{return fmt.Errorf("%s",youtubeAPIError(b,resp.StatusCode))}
+ return nil
+}
+func updateYouTubePrivacy(token,videoID,privacy string)(string,error){
+ privacy=strings.ToLower(strings.TrimSpace(privacy));if privacy!="private"&&privacy!="unlisted"&&privacy!="public"{return"",fmt.Errorf("invalid privacy")}
+ meta:=map[string]any{"id":videoID,"status":map[string]any{"privacyStatus":privacy,"selfDeclaredMadeForKids":true}}
+ b,_:=json.Marshal(meta)
+ req,e:=http.NewRequest("PUT","https://www.googleapis.com/youtube/v3/videos?part=status",strings.NewReader(string(b)));if e!=nil{return"",e}
+ req.Header.Set("Authorization","Bearer "+token);req.Header.Set("Content-Type","application/json; charset=UTF-8")
+ cl:=androidHTTPClient();cl.Timeout=60*time.Second;resp,e:=cl.Do(req);if e!=nil{return"",e};defer resp.Body.Close()
+ rb,_:=io.ReadAll(io.LimitReader(resp.Body,262144));if resp.StatusCode<200||resp.StatusCode>=300{return"",fmt.Errorf("%s",youtubeAPIError(rb,resp.StatusCode))}
+ return privacy,nil
+}
+
 func (s *S)runYouTubePrivateUpload(p PlanItem,sr StudioResult,sp ScriptPackage){
  defer func(){youtubePublishMu.Lock();youtubePublishBusy=false;youtubePublishMu.Unlock()}()
- fail:=func(msg string){s.writeYouTubePublishState(map[string]any{"state":"FAILED","privacy":"private","planner_id":p.ID,"topic":p.Title,"error":youtubeClip(msg,500),"engine":"YOUTUBE_DEVICE_PUBLISHER_V1"})}
+ fail:=func(msg string){s.writeYouTubePublishState(map[string]any{"state":"FAILED","privacy":"private","planner_id":p.ID,"topic":p.Title,"error":youtubeClip(msg,500),"engine":"YOUTUBE_DEVICE_PUBLISHER_V2"})}
  c,ok:=s.loadYouTubeOAuth();if !ok{fail("youtube oauth not configured");return}
  token,_,e:=youtubeAccessToken(c);if e!=nil{fail("oauth refresh failed: "+e.Error());return}
  os.MkdirAll(filepath.Join(s.Root,"updates"),0700);f,e:=os.CreateTemp(filepath.Join(s.Root,"updates"),"youtube-*.mp4");if e!=nil{fail("temporary video create failed");return};tmp:=f.Name();f.Close();defer os.Remove(tmp)
@@ -1352,10 +1389,12 @@ func (s *S)runYouTubePrivateUpload(p PlanItem,sr StudioResult,sp ScriptPackage){
  if ur.StatusCode<200||ur.StatusCode>=300{fail("youtube upload rejected: "+youtubeAPIError(ub,ur.StatusCode));return}
  var done struct{ID string `json:"id"`};if json.Unmarshal(ub,&done)!=nil||strings.TrimSpace(done.ID)==""{fail("youtube response missing video id");return}
  vid:=strings.TrimSpace(done.ID);at:=time.Now().Format(time.RFC3339)
+ thumbState:="SKIPPED";thumbErr:=""
+ if strings.TrimSpace(sr.ThumbnailURL)!=""{if te:=uploadYouTubeThumbnail(token,vid,sr.ThumbnailURL);te!=nil{thumbState="FAILED";thumbErr=youtubeClip(te.Error(),300)}else{thumbState="SUCCESS"}}
  rec:=PublicationRecord{PlannerID:p.ID,Topic:p.Title,Platform:"youtube",ExternalID:vid,URL:"https://youtu.be/"+vid,Channel:"YouTube",Status:"UPLOADED_PRIVATE",PublishedAt:at,RecordedAt:at}
  if e=s.appendPublication(rec);e!=nil{fail("video uploaded but local publication record failed");return}
  plans:=s.syncPlanner();for i:=range plans{if plans[i].ID==p.ID{plans[i].Stage="PUBLISHED";plans[i].UpdatedAt=at;break}};_ = s.savePlan(plans)
- s.writeYouTubePublishState(map[string]any{"state":"SUCCESS","privacy":"private","planner_id":p.ID,"topic":p.Title,"video_id":vid,"url":"https://youtu.be/"+vid,"status":"UPLOADED_PRIVATE","engine":"YOUTUBE_DEVICE_PUBLISHER_V1"})
+ s.writeYouTubePublishState(map[string]any{"state":"SUCCESS","privacy":"private","planner_id":p.ID,"topic":p.Title,"video_id":vid,"url":"https://youtu.be/"+vid,"status":"UPLOADED_PRIVATE","thumbnail_state":thumbState,"thumbnail_error":thumbErr,"engine":"YOUTUBE_DEVICE_PUBLISHER_V2"})
 }
 func (s *S)youtubePublish(w http.ResponseWriter,r *http.Request){
  if r.Method=="GET"{js(w,s.youtubePublishStatus());return}
@@ -1370,11 +1409,28 @@ func (s *S)youtubePublish(w http.ResponseWriter,r *http.Request){
  if q.PlannerID!=""&&!safePlanID(q.PlannerID){http.Error(w,"invalid planner id",400);return}
  p,sr,sp,e:=s.youtubeCandidate(q.PlannerID);if e!=nil{http.Error(w,e.Error(),409);return}
  youtubePublishMu.Lock();if youtubePublishBusy{youtubePublishMu.Unlock();http.Error(w,"youtube upload already in progress",409);return};youtubePublishBusy=true;youtubePublishMu.Unlock()
- s.writeYouTubePublishState(map[string]any{"state":"UPLOADING","privacy":"private","planner_id":p.ID,"topic":p.Title,"engine":"YOUTUBE_DEVICE_PUBLISHER_V1"})
+ s.writeYouTubePublishState(map[string]any{"state":"UPLOADING","privacy":"private","planner_id":p.ID,"topic":p.Title,"engine":"YOUTUBE_DEVICE_PUBLISHER_V2"})
  go s.runYouTubePrivateUpload(p,sr,sp)
  w.WriteHeader(http.StatusAccepted);js(w,map[string]any{"ok":true,"state":"UPLOADING","privacy":"private","planner_id":p.ID,"topic":p.Title})
 }
 
+
+
+func (s *S)youtubePrivacy(w http.ResponseWriter,r *http.Request){
+ if r.Method!="POST"{http.Error(w,"method not allowed",405);return}
+ if !s.auth(r){http.Error(w,"unauthorized",401);return}
+ if !privateRemote(r)||loopbackRemote(r){http.Error(w,"local_lan_only",403);return}
+ var q struct{VideoID string `json:"video_id"`;Privacy string `json:"privacy"`}
+ if json.NewDecoder(io.LimitReader(r.Body,65536)).Decode(&q)!=nil{http.Error(w,"invalid json",400);return}
+ q.VideoID=strings.TrimSpace(q.VideoID);q.Privacy=strings.ToLower(strings.TrimSpace(q.Privacy))
+ if q.VideoID==""||len(q.VideoID)>64{http.Error(w,"invalid video id",400);return}
+ if q.Privacy!="private"&&q.Privacy!="unlisted"&&q.Privacy!="public"{http.Error(w,"invalid privacy",400);return}
+ c,ok:=s.loadYouTubeOAuth();if !ok{http.Error(w,"youtube oauth not configured",409);return}
+ token,_,e:=youtubeAccessToken(c);if e!=nil{http.Error(w,"oauth refresh failed: "+e.Error(),401);return}
+ p,e:=updateYouTubePrivacy(token,q.VideoID,q.Privacy);if e!=nil{http.Error(w,"youtube privacy update failed: "+e.Error(),502);return}
+ v:=s.youtubePublishStatus();v["privacy"]=p;v["status"]="PRIVACY_"+strings.ToUpper(p);v["state"]="SUCCESS";v["video_id"]=q.VideoID;s.writeYouTubePublishState(v)
+ js(w,map[string]any{"ok":true,"video_id":q.VideoID,"privacy":p,"state":"SUCCESS"})
+}
 
 func (s *S)youtubeOAuthStatus()map[string]any{
  c,ok:=s.loadYouTubeOAuth();state:="NOT_CONFIGURED";verifiedAt:=""
@@ -1626,7 +1682,7 @@ func convergeHermesWorkersNative(s *S){
  b,_:=json.Marshal(v);_ = os.WriteFile(filepath.Join(s.Root,"state","process-converge.json"),b,0600)
 }
 
-func main(){root:=flag.String("root","/data/adb/hermes_work","");rel:=flag.String("release","","");flag.Parse();p:=8766;if x:=readenv(filepath.Join(*rel,"config","work.env"),"WORK_PORT");x!=""{p,_=strconv.Atoi(x)};s:=&S{Root:*root,Rel:*rel,Port:p,Token:readenv(filepath.Join(*root,"config.env"),"ADMIN_TOKEN")};enforceEmergencyQuarantine(s);m:=http.NewServeMux();m.HandleFunc("/",s.index);m.HandleFunc("/api/work/status",s.status);m.HandleFunc("/api/work/action",s.action);m.HandleFunc("/api/work/diagnostics",s.diag);m.HandleFunc("/api/work/memory-audit",s.memoryAudit);m.HandleFunc("/api/work/maintenance",s.maintenance);m.HandleFunc("/api/work/update",s.update);m.HandleFunc("/api/work/collect",s.collect);m.HandleFunc("/api/work/research",s.research);m.HandleFunc("/api/work/brief",s.brief);m.HandleFunc("/api/work/opportunities",s.opportunities);m.HandleFunc("/api/work/planner",s.planner);m.HandleFunc("/api/work/script-prep",s.scriptPrep);m.HandleFunc("/api/work/scripts",s.scripts);m.HandleFunc("/api/work/production",s.production);m.HandleFunc("/api/work/production/download",s.productionDownload);m.HandleFunc("/api/work/handoff",s.handoff);m.HandleFunc("/api/work/desk",s.desk);m.HandleFunc("/api/work/job",s.jobDetail);m.HandleFunc("/api/work/studio",s.studio);m.HandleFunc("/api/work/publication",s.publication);m.HandleFunc("/api/work/youtube/oauth",s.youtubeOAuth);m.HandleFunc("/api/work/youtube/publish",s.youtubePublish);m.HandleFunc("/api/work/channel/import",s.channelImport);m.HandleFunc("/api/work/performance",s.performance);m.HandleFunc("/api/work/schedule",s.schedule);m.HandleFunc("/api/work/run-research",s.runResearch);m.HandleFunc("/api/work/daily",s.daily);m.HandleFunc("/api/work/channel",s.channel);m.HandleFunc("/api/work/knowledge",s.knowledge);m.HandleFunc("/api/work/recovery",s.recovery);m.HandleFunc("/api/work/bridge",s.bridgeStatus);m.HandleFunc("/api/work/autoupdate",s.autoUpdateStatus);m.HandleFunc("/api/work/remote",s.remoteInfo);if readenv(filepath.Join(s.Rel,"config","work.env"),"EMERGENCY_QUARANTINE")=="1"{go func(){time.Sleep(2*time.Second);convergeHermesWorkersNative(s)}()};go s.schedulerLoop();go s.bridgeLoop();go s.remoteLinkLoop();http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d",p),m)}
+func main(){root:=flag.String("root","/data/adb/hermes_work","");rel:=flag.String("release","","");flag.Parse();p:=8766;if x:=readenv(filepath.Join(*rel,"config","work.env"),"WORK_PORT");x!=""{p,_=strconv.Atoi(x)};s:=&S{Root:*root,Rel:*rel,Port:p,Token:readenv(filepath.Join(*root,"config.env"),"ADMIN_TOKEN")};enforceEmergencyQuarantine(s);m:=http.NewServeMux();m.HandleFunc("/",s.index);m.HandleFunc("/api/work/status",s.status);m.HandleFunc("/api/work/action",s.action);m.HandleFunc("/api/work/diagnostics",s.diag);m.HandleFunc("/api/work/memory-audit",s.memoryAudit);m.HandleFunc("/api/work/maintenance",s.maintenance);m.HandleFunc("/api/work/update",s.update);m.HandleFunc("/api/work/collect",s.collect);m.HandleFunc("/api/work/research",s.research);m.HandleFunc("/api/work/brief",s.brief);m.HandleFunc("/api/work/opportunities",s.opportunities);m.HandleFunc("/api/work/planner",s.planner);m.HandleFunc("/api/work/script-prep",s.scriptPrep);m.HandleFunc("/api/work/scripts",s.scripts);m.HandleFunc("/api/work/production",s.production);m.HandleFunc("/api/work/production/download",s.productionDownload);m.HandleFunc("/api/work/handoff",s.handoff);m.HandleFunc("/api/work/desk",s.desk);m.HandleFunc("/api/work/job",s.jobDetail);m.HandleFunc("/api/work/studio",s.studio);m.HandleFunc("/api/work/publication",s.publication);m.HandleFunc("/api/work/youtube/oauth",s.youtubeOAuth);m.HandleFunc("/api/work/youtube/publish",s.youtubePublish);m.HandleFunc("/api/work/youtube/privacy",s.youtubePrivacy);m.HandleFunc("/api/work/channel/import",s.channelImport);m.HandleFunc("/api/work/performance",s.performance);m.HandleFunc("/api/work/schedule",s.schedule);m.HandleFunc("/api/work/run-research",s.runResearch);m.HandleFunc("/api/work/daily",s.daily);m.HandleFunc("/api/work/channel",s.channel);m.HandleFunc("/api/work/knowledge",s.knowledge);m.HandleFunc("/api/work/recovery",s.recovery);m.HandleFunc("/api/work/bridge",s.bridgeStatus);m.HandleFunc("/api/work/autoupdate",s.autoUpdateStatus);m.HandleFunc("/api/work/remote",s.remoteInfo);if readenv(filepath.Join(s.Rel,"config","work.env"),"EMERGENCY_QUARANTINE")=="1"{go func(){time.Sleep(2*time.Second);convergeHermesWorkersNative(s)}()};go s.schedulerLoop();go s.bridgeLoop();go s.remoteLinkLoop();http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d",p),m)}
 const page=`<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HERMES WORK</title>
