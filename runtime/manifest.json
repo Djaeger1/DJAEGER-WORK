@@ -1,1 +1,5 @@
-{"version":"v2.5.27-youtube-publisher-v2","description":"YouTube publisher V2: device-side private upload using the Redmi 5A OAuth vault, automatic thumbnail upload, explicit privacy-change API, secure local publication tracking, auto-update, rollback, tether protection, DATA_ONLY bridge, and zero-neuron operation.","restart":false}
+{
+  "version": "v2.5.28-youtube-video-manager-v3",
+  "description": "YouTube Video Manager V3: persistent per-video registry, stable publication identity, idempotent uploads, per-video privacy state, paginated/searchable video management API, explicit public confirmation support, auto-update and rollback.",
+  "restart": false
+}
