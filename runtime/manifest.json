@@ -1,5 +1,5 @@
 {
-  "version": "v2.5.28-youtube-video-manager-v3",
-  "description": "YouTube Video Manager V3: persistent per-video registry, stable publication identity, idempotent uploads, per-video privacy state, paginated/searchable video management API, explicit public confirmation support, auto-update and rollback.",
+  "version": "v2.5.29-youtube-thumbnail-repair",
+  "description": "YouTube Video Manager V3 with corrected raw-media custom thumbnail upload, per-video thumbnail retry, persistent registry, stable publication identity, and safe privacy controls.",
   "restart": false
 }
