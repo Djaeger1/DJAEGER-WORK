@@ -1242,6 +1242,51 @@ func (s *S)appendPublication(p PublicationRecord)error{
  b,_:=json.Marshal(p);f,e:=os.OpenFile(s.publicationPath(),os.O_CREATE|os.O_APPEND|os.O_WRONLY,0600);if e!=nil{return e};defer f.Close()
  _,e=f.Write(append(b,'\n'));return e
 }
+
+type YouTubeOAuthCredential struct{
+ ClientID string `json:"client_id"`
+ ClientSecret string `json:"client_secret"`
+ RefreshToken string `json:"refresh_token"`
+ SavedAt string `json:"saved_at"`
+}
+func (s *S)youtubeOAuthPath()string{return filepath.Join(s.Root,"secrets","youtube_oauth.json")}
+func (s *S)youtubeOAuthStatePath()string{return filepath.Join(s.Root,"state","youtube_oauth.json")}
+func (s *S)loadYouTubeOAuth()(YouTubeOAuthCredential,bool){
+ var c YouTubeOAuthCredential;b,e:=os.ReadFile(s.youtubeOAuthPath());if e!=nil||json.Unmarshal(b,&c)!=nil{return c,false}
+ return c,strings.TrimSpace(c.ClientID)!=""&&strings.TrimSpace(c.ClientSecret)!=""&&strings.TrimSpace(c.RefreshToken)!=""
+}
+func validateYouTubeOAuth(c YouTubeOAuthCredential)(int,error){
+ v:=url.Values{};v.Set("client_id",strings.TrimSpace(c.ClientID));v.Set("client_secret",strings.TrimSpace(c.ClientSecret));v.Set("refresh_token",strings.TrimSpace(c.RefreshToken));v.Set("grant_type","refresh_token")
+ req,e:=http.NewRequest("POST","https://oauth2.googleapis.com/token",strings.NewReader(v.Encode()));if e!=nil{return 0,e}
+ req.Header.Set("Content-Type","application/x-www-form-urlencoded")
+ cl:=androidHTTPClient();cl.Timeout=20*time.Second;resp,e:=cl.Do(req);if e!=nil{return 0,e};defer resp.Body.Close()
+ b,_:=io.ReadAll(io.LimitReader(resp.Body,131072));if resp.StatusCode<200||resp.StatusCode>=300{return 0,fmt.Errorf("oauth token http %d",resp.StatusCode)}
+ var x struct{AccessToken string `json:"access_token"`;ExpiresIn int `json:"expires_in"`;TokenType string `json:"token_type"`}
+ if json.Unmarshal(b,&x)!=nil||strings.TrimSpace(x.AccessToken)==""{return 0,fmt.Errorf("oauth token response invalid")}
+ return x.ExpiresIn,nil
+}
+func (s *S)youtubeOAuthStatus()map[string]any{
+ c,ok:=s.loadYouTubeOAuth();state:="NOT_CONFIGURED";verifiedAt:=""
+ if ok{state="CONFIGURED";var v map[string]any;if b,e:=os.ReadFile(s.youtubeOAuthStatePath());e==nil&&json.Unmarshal(b,&v)==nil{if x:=strings.TrimSpace(fmt.Sprint(v["state"]));x!=""&&x!="<nil>"{state=x};verifiedAt=strings.TrimSpace(fmt.Sprint(v["verified_at"]))}}
+ client:="";if ok{client=c.ClientID;if len(client)>24{client=client[:12]+"…"+client[len(client)-12:]}}
+ return map[string]any{"state":state,"configured":ok,"client_id_redacted":client,"scope":"https://www.googleapis.com/auth/youtube.upload","verified_at":verifiedAt,"secrets_exposed":false,"ai_used":false,"neurons_used":0}
+}
+func (s *S)youtubeOAuth(w http.ResponseWriter,r *http.Request){
+ if r.Method=="GET"{js(w,s.youtubeOAuthStatus());return}
+ if r.Method!="POST"{http.Error(w,"method not allowed",405);return}
+ if !s.auth(r){http.Error(w,"unauthorized",401);return}
+ if !privateRemote(r)||loopbackRemote(r){http.Error(w,"local_lan_only",403);return}
+ var q YouTubeOAuthCredential
+ if json.NewDecoder(io.LimitReader(r.Body,131072)).Decode(&q)!=nil{http.Error(w,"invalid json",400);return}
+ q.ClientID=strings.TrimSpace(q.ClientID);q.ClientSecret=strings.TrimSpace(q.ClientSecret);q.RefreshToken=strings.TrimSpace(q.RefreshToken)
+ if q.ClientID==""||!strings.HasSuffix(q.ClientID,".apps.googleusercontent.com")||q.ClientSecret==""||q.RefreshToken==""{http.Error(w,"incomplete youtube oauth credentials",400);return}
+ exp,e:=validateYouTubeOAuth(q);if e!=nil{http.Error(w,"youtube oauth validation failed",401);return}
+ q.SavedAt=time.Now().Format(time.RFC3339);_ = os.MkdirAll(filepath.Dir(s.youtubeOAuthPath()),0700)
+ b,_:=json.Marshal(q);tmp:=s.youtubeOAuthPath()+".tmp";if e=os.WriteFile(tmp,b,0600);e!=nil{http.Error(w,"credential save failed",500);return};if e=os.Rename(tmp,s.youtubeOAuthPath());e!=nil{http.Error(w,"credential save failed",500);return}
+ st:=map[string]any{"state":"VERIFIED","verified_at":time.Now().Format(time.RFC3339),"expires_in":exp,"scope":"youtube.upload"};sb,_:=json.Marshal(st);_ = os.WriteFile(s.youtubeOAuthStatePath(),sb,0600)
+ js(w,map[string]any{"ok":true,"status":s.youtubeOAuthStatus()})
+}
+
 func (s *S)publicationSummary()map[string]any{
  a:=s.loadPublications();plats:=map[string]int{};latestTopic:="";latestURL:="";latestAt:=""
  for _,p:=range a{plats[p.Platform]++;if p.RecordedAt>=latestAt{latestAt=p.RecordedAt;latestTopic=p.Topic;latestURL=p.URL}}
@@ -1470,7 +1515,7 @@ func convergeHermesWorkersNative(s *S){
  b,_:=json.Marshal(v);_ = os.WriteFile(filepath.Join(s.Root,"state","process-converge.json"),b,0600)
 }
 
-func main(){root:=flag.String("root","/data/adb/hermes_work","");rel:=flag.String("release","","");flag.Parse();p:=8766;if x:=readenv(filepath.Join(*rel,"config","work.env"),"WORK_PORT");x!=""{p,_=strconv.Atoi(x)};s:=&S{Root:*root,Rel:*rel,Port:p,Token:readenv(filepath.Join(*root,"config.env"),"ADMIN_TOKEN")};enforceEmergencyQuarantine(s);m:=http.NewServeMux();m.HandleFunc("/",s.index);m.HandleFunc("/api/work/status",s.status);m.HandleFunc("/api/work/action",s.action);m.HandleFunc("/api/work/diagnostics",s.diag);m.HandleFunc("/api/work/memory-audit",s.memoryAudit);m.HandleFunc("/api/work/maintenance",s.maintenance);m.HandleFunc("/api/work/update",s.update);m.HandleFunc("/api/work/collect",s.collect);m.HandleFunc("/api/work/research",s.research);m.HandleFunc("/api/work/brief",s.brief);m.HandleFunc("/api/work/opportunities",s.opportunities);m.HandleFunc("/api/work/planner",s.planner);m.HandleFunc("/api/work/script-prep",s.scriptPrep);m.HandleFunc("/api/work/scripts",s.scripts);m.HandleFunc("/api/work/production",s.production);m.HandleFunc("/api/work/production/download",s.productionDownload);m.HandleFunc("/api/work/handoff",s.handoff);m.HandleFunc("/api/work/desk",s.desk);m.HandleFunc("/api/work/job",s.jobDetail);m.HandleFunc("/api/work/studio",s.studio);m.HandleFunc("/api/work/publication",s.publication);m.HandleFunc("/api/work/channel/import",s.channelImport);m.HandleFunc("/api/work/performance",s.performance);m.HandleFunc("/api/work/schedule",s.schedule);m.HandleFunc("/api/work/run-research",s.runResearch);m.HandleFunc("/api/work/daily",s.daily);m.HandleFunc("/api/work/channel",s.channel);m.HandleFunc("/api/work/knowledge",s.knowledge);m.HandleFunc("/api/work/recovery",s.recovery);m.HandleFunc("/api/work/bridge",s.bridgeStatus);m.HandleFunc("/api/work/autoupdate",s.autoUpdateStatus);m.HandleFunc("/api/work/remote",s.remoteInfo);if readenv(filepath.Join(s.Rel,"config","work.env"),"EMERGENCY_QUARANTINE")=="1"{go func(){time.Sleep(2*time.Second);convergeHermesWorkersNative(s)}()};go s.schedulerLoop();go s.bridgeLoop();go s.remoteLinkLoop();http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d",p),m)}
+func main(){root:=flag.String("root","/data/adb/hermes_work","");rel:=flag.String("release","","");flag.Parse();p:=8766;if x:=readenv(filepath.Join(*rel,"config","work.env"),"WORK_PORT");x!=""{p,_=strconv.Atoi(x)};s:=&S{Root:*root,Rel:*rel,Port:p,Token:readenv(filepath.Join(*root,"config.env"),"ADMIN_TOKEN")};enforceEmergencyQuarantine(s);m:=http.NewServeMux();m.HandleFunc("/",s.index);m.HandleFunc("/api/work/status",s.status);m.HandleFunc("/api/work/action",s.action);m.HandleFunc("/api/work/diagnostics",s.diag);m.HandleFunc("/api/work/memory-audit",s.memoryAudit);m.HandleFunc("/api/work/maintenance",s.maintenance);m.HandleFunc("/api/work/update",s.update);m.HandleFunc("/api/work/collect",s.collect);m.HandleFunc("/api/work/research",s.research);m.HandleFunc("/api/work/brief",s.brief);m.HandleFunc("/api/work/opportunities",s.opportunities);m.HandleFunc("/api/work/planner",s.planner);m.HandleFunc("/api/work/script-prep",s.scriptPrep);m.HandleFunc("/api/work/scripts",s.scripts);m.HandleFunc("/api/work/production",s.production);m.HandleFunc("/api/work/production/download",s.productionDownload);m.HandleFunc("/api/work/handoff",s.handoff);m.HandleFunc("/api/work/desk",s.desk);m.HandleFunc("/api/work/job",s.jobDetail);m.HandleFunc("/api/work/studio",s.studio);m.HandleFunc("/api/work/publication",s.publication);m.HandleFunc("/api/work/youtube/oauth",s.youtubeOAuth);m.HandleFunc("/api/work/channel/import",s.channelImport);m.HandleFunc("/api/work/performance",s.performance);m.HandleFunc("/api/work/schedule",s.schedule);m.HandleFunc("/api/work/run-research",s.runResearch);m.HandleFunc("/api/work/daily",s.daily);m.HandleFunc("/api/work/channel",s.channel);m.HandleFunc("/api/work/knowledge",s.knowledge);m.HandleFunc("/api/work/recovery",s.recovery);m.HandleFunc("/api/work/bridge",s.bridgeStatus);m.HandleFunc("/api/work/autoupdate",s.autoUpdateStatus);m.HandleFunc("/api/work/remote",s.remoteInfo);if readenv(filepath.Join(s.Rel,"config","work.env"),"EMERGENCY_QUARANTINE")=="1"{go func(){time.Sleep(2*time.Second);convergeHermesWorkersNative(s)}()};go s.schedulerLoop();go s.bridgeLoop();go s.remoteLinkLoop();http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d",p),m)}
 const page=`<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HERMES WORK</title>
@@ -1548,6 +1593,16 @@ const page=`<!doctype html>
 </div>
 </section>
 
+<section class="card"><h3>YouTube Connection</h3>
+<div class="grid"><div class="box"><div class="k">OAuth Status</div><div id="ytstatus" class="v warn">NOT CONFIGURED</div><div id="ytverified" class="small">-</div></div></div>
+<p class="small">Credential disimpan lokal di Redmi 5A dengan permission 0600. Secret dan refresh token tidak pernah ditampilkan kembali. Penyimpanan hanya diterima melalui koneksi LAN lokal, bukan relay jarak jauh.</p>
+<input id="ytclient" value="910486209919-ruoq63jcu23rf2nrgn4hc7ou7j3cn3la.apps.googleusercontent.com" placeholder="OAuth Client ID" style="width:min(96%,650px)">
+<input id="ytsecret" type="password" autocomplete="off" placeholder="OAuth Client Secret" style="width:min(96%,650px)">
+<input id="ytrefresh" type="password" autocomplete="off" placeholder="Refresh token" style="width:min(96%,650px)">
+<button class="primary" id="ytsave">CONNECT YOUTUBE</button>
+<div id="ytmsg" class="small">Gunakan refresh token dengan scope youtube.upload.</div>
+</section>
+
 <section id="channel" class="card"><h3>My Channel</h3><div class="grid">
 <div class="box"><div class="k">Connection</div><div id="channelstate" class="v">-</div></div><div class="box"><div class="k">Published Records</div><div id="publicationcount" class="v">-</div></div>
 <div class="box"><div class="k">Views</div><div id="views" class="v">-</div></div>
@@ -1584,6 +1639,22 @@ const $=x=>document.getElementById(x);
 function h(){return {'X-Hermes-Token':$('token').value.trim(),'Content-Type':'application/json'}}
 function txt(x){return (x===null||x===undefined||x==='')?'-':String(x)}
 async function getj(p,o){let r=await fetch(p,o);if(!r.ok)throw new Error(await r.text());return await r.json()}
+
+async function youtubeStatus(){
+ try{let y=await getj('/api/work/youtube/oauth');$('ytstatus').textContent=txt(y.state);$('ytstatus').className='v '+(y.state==='VERIFIED'?'ok':(y.configured?'warn':'bad'));$('ytverified').textContent=y.verified_at?('Verified '+y.verified_at):'Belum diverifikasi'}
+ catch(e){$('ytstatus').textContent='STATUS ERROR';$('ytstatus').className='v bad'}
+}
+async function saveYouTube(){
+ let secret=$('ytsecret').value.trim(),refresh=$('ytrefresh').value.trim(),client=$('ytclient').value.trim();
+ if(!$('token').value.trim()){$('ytmsg').textContent='Isi Admin token pada menu System & Recovery terlebih dahulu.';return}
+ if(!secret||!refresh){$('ytmsg').textContent='Client Secret dan Refresh token wajib diisi.';return}
+ $('ytmsg').textContent='Memverifikasi ke Google…';
+ try{
+  let r=await fetch('/api/work/youtube/oauth',{method:'POST',headers:h(),body:JSON.stringify({client_id:client,client_secret:secret,refresh_token:refresh})});
+  if(!r.ok)throw new Error(await r.text());
+  $('ytsecret').value='';$('ytrefresh').value='';$('ytmsg').textContent='YouTube OAuth VERIFIED. Secret tersimpan lokal dan tidak akan ditampilkan lagi.';await youtubeStatus()
+ }catch(e){$('ytmsg').textContent='Gagal: '+e}
+}
 async function status(){
  try{
   let j=await getj('/api/work/status');
@@ -1678,7 +1749,8 @@ async function automation(){
 async function recovery(){
  try{let j=await getj('/api/work/recovery');$('currel').textContent=txt(j.current);$('prevrel').textContent=txt(j.previous)}catch(e){}
 }
-async function refresh(){await status();await Promise.all([researchData(),plannerData(),scriptData(),productionData(),deskData(),channel(),knowledge(),automation(),recovery()])}
+async function refresh(){await $('ytsave').onclick=saveYouTube;youtubeStatus();
+status();await Promise.all([researchData(),plannerData(),scriptData(),productionData(),deskData(),channel(),knowledge(),automation(),recovery()])}
 async function act(a){let r=await fetch('/api/work/action',{method:'POST',headers:h(),body:JSON.stringify({action:a})});$('out').textContent=await r.text();refresh()}
 $('backup').onclick=()=>act('backup');$('safe').onclick=()=>act('safe_mode');$('resume').onclick=()=>act('resume');$('rollback').onclick=()=>act('rollback');
 $('diag').onclick=async()=>{$('out').textContent=await(await fetch('/api/work/diagnostics',{headers:h()})).text()};
