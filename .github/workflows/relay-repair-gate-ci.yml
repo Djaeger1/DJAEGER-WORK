@@ -1,0 +1,40 @@
+name: Relay repair gate CI
+
+on:
+  push:
+    branches: [relay-v2511-repair-gate]
+  pull_request:
+    branches: [main]
+    paths:
+      - "railway-relay/server.js"
+      - ".github/workflows/relay-repair-gate-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax
+        run: node --check railway-relay/server.js
+      - name: Verify repair gate
+        run: |
+          grep -q 'releaseAtLeast(release,2,5,11)' railway-relay/server.js
+          grep -q 'setTimeout(autonomousMaintenanceTick, 15000)' railway-relay/server.js
+          grep -q 'memory_pressure:' railway-relay/server.js
+          grep -q 'top_anon:' railway-relay/server.js
+          grep -q 'github_control_writes_allowed:' railway-relay/server.js
+      - name: Verify no thermal bypass code added
+        run: |
+          ! grep -Eq 'MAX_TEMP|thermal|battery/temp|drop_caches|force-stop|killall|pkill' railway-relay/server.js
+      - name: Report
+        run: |
+          echo "REPAIR_GATE=PASS"
+          echo "MIN_DEVICE_RELEASE=v2.5.11"
+          echo "THERMAL_BYPASS=NO"
