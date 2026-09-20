@@ -361,6 +361,9 @@ function safeSnapshot(x={}) {
     github_control_generation:x.github_control_generation ?? null,
     github_control_writes_allowed:x.github_control_writes_allowed ?? false,
     bridge_agent:x.bridge_agent ?? null,
+    bridge_state:x.bridge_state ?? null,
+    bridge_reason:x.bridge_reason ?? null,
+    bridge_last_sync:x.bridge_last_sync ?? null,
     ai_used:x.ai_used ?? false,
     neurons_used:x.neurons_used ?? 0,
     sent_at:x.sent_at ?? null
