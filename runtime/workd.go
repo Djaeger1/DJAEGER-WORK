@@ -1281,13 +1281,13 @@ func youtubeAccessToken(c YouTubeOAuthCredential)(string,int,error){
   if desc!=""&&desc!="<nil>"{return"",0,fmt.Errorf("%s: %s",code,desc)}
   return"",0,fmt.Errorf("%s",code)
  }
- var x struct{AccessToken string \`json:"access_token"\`;ExpiresIn int \`json:"expires_in"\`}
+ var x struct{AccessToken string `json:"access_token"`;ExpiresIn int `json:"expires_in"`}
  if json.Unmarshal(b,&x)!=nil||strings.TrimSpace(x.AccessToken)==""{return"",0,fmt.Errorf("oauth token response invalid")}
  return strings.TrimSpace(x.AccessToken),x.ExpiresIn,nil
 }
 func youtubeClip(s string,n int)string{r:=[]rune(strings.TrimSpace(s));if len(r)>n{return string(r[:n])};return string(r)}
 func youtubeAPIError(b []byte,code int)string{
- var x struct{Error struct{Message string \`json:"message"\`;Status string \`json:"status"\`} \`json:"error"\`}
+ var x struct{Error struct{Message string `json:"message"`;Status string `json:"status"`} `json:"error"`}
  if json.Unmarshal(b,&x)==nil{m:=youtubeClip(x.Error.Message,300);if m!=""{return m};if x.Error.Status!=""{return youtubeClip(x.Error.Status,120)}}
  return fmt.Sprintf("http_%d",code)
 }
@@ -1350,7 +1350,7 @@ func (s *S)runYouTubePrivateUpload(p PlanItem,sr StudioResult,sp ScriptPackage){
  uc:=androidHTTPClient();uc.Timeout=20*time.Minute;ur,e:=uc.Do(upReq);if e!=nil{fail("youtube upload failed: "+e.Error());return}
  ub,_:=io.ReadAll(io.LimitReader(ur.Body,524288));ur.Body.Close()
  if ur.StatusCode<200||ur.StatusCode>=300{fail("youtube upload rejected: "+youtubeAPIError(ub,ur.StatusCode));return}
- var done struct{ID string \`json:"id"\`};if json.Unmarshal(ub,&done)!=nil||strings.TrimSpace(done.ID)==""{fail("youtube response missing video id");return}
+ var done struct{ID string `json:"id"`};if json.Unmarshal(ub,&done)!=nil||strings.TrimSpace(done.ID)==""{fail("youtube response missing video id");return}
  vid:=strings.TrimSpace(done.ID);at:=time.Now().Format(time.RFC3339)
  rec:=PublicationRecord{PlannerID:p.ID,Topic:p.Title,Platform:"youtube",ExternalID:vid,URL:"https://youtu.be/"+vid,Channel:"YouTube",Status:"UPLOADED_PRIVATE",PublishedAt:at,RecordedAt:at}
  if e=s.appendPublication(rec);e!=nil{fail("video uploaded but local publication record failed");return}
@@ -1363,7 +1363,7 @@ func (s *S)youtubePublish(w http.ResponseWriter,r *http.Request){
  if !s.auth(r){http.Error(w,"unauthorized",401);return}
  if !privateRemote(r)||loopbackRemote(r){http.Error(w,"local_lan_only",403);return}
  if ok,reason:=guard(s);!ok{http.Error(w,"worker guard: "+reason,409);return}
- var q struct{PlannerID string \`json:"planner_id"\`;Privacy string \`json:"privacy"\`}
+ var q struct{PlannerID string `json:"planner_id"`;Privacy string `json:"privacy"`}
  if r.Body!=nil{_ = json.NewDecoder(io.LimitReader(r.Body,65536)).Decode(&q)}
  q.PlannerID=strings.TrimSpace(q.PlannerID);q.Privacy=strings.ToLower(strings.TrimSpace(q.Privacy));if q.Privacy==""{q.Privacy="private"}
  if q.Privacy!="private"{http.Error(w,"publisher v1 only allows private uploads",400);return}
