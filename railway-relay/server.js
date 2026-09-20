@@ -529,6 +529,15 @@ const server = http.createServer(async (req,res)=>{
 
 server.listen(PORT,"0.0.0.0",()=>console.log(`relay listening on ${PORT} remote-link=enabled`));
 
+async function logDeviceAutoupdate() {
+  try {
+    if(!deviceFresh()) { console.log("HERMES_AUTOUPDATE DEVICE_LINK_STALE"); return; }
+    const r=decodeDeviceJson(await queueDeviceRead("/api/work/autoupdate",12000));
+    console.log("HERMES_AUTOUPDATE "+JSON.stringify(r));
+  } catch(e) {
+    console.log("HERMES_AUTOUPDATE_ERROR "+String(e?.message||e));
+  }
+}
 async function logDeviceRecovery() {
   try {
     if(!deviceFresh()) { console.log("HERMES_RECOVERY DEVICE_LINK_STALE"); return; }
@@ -555,7 +564,9 @@ async function logLatestSnapshot() {
 }
 setTimeout(logLatestSnapshot, 3000);
 setTimeout(logDeviceRecovery, 12000);
+setTimeout(logDeviceAutoupdate, 18000);
 setInterval(logDeviceRecovery, 5*60*1000);
+setInterval(logDeviceAutoupdate, 5*60*1000);
 setInterval(logLatestSnapshot, 60000);
 setInterval(()=>{
   pruneQueue();
