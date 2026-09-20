@@ -45,8 +45,9 @@ jobs:
 
       - name: Verify helper suppression
         run: |
-          grep -q 'process-converge.sh' runtime/worker/tick.sh
-          grep -q 'process-converge.sh' runtime/worker/handoff.sh
+          ! grep -q 'process-converge.sh' runtime/worker/tick.sh
+          grep -q 'convergeHermesWorkersNative' runtime/workd.go
+          grep -q 'HERMES_WORK_RELEASE_WORKERS_NATIVE' runtime/workd.go
           grep -q 'rm -f "$ROOT/state/autoupdate.pid"' runtime/worker/tick.sh
           grep -q 'rm -rf "$ROOT/state/autoupdate.daemon.lock"' runtime/worker/tick.sh
           ! grep -Eq 'reboot|setprop|drop_caches|system_server|telephony|networkstack|qcril|force-stop' runtime/worker/tick.sh
