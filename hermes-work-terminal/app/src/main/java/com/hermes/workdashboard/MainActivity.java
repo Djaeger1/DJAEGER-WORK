@@ -636,6 +636,10 @@ public class MainActivity extends Activity {
         yt.addView(ytConnect);
         TextView ytOut = mono("Menunggu kredensial.");
         yt.addView(ytOut);
+        Button ytPublish = actionButton("UJI UPLOAD PRIVATE", false);
+        yt.addView(ytPublish);
+        TextView ytPublishOut = mono("Publisher: memeriksa…");
+        yt.addView(ytPublishOut);
         body.addView(yt);
 
         apiAsync("GET", "/api/work/youtube/oauth", null, false, (code, response) -> {
@@ -649,6 +653,54 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 ytState.setText("Status OAuth: belum tersedia");
                 ytState.setTextColor(WARN);
+            }
+        });
+
+        apiAsync("GET", "/api/work/youtube/publish", null, false, (code, response) -> {
+            if (code >= 200 && code < 300) {
+                try {
+                    JSONObject j = new JSONObject(response);
+                    String state = j.optString("state", "IDLE");
+                    String topic = j.optString("next_topic", "");
+                    String msg = "Publisher: " + localizeStatus(state);
+                    if (!topic.isEmpty()) msg += "\nSiap diuji: " + topic;
+                    if ("SUCCESS".equals(state)) {
+                        msg += "\nUpload PRIVATE berhasil.";
+                        String url = j.optString("url", "");
+                        if (!url.isEmpty()) msg += "\n" + url;
+                    } else if ("FAILED".equals(state)) {
+                        msg += "\n" + j.optString("error", "Upload gagal.");
+                    } else if ("UPLOADING".equals(state)) {
+                        msg += "\nVideo sedang diunggah sebagai PRIVATE.";
+                    }
+                    ytPublishOut.setText(msg);
+                } catch (Exception ignored) {}
+            } else {
+                ytPublishOut.setText("Publisher belum tersedia di runtime.");
+            }
+        });
+
+        ytPublish.setOnClickListener(v -> {
+            if (token().isEmpty()) {
+                ytPublishOut.setText("TOKEN ADMIN belum tersimpan. Buka PEMBARUAN → KONEKSI.");
+                return;
+            }
+            ytPublish.setEnabled(false);
+            ytPublishOut.setText("Memulai uji upload PRIVATE…");
+            try {
+                JSONObject payload = new JSONObject();
+                payload.put("privacy", "private");
+                apiAsync("POST", "/api/work/youtube/publish", payload.toString(), true, (code, response) -> {
+                    ytPublish.setEnabled(true);
+                    if (code == 202 || (code >= 200 && code < 300)) {
+                        ytPublishOut.setText("Upload PRIVATE dimulai di Redmi 5A. Tekan tombol refresh di kanan atas beberapa saat lagi untuk melihat hasil.");
+                    } else {
+                        ytPublishOut.setText("Uji upload gagal dimulai. HTTP " + code + "\n" + response.trim());
+                    }
+                });
+            } catch (Exception e) {
+                ytPublish.setEnabled(true);
+                ytPublishOut.setText("Gagal menyiapkan uji upload.");
             }
         });
 
@@ -892,7 +944,7 @@ public class MainActivity extends Activity {
         io.execute(() -> {
             StringBuilder report = new StringBuilder();
             report.append("===== HASIL PEMBARUAN DJAEGER WORK =====\n");
-            report.append("APP_VERSION=1.3.2\n");
+            report.append("APP_VERSION=1.3.3\n");
             report.append("RUNTIME_URL=").append(runtimeUrl()).append("\n");
             report.append("GENERATED_AT=").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new java.util.Date())).append("\n\n");
 
