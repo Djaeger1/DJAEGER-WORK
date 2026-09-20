@@ -1,0 +1,68 @@
+name: Process convergence CI
+
+on:
+  push:
+    branches: [process-convergence-v2517]
+  pull_request:
+    branches: [main]
+    paths:
+      - "runtime/workd.go"
+      - "runtime/manifest.json"
+      - "runtime/worker/handoff.sh"
+      - "runtime/worker/process-converge.sh"
+      - ".github/workflows/release.yml"
+      - ".github/workflows/process-convergence-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.23.x'
+          cache: false
+
+      - name: Cross-compile ARMv7
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -o /tmp/workd ./runtime/workd.go
+
+      - name: Shell syntax
+        run: |
+          sh -n runtime/worker/process-converge.sh
+          sh -n runtime/worker/handoff.sh
+          sh -n runtime/worker/tick.sh
+          sh -n runtime/worker/autoupdate.sh
+
+      - name: Verify cleanup scope
+        run: |
+          grep -q 'HERMES_WORK_RELEASE_WORKERS_ONLY' runtime/worker/process-converge.sh
+          grep -q '/worker/autoupdate.sh' runtime/worker/process-converge.sh
+          grep -q '/worker/github-control-shadow.sh' runtime/worker/process-converge.sh
+          grep -q '/worker/tick.sh' runtime/worker/process-converge.sh
+          grep -q '/worker/handoff.sh' runtime/worker/process-converge.sh
+          grep -q '/worker/bridge-deploy.sh' runtime/worker/process-converge.sh
+          ! grep -Eq 'system_server|com.android|networkstack|phone|qcril|telephony|rndis|setprop|reboot|drop_caches|force-stop' runtime/worker/process-converge.sh
+
+      - name: Verify process safety boundaries
+        run: |
+          grep -q '\[ "$N" = "$SELF" \] && continue' runtime/worker/process-converge.sh
+          grep -q '\[ "$N" = "$PARENT" \] && continue' runtime/worker/process-converge.sh
+          grep -q '\[ "$N" -le 1 \]' runtime/worker/process-converge.sh
+          grep -q 'process-converge.sh' runtime/worker/handoff.sh
+          grep -q 'restart_single_updater' runtime/worker/handoff.sh
+
+      - name: Verify release
+        run: |
+          grep -q '"version":"v2.5.17-memory-process-convergence"' runtime/manifest.json
+          grep -q 'HERMES_WORK_RUNTIME_v2.5.17_MEMORY_PROCESS_CONVERGENCE' .github/workflows/release.yml
+          grep -q 'cp worker/process-converge.sh out/payload/worker/process-converge.sh' .github/workflows/release.yml
+
+      - name: Report
+        run: |
+          echo "PROCESS_CONVERGENCE=PASS"
+          echo "SCOPE=HERMES_WORK_RELEASE_WORKERS_ONLY"
+          echo "ANDROID_SYSTEM_PROCESSES=UNTOUCHED"
