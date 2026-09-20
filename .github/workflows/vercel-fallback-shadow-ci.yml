@@ -41,7 +41,7 @@ jobs:
         run: |
           if grep -qx 'EMERGENCY_QUARANTINE=1' runtime/config/work.env; then
             grep -qx 'GITHUB_CONTROL_SHADOW=0' runtime/config/work.env
-            grep -q 'v2.5.19-self-enforced-quarantine' runtime/manifest.json
+            grep -Eq 'v2\.5\.(19-self-enforced-quarantine|20-cpu-thermal-telemetry-quarantine)' runtime/manifest.json
           else
             grep -qx 'GITHUB_CONTROL_SHADOW=1' runtime/config/work.env
             grep -q 'v2.5.15-github-shadow-readonly' runtime/manifest.json
@@ -66,8 +66,8 @@ jobs:
       - name: Verify release packaging
         run: |
           if grep -qx 'EMERGENCY_QUARANTINE=1' runtime/config/work.env; then
-            grep -q 'HERMES_WORK_RUNTIME_v2.5.19_SELF_ENFORCED_QUARANTINE' .github/workflows/release.yml
-            grep -q 'v2.5.19-self-enforced-quarantine' .github/workflows/release.yml
+            grep -Eq 'HERMES_WORK_RUNTIME_v2\.5\.(19_SELF_ENFORCED_QUARANTINE|20_CPU_THERMAL_TELEMETRY_QUARANTINE)' .github/workflows/release.yml
+            grep -Eq 'v2\.5\.(19-self-enforced-quarantine|20-cpu-thermal-telemetry-quarantine)' .github/workflows/release.yml
           else
             grep -q 'HERMES_WORK_RUNTIME_v2.5.15_GITHUB_SHADOW_READONLY' .github/workflows/release.yml
             grep -q 'v2.5.15-github-shadow-readonly' .github/workflows/release.yml
