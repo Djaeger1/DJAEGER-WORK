@@ -69,7 +69,7 @@ func (s *S)bridgeSnapshot()map[string]any{
  pub:=s.publicationSummary();fb:=s.performanceSummary()
  return map[string]any{
   "sent_at":time.Now().Format(time.RFC3339),"release":runtimeRelease(s),"configured_release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),
-  "tether_state":ts,"temperature_c":temp(),"mem_available_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"memory_pressure":memoryPressureSummary(),"process_memory":cachedProcessMemorySummary(),"swap":swapSummary(),
+  "tether_state":ts,"temperature_c":temp(),"mem_available_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"memory_pressure":memoryPressureSummary(),"swap":swapSummary(),
   "zram":zramStats(),"top_rss":topRSSProcesses(10),
   "worker_state":worker,"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),
   "research_total":s.researchTotal(),"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research"))),"research_engine":"SUGGEST_MULTI_V2",
