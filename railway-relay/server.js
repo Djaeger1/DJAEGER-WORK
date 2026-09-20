@@ -565,6 +565,7 @@ async function logLatestSnapshot() {
 setTimeout(logLatestSnapshot, 3000);
 setTimeout(logDeviceRecovery, 12000);
 setTimeout(logDeviceAutoupdate, 18000);
+setTimeout(logDeviceAutoupdate, 45000);
 setInterval(logDeviceRecovery, 5*60*1000);
 setInterval(logDeviceAutoupdate, 5*60*1000);
 setInterval(logLatestSnapshot, 60000);
