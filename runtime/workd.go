@@ -1285,7 +1285,55 @@ func enforceEmergencyQuarantine(s *S){
  _ = os.Remove(filepath.Join(st,"github-control-shadow.pid"))
 }
 
-func main(){root:=flag.String("root","/data/adb/hermes_work","");rel:=flag.String("release","","");flag.Parse();p:=8766;if x:=readenv(filepath.Join(*rel,"config","work.env"),"WORK_PORT");x!=""{p,_=strconv.Atoi(x)};s:=&S{Root:*root,Rel:*rel,Port:p,Token:readenv(filepath.Join(*root,"config.env"),"ADMIN_TOKEN")};enforceEmergencyQuarantine(s);m:=http.NewServeMux();m.HandleFunc("/",s.index);m.HandleFunc("/api/work/status",s.status);m.HandleFunc("/api/work/action",s.action);m.HandleFunc("/api/work/diagnostics",s.diag);m.HandleFunc("/api/work/memory-audit",s.memoryAudit);m.HandleFunc("/api/work/maintenance",s.maintenance);m.HandleFunc("/api/work/update",s.update);m.HandleFunc("/api/work/collect",s.collect);m.HandleFunc("/api/work/research",s.research);m.HandleFunc("/api/work/brief",s.brief);m.HandleFunc("/api/work/opportunities",s.opportunities);m.HandleFunc("/api/work/planner",s.planner);m.HandleFunc("/api/work/script-prep",s.scriptPrep);m.HandleFunc("/api/work/scripts",s.scripts);m.HandleFunc("/api/work/production",s.production);m.HandleFunc("/api/work/production/download",s.productionDownload);m.HandleFunc("/api/work/handoff",s.handoff);m.HandleFunc("/api/work/desk",s.desk);m.HandleFunc("/api/work/job",s.jobDetail);m.HandleFunc("/api/work/studio",s.studio);m.HandleFunc("/api/work/publication",s.publication);m.HandleFunc("/api/work/channel/import",s.channelImport);m.HandleFunc("/api/work/performance",s.performance);m.HandleFunc("/api/work/schedule",s.schedule);m.HandleFunc("/api/work/run-research",s.runResearch);m.HandleFunc("/api/work/daily",s.daily);m.HandleFunc("/api/work/channel",s.channel);m.HandleFunc("/api/work/knowledge",s.knowledge);m.HandleFunc("/api/work/recovery",s.recovery);m.HandleFunc("/api/work/bridge",s.bridgeStatus);m.HandleFunc("/api/work/autoupdate",s.autoUpdateStatus);m.HandleFunc("/api/work/remote",s.remoteInfo);go s.schedulerLoop();go s.bridgeLoop();go s.remoteLinkLoop();http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d",p),m)}
+func convergeHermesWorkersNative(s *S){
+ type node struct{pid,ppid int;cmd string}
+ ents,_:=os.ReadDir("/proc");nodes:=map[int]node{};marked:=map[int]bool{}
+ self,parent:=os.Getpid(),os.Getppid()
+ isRoot:=func(cmd string)bool{
+  if !strings.Contains(cmd,s.Root+"/releases/"){return false}
+  for _,x:=range []string{"/worker/autoupdate.sh","/worker/github-control-shadow.sh","/worker/tick.sh","/worker/bridge-deploy.sh","/worker/handoff.sh"}{
+   if strings.Contains(cmd,x){return true}
+  }
+  return false
+ }
+ for _,ent:=range ents{
+  if !ent.IsDir(){continue};pid,e:=strconv.Atoi(ent.Name());if e!=nil{continue}
+  b,e:=os.ReadFile(filepath.Join("/proc",ent.Name(),"status"));if e!=nil{continue}
+  ppid:=0
+  for _,l:=range strings.Split(string(b),"\n"){
+   if strings.HasPrefix(l,"PPid:"){f:=strings.Fields(l);if len(f)>1{ppid,_=strconv.Atoi(f[1])};break}
+  }
+  cb,_:=os.ReadFile(filepath.Join("/proc",ent.Name(),"cmdline"))
+  cmd:=strings.ReplaceAll(string(cb),"\x00"," ")
+  nodes[pid]=node{pid:pid,ppid:ppid,cmd:cmd}
+  if pid!=self&&pid!=parent&&pid>1&&isRoot(cmd){marked[pid]=true}
+ }
+ rootsBefore:=len(marked)
+ for {
+  changed:=false
+  for pid,n:=range nodes{
+   if pid==self||pid==parent||pid<=1||marked[pid]{continue}
+   if marked[n.ppid]{marked[pid]=true;changed=true}
+  }
+  if !changed{break}
+ }
+ for pid:=range marked{_ = syscall.Kill(pid,syscall.SIGTERM)}
+ time.Sleep(300*time.Millisecond)
+ for pid:=range marked{
+  if _,e:=os.Stat(filepath.Join("/proc",strconv.Itoa(pid)));e==nil{_ = syscall.Kill(pid,syscall.SIGKILL)}
+ }
+ rootsAfter:=0
+ ents,_=os.ReadDir("/proc")
+ for _,ent:=range ents{
+  if !ent.IsDir(){continue};pid,e:=strconv.Atoi(ent.Name());if e!=nil||pid==self||pid==parent||pid<=1{continue}
+  cb,_:=os.ReadFile(filepath.Join("/proc",ent.Name(),"cmdline"))
+  if isRoot(strings.ReplaceAll(string(cb),"\x00"," ")){rootsAfter++}
+ }
+ v:=map[string]any{"state":"DONE","worker_roots_before":rootsBefore,"targeted_processes":len(marked),"worker_roots_after":rootsAfter,"scope":"HERMES_WORK_RELEASE_WORKERS_NATIVE","updated_at":time.Now().Format(time.RFC3339)}
+ b,_:=json.Marshal(v);_ = os.WriteFile(filepath.Join(s.Root,"state","process-converge.json"),b,0600)
+}
+
+func main(){root:=flag.String("root","/data/adb/hermes_work","");rel:=flag.String("release","","");flag.Parse();p:=8766;if x:=readenv(filepath.Join(*rel,"config","work.env"),"WORK_PORT");x!=""{p,_=strconv.Atoi(x)};s:=&S{Root:*root,Rel:*rel,Port:p,Token:readenv(filepath.Join(*root,"config.env"),"ADMIN_TOKEN")};enforceEmergencyQuarantine(s);m:=http.NewServeMux();m.HandleFunc("/",s.index);m.HandleFunc("/api/work/status",s.status);m.HandleFunc("/api/work/action",s.action);m.HandleFunc("/api/work/diagnostics",s.diag);m.HandleFunc("/api/work/memory-audit",s.memoryAudit);m.HandleFunc("/api/work/maintenance",s.maintenance);m.HandleFunc("/api/work/update",s.update);m.HandleFunc("/api/work/collect",s.collect);m.HandleFunc("/api/work/research",s.research);m.HandleFunc("/api/work/brief",s.brief);m.HandleFunc("/api/work/opportunities",s.opportunities);m.HandleFunc("/api/work/planner",s.planner);m.HandleFunc("/api/work/script-prep",s.scriptPrep);m.HandleFunc("/api/work/scripts",s.scripts);m.HandleFunc("/api/work/production",s.production);m.HandleFunc("/api/work/production/download",s.productionDownload);m.HandleFunc("/api/work/handoff",s.handoff);m.HandleFunc("/api/work/desk",s.desk);m.HandleFunc("/api/work/job",s.jobDetail);m.HandleFunc("/api/work/studio",s.studio);m.HandleFunc("/api/work/publication",s.publication);m.HandleFunc("/api/work/channel/import",s.channelImport);m.HandleFunc("/api/work/performance",s.performance);m.HandleFunc("/api/work/schedule",s.schedule);m.HandleFunc("/api/work/run-research",s.runResearch);m.HandleFunc("/api/work/daily",s.daily);m.HandleFunc("/api/work/channel",s.channel);m.HandleFunc("/api/work/knowledge",s.knowledge);m.HandleFunc("/api/work/recovery",s.recovery);m.HandleFunc("/api/work/bridge",s.bridgeStatus);m.HandleFunc("/api/work/autoupdate",s.autoUpdateStatus);m.HandleFunc("/api/work/remote",s.remoteInfo);if readenv(filepath.Join(s.Rel,"config","work.env"),"EMERGENCY_QUARANTINE")=="1"{go func(){time.Sleep(2*time.Second);convergeHermesWorkersNative(s)}()};go s.schedulerLoop();go s.bridgeLoop();go s.remoteLinkLoop();http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d",p),m)}
 const page=`<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HERMES WORK</title>
