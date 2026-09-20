@@ -944,7 +944,12 @@ public class MainActivity extends Activity {
                         meta.setOrientation(LinearLayout.VERTICAL);
                         meta.addView(text(title, 14, TEXT, true));
                         String detail = pr + " · " + status;
-                        if (!thumbState.isEmpty()) detail += "\nThumbnail: " + localizeStatus(thumbState);
+                        if (!thumbState.isEmpty()) {
+                            String thumbLabel = "FAILED".equalsIgnoreCase(thumbState)
+                                    ? "Thumbnail kustom: GAGAL · pratinjau YouTube tetap tersedia"
+                                    : "Thumbnail kustom: " + localizeStatus(thumbState);
+                            detail += "\n" + thumbLabel;
+                        }
                         if (!updated.isEmpty()) detail += "\n" + updated;
                         meta.addView(text(detail, 11, MUTED, false));
                         head.addView(meta, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -952,6 +957,11 @@ public class MainActivity extends Activity {
 
                         Button pb = actionButton("UBAH PRIVASI", false);
                         vc.addView(pb);
+                        if ("FAILED".equalsIgnoreCase(thumbState)) {
+                            Button retryThumb = actionButton("ULANGI THUMBNAIL KUSTOM", false);
+                            vc.addView(retryThumb);
+                            retryThumb.setOnClickListener(x -> retryYouTubeThumbnail(pid, retryThumb, load[0]));
+                        }
                         list.addView(vc);
 
                         pb.setOnClickListener(x -> showYouTubePrivacyDialog(pid, title, load[0]));
@@ -1011,6 +1021,29 @@ public class MainActivity extends Activity {
                 if (c != null) c.disconnect();
             }
         });
+    }
+
+    private void retryYouTubeThumbnail(String publicationId, Button button, Runnable reload) {
+        if (publicationId == null || publicationId.trim().isEmpty()) return;
+        button.setEnabled(false);
+        button.setText("MENGULANGI…");
+        try {
+            JSONObject p = new JSONObject();
+            p.put("publication_id", publicationId);
+            apiAsync("POST", "/api/work/youtube/thumbnail", p.toString(), true, (code, response) -> {
+                button.setEnabled(true);
+                button.setText("ULANGI THUMBNAIL KUSTOM");
+                if (code >= 200 && code < 300) {
+                    Toast.makeText(this, "Thumbnail kustom berhasil dipasang.", Toast.LENGTH_LONG).show();
+                    reload.run();
+                } else {
+                    Toast.makeText(this, "Thumbnail belum berhasil · HTTP " + code, Toast.LENGTH_LONG).show();
+                }
+            });
+        } catch (Exception e) {
+            button.setEnabled(true);
+            button.setText("ULANGI THUMBNAIL KUSTOM");
+        }
     }
 
     private void showYouTubePrivacyDialog(String publicationId,String title,Runnable reload){
@@ -1181,7 +1214,7 @@ public class MainActivity extends Activity {
         io.execute(() -> {
             StringBuilder report = new StringBuilder();
             report.append("===== HASIL PEMBARUAN DJAEGER WORK =====\n");
-            report.append("APP_VERSION=1.3.8\n");
+            report.append("APP_VERSION=1.3.9\n");
             report.append("RUNTIME_URL=").append(runtimeUrl()).append("\n");
             report.append("GENERATED_AT=").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new java.util.Date())).append("\n\n");
 
