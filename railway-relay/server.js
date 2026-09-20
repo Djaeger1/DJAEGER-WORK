@@ -601,6 +601,7 @@ async function tryDirectSelfUpdateAuthProbe() {
 
     const sha256hex=v=>crypto.createHash("sha256").update(String(v||"")).digest("hex");
     const candidates=[
+      ["LEGACY_ADMIN_TOKEN",String(process.env.HERMES_LEGACY_ADMIN_TOKEN||"")],
       ["NTFY_TOPIC",TOPIC],
       ["SHA256_NTFY_TOPIC",TOPIC?sha256hex(TOPIC):""],
       ["ACCESS_PATH",ACCESS_PATH],
