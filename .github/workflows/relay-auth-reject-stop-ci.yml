@@ -1,0 +1,33 @@
+name: Relay auth-reject stop CI
+
+on:
+  push:
+    branches: [relay-probe-stop-on-auth-reject]
+  pull_request:
+    branches: [main]
+    paths:
+      - "railway-relay/server.js"
+      - ".github/workflows/relay-auth-reject-stop-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax
+        run: node --check railway-relay/server.js
+      - name: Verify auth reject is sticky per release
+        run: |
+          grep -q 'directUpdateAuthRejectedRelease' railway-relay/server.js
+          grep -q 'retry:"DISABLED_UNTIL_RELEASE_CHANGES"' railway-relay/server.js
+          grep -q 'directUpdateAuthRejectedRelease===release' railway-relay/server.js
+      - name: Verify no destructive action
+        run: |
+          ! grep -Eq 'reboot|drop_caches|force-stop|killall|pkill|system_server|qcril|telephony|networkstack|rndis0' railway-relay/server.js
