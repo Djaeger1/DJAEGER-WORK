@@ -799,12 +799,27 @@ public class MainActivity extends Activity {
 
     private interface ReportCallback { void done(String report); }
 
+    private JSONObject readRelayStatusSnapshot() {
+        try {
+            HttpResult r = requestWithTimeout("GET",
+                    "https://hermes-work-chatgpt-relay-v3-production.up.railway.app/status-feed",
+                    null, false, "", 5000, 12000);
+            if (r.code < 200 || r.code >= 300) return null;
+            JSONObject root = new JSONObject(r.body);
+            JSONObject snap = root.optJSONObject("snapshot");
+            if (snap == null) return null;
+            snap.put("_relay_source", root.optString("source", "relay"));
+            snap.put("_device_connected", root.optBoolean("device_connected", false));
+            return snap;
+        } catch (Exception ignored) { return null; }
+    }
+
     private void generateUpdateReport(TextView out, ReportCallback cb) {
         out.setText("Mengumpulkan hasil pembaruan…");
         io.execute(() -> {
             StringBuilder report = new StringBuilder();
             report.append("===== HASIL PEMBARUAN DJAEGER WORK =====\n");
-            report.append("APP_VERSION=1.3.0\n");
+            report.append("APP_VERSION=1.3.1\n");
             report.append("RUNTIME_URL=").append(runtimeUrl()).append("\n");
             report.append("GENERATED_AT=").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new java.util.Date())).append("\n\n");
 
@@ -832,7 +847,24 @@ public class MainActivity extends Activity {
                     report.append("BODY=").append(compact(st.body, 1200)).append("\n");
                 }
             } catch (Exception e) {
-                report.append("[STATUS]\nERROR=").append(e.getMessage()).append("\n");
+                JSONObject snap = readRelayStatusSnapshot();
+                if (snap != null) {
+                    report.append("[STATUS]\nHTTP=REMOTE_FALLBACK\n");
+                    report.append("SOURCE=").append(snap.optString("_relay_source","relay")).append("\n");
+                    report.append("DEVICE_CONNECTED=").append(snap.optBoolean("_device_connected")).append("\n");
+                    report.append("SERVICE=HERMES_WORK\n");
+                    report.append("RELEASE=").append(snap.optString("release","—")).append("\n");
+                    report.append("TETHER=").append(snap.optString("tether_state","—")).append("\n");
+                    report.append("TEMP_C=").append(snap.opt("temperature_c")).append("\n");
+                    report.append("FREE_RAM_MB=").append(snap.opt("mem_available_mb")).append("\n");
+                    report.append("WORKD_RSS_MB=").append(snap.opt("workd_rss_mb")).append("\n");
+                    report.append("WORKER_STATE=").append(snap.optString("worker_state","—")).append("\n");
+                    report.append("SAFE_MODE=").append(snap.optBoolean("safe_mode")).append("\n");
+                    report.append("AUTO_UPDATE_STATE=").append(snap.optString("auto_update_state","—")).append("\n");
+                    report.append("NOTE=Jalur lokal gagal; status diambil dari Railway read-only.\n");
+                } else {
+                    report.append("[STATUS]\nERROR=").append(e.getMessage()).append("\n");
+                }
             }
 
             try {
@@ -848,7 +880,8 @@ public class MainActivity extends Activity {
                     report.append("BODY=").append(compact(rec.body, 1200)).append("\n");
                 }
             } catch (Exception e) {
-                report.append("\n[RECOVERY]\nERROR=").append(e.getMessage()).append("\n");
+                report.append("\n[RECOVERY]\nLOCAL_UNREACHABLE=").append(e.getMessage()).append("\n");
+                report.append("NOTE=Kontrol recovery memerlukan jalur lokal/remote terautentikasi.\n");
             }
 
             try {
@@ -868,7 +901,8 @@ public class MainActivity extends Activity {
                     report.append("BODY=").append(compact(br.body, 1200)).append("\n");
                 }
             } catch (Exception e) {
-                report.append("\n[BRIDGE]\nERROR=").append(e.getMessage()).append("\n");
+                report.append("\n[BRIDGE]\nLOCAL_UNREACHABLE=").append(e.getMessage()).append("\n");
+                report.append("NOTE=Status umum tetap tersedia melalui Railway read-only.\n");
             }
 
             report.append("\n===== AKHIR HASIL PEMBARUAN DJAEGER WORK =====");
