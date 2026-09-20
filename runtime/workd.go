@@ -1260,7 +1260,7 @@ func validateYouTubeOAuth(c YouTubeOAuthCredential)(int,error){
  req,e:=http.NewRequest("POST","https://oauth2.googleapis.com/token",strings.NewReader(v.Encode()));if e!=nil{return 0,e}
  req.Header.Set("Content-Type","application/x-www-form-urlencoded")
  cl:=androidHTTPClient();cl.Timeout=20*time.Second;resp,e:=cl.Do(req);if e!=nil{return 0,e};defer resp.Body.Close()
- b,_:=io.ReadAll(io.LimitReader(resp.Body,131072));if resp.StatusCode<200||resp.StatusCode>=300{return 0,fmt.Errorf("oauth token http %d",resp.StatusCode)}
+ b,_:=io.ReadAll(io.LimitReader(resp.Body,131072));if resp.StatusCode<200||resp.StatusCode>=300{var ge map[string]any;_ = json.Unmarshal(b,&ge);code:=strings.TrimSpace(fmt.Sprint(ge["error"]));desc:=strings.TrimSpace(fmt.Sprint(ge["error_description"]));if code==""||code=="<nil>"{code=fmt.Sprintf("http_%d",resp.StatusCode)};if desc!=""&&desc!="<nil>"{return 0,fmt.Errorf("%s: %s",code,desc)};return 0,fmt.Errorf("%s",code)}
  var x struct{AccessToken string `json:"access_token"`;ExpiresIn int `json:"expires_in"`;TokenType string `json:"token_type"`}
  if json.Unmarshal(b,&x)!=nil||strings.TrimSpace(x.AccessToken)==""{return 0,fmt.Errorf("oauth token response invalid")}
  return x.ExpiresIn,nil
@@ -1280,7 +1280,7 @@ func (s *S)youtubeOAuth(w http.ResponseWriter,r *http.Request){
  if json.NewDecoder(io.LimitReader(r.Body,131072)).Decode(&q)!=nil{http.Error(w,"invalid json",400);return}
  q.ClientID=strings.TrimSpace(q.ClientID);q.ClientSecret=strings.TrimSpace(q.ClientSecret);q.RefreshToken=strings.TrimSpace(q.RefreshToken)
  if q.ClientID==""||!strings.HasSuffix(q.ClientID,".apps.googleusercontent.com")||q.ClientSecret==""||q.RefreshToken==""{http.Error(w,"incomplete youtube oauth credentials",400);return}
- exp,e:=validateYouTubeOAuth(q);if e!=nil{http.Error(w,"youtube oauth validation failed",401);return}
+ exp,e:=validateYouTubeOAuth(q);if e!=nil{http.Error(w,"youtube oauth validation failed: "+e.Error(),401);return}
  q.SavedAt=time.Now().Format(time.RFC3339);_ = os.MkdirAll(filepath.Dir(s.youtubeOAuthPath()),0700)
  b,_:=json.Marshal(q);tmp:=s.youtubeOAuthPath()+".tmp";if e=os.WriteFile(tmp,b,0600);e!=nil{http.Error(w,"credential save failed",500);return};if e=os.Rename(tmp,s.youtubeOAuthPath());e!=nil{http.Error(w,"credential save failed",500);return}
  st:=map[string]any{"state":"VERIFIED","verified_at":time.Now().Format(time.RFC3339),"expires_in":exp,"scope":"youtube.upload"};sb,_:=json.Marshal(st);_ = os.WriteFile(s.youtubeOAuthStatePath(),sb,0600)
