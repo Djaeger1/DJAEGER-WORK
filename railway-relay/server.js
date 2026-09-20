@@ -259,6 +259,8 @@ function safeSnapshot(x={}) {
     mem_available_mb:x.mem_available_mb ?? null,
     workd_rss_mb:x.workd_rss_mb ?? null,
     mem_breakdown:(x.mem_breakdown && typeof x.mem_breakdown==="object") ? x.mem_breakdown : null,
+    process_memory:(x.process_memory && typeof x.process_memory==="object") ? x.process_memory : null,
+    zram:(x.zram && typeof x.zram==="object") ? x.zram : null,
     top_rss:Array.isArray(x.top_rss) ? x.top_rss.slice(0,10).map(p=>({pid:Number(p?.pid||0),name:String(p?.name||"").slice(0,80),rss_mb:Number(p?.rss_mb||0)})) : [],
     worker_state:x.worker_state ?? null,
     safe_mode:x.safe_mode ?? null,
