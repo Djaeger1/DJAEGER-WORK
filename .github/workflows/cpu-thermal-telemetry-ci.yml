@@ -69,7 +69,7 @@ jobs:
       - name: Verify release
         run: |
           grep -q '"version":"v2.5.20-cpu-thermal-telemetry-quarantine"' runtime/manifest.json
-          grep -q 'HERMES_WORK_RUNTIME_v2.5.20_CPU_THERMAL_TELEMETRY_QUARANTINE' .github/workflows/release.yml
+          grep -q 'HERMES_WORK_RUNTIME_v2.5.21_REMOTE_PINNED_SELFUPDATE_QUARANTINE' .github/workflows/release.yml
 
       - name: Report
         run: |
