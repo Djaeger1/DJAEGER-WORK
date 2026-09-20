@@ -82,9 +82,6 @@ if [ "$HEALTHY" = 1 ]; then
   [ -n "$PREV" ] && [ "$PREV" != "$VER" ] && printf '%s\n' "$PREV" > "$ROOT/previous_release"
   publish_updater_ok
   log "PASS $VER pid=$NEW verified_release=$VER"
-  if [ -f "$DEST/worker/process-converge.sh" ]; then
-    HERMES_ROOT="$ROOT" /system/bin/sh "$DEST/worker/process-converge.sh" >>"$ROOT/logs/process-converge.log" 2>&1 || true
-  fi
   QUARANTINE="$(sed -n 's/^EMERGENCY_QUARANTINE=//p' "$DEST/config/work.env" 2>/dev/null | tail -1)"
   if [ "$QUARANTINE" = "1" ]; then
     printf '%s\n' "EMERGENCY_CPU_THERMAL_QUARANTINE" > "$ROOT/state/safe_mode"
@@ -93,6 +90,9 @@ if [ "$HEALTHY" = 1 ]; then
     rm -rf "$ROOT/state/autoupdate.daemon.lock" 2>/dev/null
     log "QUARANTINE $VER core_only=1 updater=OFF github_control=OFF"
     exit 0
+  fi
+  if [ -f "$DEST/worker/process-converge.sh" ]; then
+    HERMES_ROOT="$ROOT" /system/bin/sh "$DEST/worker/process-converge.sh" >>"$ROOT/logs/process-converge.log" 2>&1 || true
   fi
   restart_single_updater
   if [ -f "$DEST/worker/tick.sh" ]; then
