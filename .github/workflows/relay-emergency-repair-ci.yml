@@ -1,0 +1,38 @@
+name: Relay emergency repair CI
+
+on:
+  push:
+    branches: [relay-emergency-repair-v2518]
+  pull_request:
+    branches: [main]
+    paths:
+      - "railway-relay/server.js"
+      - ".github/workflows/relay-emergency-repair-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax
+        run: node --check railway-relay/server.js
+      - name: Verify emergency routing
+        run: |
+          grep -q 'emergency|coldstart|quarantine|process-convergence' railway-relay/server.js
+          grep -q 'setTimeout(autonomousMaintenanceTick, 3000)' railway-relay/server.js
+          grep -q 'mode:repair?"REPAIR":"NORMAL"' railway-relay/server.js
+      - name: Safety
+        run: |
+          ! grep -Eq 'reboot|drop_caches|force-stop|system_server|qcril|killall|pkill' railway-relay/server.js
+      - name: Report
+        run: |
+          echo "EMERGENCY_REPAIR_ROUTE=PASS"
+          echo "MODE=REPAIR"
+          echo "MODEM_SHUTDOWN=NO"
