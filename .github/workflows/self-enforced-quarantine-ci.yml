@@ -38,8 +38,8 @@ jobs:
           ! grep -q 'process-converge.sh' runtime/worker/tick.sh
       - name: Verify release
         run: |
-          grep -q '"version":"v2.5.19-self-enforced-quarantine"' runtime/manifest.json
-          grep -q 'HERMES_WORK_RUNTIME_v2.5.19_SELF_ENFORCED_QUARANTINE' .github/workflows/release.yml
+          grep -Eq '"version":"v2\.5\.(19-self-enforced-quarantine|20-cpu-thermal-telemetry-quarantine)"' runtime/manifest.json
+          grep -Eq 'HERMES_WORK_RUNTIME_v2\.5\.(19_SELF_ENFORCED_QUARANTINE|20_CPU_THERMAL_TELEMETRY_QUARANTINE)' .github/workflows/release.yml
       - name: Safety
         run: |
           ! grep -Eq 'reboot|drop_caches|force-stop|system_server|qcril|telephony|networkstack' runtime/workd.go

@@ -69,7 +69,7 @@ func (s *S)bridgeSnapshot()map[string]any{
  pub:=s.publicationSummary();fb:=s.performanceSummary()
  return map[string]any{
   "sent_at":time.Now().Format(time.RFC3339),"release":runtimeRelease(s),"configured_release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),
-  "tether_state":ts,"temperature_c":temp(),"mem_available_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"memory_pressure":memoryPressureSummary(),"swap":swapSummary(),
+  "tether_state":ts,"temperature_c":temp(),"battery_temp_c":temp(),"cpu_usage":cpuUsageSummary(),"thermal":thermalSummary(),"mem_available_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"memory_pressure":memoryPressureSummary(),"swap":swapSummary(),
   "zram":zramStats(),"top_rss":topRSSProcesses(10),"top_anon":topAnonProcesses(10),
   "worker_state":worker,"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),
   "research_total":s.researchTotal(),"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research"))),"research_engine":"SUGGEST_MULTI_V2",
@@ -107,6 +107,49 @@ func (s *S)auth(r *http.Request)bool{return s.Token!=""&&r.Header.Get("X-Hermes-
 func js(w http.ResponseWriter,v any){w.Header().Set("Content-Type","application/json");json.NewEncoder(w).Encode(v)}
 func readfile(p string)string{b,_:=os.ReadFile(p);return string(b)}
 func exists(p string)bool{_,e:=os.Stat(p);return e==nil}
+type ThermalZone struct{Zone string `json:"zone"`;Type string `json:"type"`;TempC float64 `json:"temp_c"`;CPUSoCCandidate bool `json:"cpu_soc_candidate"`}
+func thermalSummary()map[string]any{
+ paths,_:=filepath.Glob("/sys/class/thermal/thermal_zone*");zones:=[]ThermalZone{};maxAll:=-1.0;maxCPU:=-1.0;maxCPUType:=""
+ for _,p:=range paths{
+  tb,e:=os.ReadFile(filepath.Join(p,"temp"));if e!=nil{continue};raw,e:=strconv.ParseFloat(strings.TrimSpace(string(tb)),64);if e!=nil{continue}
+  v:=raw;if v>1000||v< -1000{v/=1000}
+  if v< -50||v>200{continue}
+  typ:=strings.TrimSpace(readfile(filepath.Join(p,"type")));low:=strings.ToLower(typ)
+  candidate:=false
+  for _,k:=range []string{"cpu","soc","tsens","msm","ap-therm","ap_therm","cluster","silver","gold"}{if strings.Contains(low,k){candidate=true;break}}
+  if strings.Contains(low,"battery")||strings.Contains(low,"batt")||strings.Contains(low,"charger")||strings.Contains(low,"usb")||strings.Contains(low,"skin"){candidate=false}
+  z:=ThermalZone{Zone:filepath.Base(p),Type:typ,TempC:v,CPUSoCCandidate:candidate};zones=append(zones,z)
+  if v>maxAll{maxAll=v}
+  if candidate&&v>maxCPU{maxCPU=v;maxCPUType=typ}
+ }
+ sort.Slice(zones,func(i,j int)bool{return zones[i].TempC>zones[j].TempC})
+ if len(zones)>32{zones=zones[:32]}
+ return map[string]any{"cpu_soc_max_c":maxCPU,"cpu_soc_sensor":maxCPUType,"max_all_c":maxAll,"zones":zones}
+}
+type cpuTicks struct{Total uint64;Idle uint64}
+func readCPUTicks()map[string]cpuTicks{
+ b,e:=os.ReadFile("/proc/stat");if e!=nil{return map[string]cpuTicks{}};out:=map[string]cpuTicks{}
+ for _,l:=range strings.Split(string(b),"\n"){
+  f:=strings.Fields(l);if len(f)<5||!strings.HasPrefix(f[0],"cpu"){continue}
+  total:=uint64(0);vals:=[]uint64{}
+  for _,x:=range f[1:]{n,_:=strconv.ParseUint(x,10,64);vals=append(vals,n);total+=n}
+  idle:=uint64(0);if len(vals)>3{idle+=vals[3]};if len(vals)>4{idle+=vals[4]}
+  out[f[0]]=cpuTicks{Total:total,Idle:idle}
+ }
+ return out
+}
+var cpuSampleMu sync.Mutex
+var cpuSampleAt time.Time
+var cpuSampleCache map[string]any
+func cpuUsageSummary()map[string]any{
+ cpuSampleMu.Lock();defer cpuSampleMu.Unlock()
+ if cpuSampleCache!=nil&&time.Since(cpuSampleAt)<2*time.Second{return cpuSampleCache}
+ a:=readCPUTicks();time.Sleep(250*time.Millisecond);b:=readCPUTicks()
+ calc:=func(x,y cpuTicks)float64{dt:=y.Total-x.Total;if dt==0{return 0};di:=y.Idle-x.Idle;if di>dt{di=dt};v:=100*float64(dt-di)/float64(dt);if v<0{v=0};if v>100{v=100};return v}
+ cores:=map[string]float64{};global:=0.0
+ for k,x:=range a{y,ok:=b[k];if !ok{continue};v:=calc(x,y);if k=="cpu"{global=v}else{cores[k]=v}}
+ cpuSampleCache=map[string]any{"total_pct":global,"cores_pct":cores,"sample_ms":250,"source":"/proc/stat"};cpuSampleAt=time.Now();return cpuSampleCache
+}
 func temp()float64{b,e:=os.ReadFile("/sys/class/power_supply/battery/temp");if e!=nil{return -1};v,_:=strconv.ParseFloat(strings.TrimSpace(string(b)),64);if v>200{v/=10};return v}
 func mem()int64{b,_:=os.ReadFile("/proc/meminfo");for _,l:=range strings.Split(string(b),"\n"){if strings.HasPrefix(l,"MemAvailable:"){f:=strings.Fields(l);if len(f)>1{n,_:=strconv.ParseInt(f[1],10,64);return n/1024}}};return -1}
 func selfRSS()int64{b,_:=os.ReadFile("/proc/self/status");for _,l:=range strings.Split(string(b),"\n"){if strings.HasPrefix(l,"VmRSS:"){f:=strings.Fields(l);if len(f)>1{n,_:=strconv.ParseInt(f[1],10,64);return n/1024}}};return -1}
@@ -315,7 +358,7 @@ func topRSSProcesses(limit int)[]ProcRSS{
  return out
 }
 func iface(n string)(string,string){i,e:=net.InterfaceByName(n);if e!=nil{return"DOWN",""};a,_:=i.Addrs();ip:="";for _,x:=range a{if y,ok:=x.(*net.IPNet);ok&&y.IP.To4()!=nil{ip=y.IP.String()}};if ip==""{return"DOWN",""};return"UP",ip}
-func (s *S)status(w http.ResponseWriter,r *http.Request){ts,ip:=iface("rndis0");cur:=runtimeRelease(s);configured:=strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release")));if cur==""{cur="UNKNOWN"};bi:=s.bridgeInfo();bst,_:=bi["state"].(string);if bst==""{bst="STARTING"};au:=s.autoUpdateInfo();aus,_:=au["state"].(string);if aus==""{aus="STARTING"};gc:=s.githubControlInfo();gcs:=fmt.Sprint(gc["state"]);if gcs==""{gcs="DISABLED"};pc:=s.processConvergenceInfo();js(w,map[string]any{"service":"HERMES_WORK","control_center":"v2.4.0","release":cur,"configured_release":configured,"auto_update_state":aus,"auto_update":au,"github_control_state":gcs,"github_control":gc,"github_control_writes_allowed":false,"process_convergence":pc,"emergency_quarantine":readenv(filepath.Join(s.Rel,"config","work.env"),"EMERGENCY_QUARANTINE")=="1","temperature_c":temp(),"mem_available_mb":mem(),"workd_rss_mb":selfRSS(),"tether_state":ts,"tether_ip":ip,"worker_paused":exists(filepath.Join(s.Root,"state","worker_paused")),"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"bridge_enabled":readenv(filepath.Join(s.Rel,"config","work.env"),"BRIDGE_ENABLED")=="1","bridge_state":bst,"bridge_last_sync":bi["last_sync"],"bridge_mode":"DATA_ONLY","bridge_ai_used":false,"bridge_neurons_used":0,"research_total":s.researchTotal(),"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research"))),"research_engine":"SUGGEST_MULTI_V2","components":map[string]string{"collector":"READY_V2","dedup":"READY_V1","categorizer":"READY_V1","trend_scoring":"READY_V2","opportunity_engine":"READY_V1","reasoning":"DEFERRED","content_planner":"READY_V3","script_prep":"READY_V1","script_engine":"READY_V1","production_pack":"READY_V1","handoff":"READY_V1","production_desk":"READY_V1","auto_studio":"READY_V1","publication":"READY_V1","channel_connector":"READY_V1","feedback":"READY_V1","knowledge":"READY_FOUNDATION","scheduler":"READY_V2","bridge":bst,"auto_updater":aus,"github_control":gcs}})}
+func (s *S)status(w http.ResponseWriter,r *http.Request){ts,ip:=iface("rndis0");cur:=runtimeRelease(s);configured:=strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release")));if cur==""{cur="UNKNOWN"};bi:=s.bridgeInfo();bst,_:=bi["state"].(string);if bst==""{bst="STARTING"};au:=s.autoUpdateInfo();aus,_:=au["state"].(string);if aus==""{aus="STARTING"};gc:=s.githubControlInfo();gcs:=fmt.Sprint(gc["state"]);if gcs==""{gcs="DISABLED"};pc:=s.processConvergenceInfo();js(w,map[string]any{"service":"HERMES_WORK","control_center":"v2.4.0","release":cur,"configured_release":configured,"auto_update_state":aus,"auto_update":au,"github_control_state":gcs,"github_control":gc,"github_control_writes_allowed":false,"process_convergence":pc,"emergency_quarantine":readenv(filepath.Join(s.Rel,"config","work.env"),"EMERGENCY_QUARANTINE")=="1","temperature_c":temp(),"battery_temp_c":temp(),"cpu_usage":cpuUsageSummary(),"thermal":thermalSummary(),"mem_available_mb":mem(),"workd_rss_mb":selfRSS(),"tether_state":ts,"tether_ip":ip,"worker_paused":exists(filepath.Join(s.Root,"state","worker_paused")),"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"bridge_enabled":readenv(filepath.Join(s.Rel,"config","work.env"),"BRIDGE_ENABLED")=="1","bridge_state":bst,"bridge_last_sync":bi["last_sync"],"bridge_mode":"DATA_ONLY","bridge_ai_used":false,"bridge_neurons_used":0,"research_total":s.researchTotal(),"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research"))),"research_engine":"SUGGEST_MULTI_V2","components":map[string]string{"collector":"READY_V2","dedup":"READY_V1","categorizer":"READY_V1","trend_scoring":"READY_V2","opportunity_engine":"READY_V1","reasoning":"DEFERRED","content_planner":"READY_V3","script_prep":"READY_V1","script_engine":"READY_V1","production_pack":"READY_V1","handoff":"READY_V1","production_desk":"READY_V1","auto_studio":"READY_V1","publication":"READY_V1","channel_connector":"READY_V1","feedback":"READY_V1","knowledge":"READY_FOUNDATION","scheduler":"READY_V2","bridge":bst,"auto_updater":aus,"github_control":gcs}})}
 func (s *S)action(w http.ResponseWriter,r *http.Request){if !s.auth(r){http.Error(w,"unauthorized",401);return};var q struct{Action string `json:"action"`};json.NewDecoder(r.Body).Decode(&q);st:=filepath.Join(s.Root,"state");switch q.Action{case"pause":os.WriteFile(filepath.Join(st,"worker_paused"),[]byte(time.Now().Format(time.RFC3339)),0600);case"resume":os.Remove(filepath.Join(st,"worker_paused"));os.Remove(filepath.Join(st,"safe_mode"));case"safe_mode":os.WriteFile(filepath.Join(st,"safe_mode"),[]byte("safe_mode"),0600);os.WriteFile(filepath.Join(st,"worker_paused"),[]byte("safe_mode"),0600);case"backup":os.MkdirAll(filepath.Join(s.Root,"backups"),0700);os.WriteFile(filepath.Join(s.Root,"backups","state-"+time.Now().Format("20060102-150405")+".txt"),[]byte("release="+strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release")))+"\n"),0600);case"rollback":p:=strings.TrimSpace(readfile(filepath.Join(s.Root,"previous_release")));if p==""{http.Error(w,"no previous release",409);return};os.WriteFile(filepath.Join(s.Root,"current_release"),[]byte(p+"\n"),0600);default:http.Error(w,"unknown action",400);return};js(w,map[string]any{"ok":true,"action":q.Action})}
 func tail(p string,n int)string{b,_:=os.ReadFile(p);a:=strings.Split(string(b),"\n");if len(a)>n{a=a[len(a)-n:]};return strings.Join(a,"\n")}
 func (s *S)maintenance(w http.ResponseWriter,r *http.Request){
@@ -346,9 +389,9 @@ func (s *S)maintenance(w http.ResponseWriter,r *http.Request){
 }
 func (s *S)memoryAudit(w http.ResponseWriter,r *http.Request){
  if !privateRemote(r)&&!s.auth(r){http.Error(w,"unauthorized",401);return}
- js(w,map[string]any{"time":time.Now().Format(time.RFC3339),"temp_c":temp(),"mem_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"hermes_processes":hermesProcessSummary(),"memory_pressure":memoryPressureSummary(),"process_memory":processMemorySummary(20),"swap":swapSummary(),"zram":zramStats(),"top_rss":topRSSProcesses(20),"top_anon":topAnonProcesses(20),"release":runtimeRelease(s)})
+ js(w,map[string]any{"time":time.Now().Format(time.RFC3339),"temp_c":temp(),"battery_temp_c":temp(),"cpu_usage":cpuUsageSummary(),"thermal":thermalSummary(),"mem_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"hermes_processes":hermesProcessSummary(),"memory_pressure":memoryPressureSummary(),"process_memory":processMemorySummary(20),"swap":swapSummary(),"zram":zramStats(),"top_rss":topRSSProcesses(20),"top_anon":topAnonProcesses(20),"release":runtimeRelease(s)})
 }
-func (s *S)diag(w http.ResponseWriter,r *http.Request){if !s.auth(r){http.Error(w,"unauthorized",401);return};ts,ip:=iface("rndis0");js(w,map[string]any{"time":time.Now().Format(time.RFC3339),"temp_c":temp(),"mem_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"memory_pressure":memoryPressureSummary(),"process_memory":processMemorySummary(15),"swap":swapSummary(),"zram":zramStats(),"top_rss":topRSSProcesses(10),"top_anon":topAnonProcesses(10),"rndis":ts,"rndis_ip":ip,"release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"bootstrap_log_tail":tail(filepath.Join(s.Root,"logs","hermesd.log"),60),"work_log_tail":tail(filepath.Join(s.Root,"logs","workd.log"),60)})}
+func (s *S)diag(w http.ResponseWriter,r *http.Request){if !s.auth(r){http.Error(w,"unauthorized",401);return};ts,ip:=iface("rndis0");js(w,map[string]any{"time":time.Now().Format(time.RFC3339),"temp_c":temp(),"battery_temp_c":temp(),"cpu_usage":cpuUsageSummary(),"thermal":thermalSummary(),"mem_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"memory_pressure":memoryPressureSummary(),"process_memory":processMemorySummary(15),"swap":swapSummary(),"zram":zramStats(),"top_rss":topRSSProcesses(10),"top_anon":topAnonProcesses(10),"rndis":ts,"rndis_ip":ip,"release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"bootstrap_log_tail":tail(filepath.Join(s.Root,"logs","hermesd.log"),60),"work_log_tail":tail(filepath.Join(s.Root,"logs","workd.log"),60)})}
 func copyf(src,dst string)error{in,e:=os.Open(src);if e!=nil{return e};defer in.Close();if e=os.MkdirAll(filepath.Dir(dst),0700);e!=nil{return e};out,e:=os.OpenFile(dst,os.O_CREATE|os.O_TRUNC|os.O_WRONLY,0700);if e!=nil{return e};_,e=io.Copy(out,in);ce:=out.Close();if e!=nil{return e};return ce}
 func unzipPayload(bundle,stage string)error{z,e:=zip.OpenReader(bundle);if e!=nil{return e};defer z.Close();for _,f:=range z.File{n:=filepath.Clean(f.Name);if n=="manifest.json"||strings.HasPrefix(n,"payload/"){if strings.Contains(n,".."){return fmt.Errorf("unsafe path")};dst:=filepath.Join(stage,n);if f.FileInfo().IsDir(){os.MkdirAll(dst,0700);continue};rc,e:=f.Open();if e!=nil{return e};if e=os.MkdirAll(filepath.Dir(dst),0700);e!=nil{rc.Close();return e};o,e:=os.OpenFile(dst,os.O_CREATE|os.O_TRUNC|os.O_WRONLY,0700);if e!=nil{rc.Close();return e};_,e=io.Copy(o,rc);o.Close();rc.Close();if e!=nil{return e}}};return nil}
 var androidTransportOnce sync.Once
