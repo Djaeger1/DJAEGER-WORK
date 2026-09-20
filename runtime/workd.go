@@ -70,7 +70,7 @@ func (s *S)bridgeSnapshot()map[string]any{
  return map[string]any{
   "sent_at":time.Now().Format(time.RFC3339),"release":runtimeRelease(s),"configured_release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),
   "tether_state":ts,"temperature_c":temp(),"mem_available_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"memory_pressure":memoryPressureSummary(),"swap":swapSummary(),
-  "zram":zramStats(),"top_rss":topRSSProcesses(10),
+  "zram":zramStats(),"top_rss":topRSSProcesses(10),"top_anon":topAnonProcesses(10),
   "worker_state":worker,"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),
   "research_total":s.researchTotal(),"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research"))),"research_engine":"SUGGEST_MULTI_V2",
   "daily_brief_state":db["state"],"ideas_ready":db["ideas_ready"],"top_opportunity":db["top_opportunity"],"opportunity_engine":"OPPORTUNITY_V1",
@@ -228,6 +228,32 @@ func zramStats()map[string]int64{
  }
  return out
 }
+type ProcAnon struct{PID int `json:"pid"`;Name string `json:"name"`;AnonMB int64 `json:"anon_mb"`;RSSMB int64 `json:"rss_mb"`;SwapMB int64 `json:"swap_mb"`}
+func topAnonProcesses(limit int)[]ProcAnon{
+ ents,_:=os.ReadDir("/proc");out:=[]ProcAnon{}
+ for _,ent:=range ents{
+  if !ent.IsDir(){continue};pid,e:=strconv.Atoi(ent.Name());if e!=nil{continue}
+  b,e:=os.ReadFile(filepath.Join("/proc",ent.Name(),"status"));if e!=nil{continue}
+  name:="";anon:=int64(0);rss:=int64(0);swap:=int64(0)
+  for _,l:=range strings.Split(string(b),"\n"){
+   f:=strings.Fields(l);if len(f)<2{continue}
+   n,_:=strconv.ParseInt(f[1],10,64);mb:=n/1024
+   switch strings.TrimSuffix(f[0],":"){
+   case"Name":name=f[1]
+   case"RssAnon":anon=mb
+   case"VmRSS":rss=mb
+   case"VmSwap":swap=mb
+   }
+  }
+  if anon>0||rss>0||swap>0{out=append(out,ProcAnon{PID:pid,Name:name,AnonMB:anon,RSSMB:rss,SwapMB:swap})}
+ }
+ sort.Slice(out,func(i,j int)bool{
+  if out[i].AnonMB==out[j].AnonMB{return out[i].SwapMB>out[j].SwapMB}
+  return out[i].AnonMB>out[j].AnonMB
+ })
+ if limit>0&&len(out)>limit{out=out[:limit]}
+ return out
+}
 type ProcTreeRow struct{PID int `json:"pid"`;PPID int `json:"ppid"`;Name string `json:"name"`;RSSMB int64 `json:"rss_mb"`;Threads int64 `json:"threads"`;Role string `json:"role"`}
 type HermesProcSummary struct{ProcessCount int `json:"process_count"`;ThreadCount int64 `json:"thread_count"`;TotalRSSMB int64 `json:"total_rss_mb"`;Processes []ProcTreeRow `json:"processes"`}
 func hermesProcessSummary()HermesProcSummary{
@@ -315,9 +341,9 @@ func (s *S)maintenance(w http.ResponseWriter,r *http.Request){
 }
 func (s *S)memoryAudit(w http.ResponseWriter,r *http.Request){
  if !privateRemote(r)&&!s.auth(r){http.Error(w,"unauthorized",401);return}
- js(w,map[string]any{"time":time.Now().Format(time.RFC3339),"temp_c":temp(),"mem_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"hermes_processes":hermesProcessSummary(),"memory_pressure":memoryPressureSummary(),"process_memory":processMemorySummary(20),"swap":swapSummary(),"zram":zramStats(),"top_rss":topRSSProcesses(20),"release":runtimeRelease(s)})
+ js(w,map[string]any{"time":time.Now().Format(time.RFC3339),"temp_c":temp(),"mem_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"hermes_processes":hermesProcessSummary(),"memory_pressure":memoryPressureSummary(),"process_memory":processMemorySummary(20),"swap":swapSummary(),"zram":zramStats(),"top_rss":topRSSProcesses(20),"top_anon":topAnonProcesses(20),"release":runtimeRelease(s)})
 }
-func (s *S)diag(w http.ResponseWriter,r *http.Request){if !s.auth(r){http.Error(w,"unauthorized",401);return};ts,ip:=iface("rndis0");js(w,map[string]any{"time":time.Now().Format(time.RFC3339),"temp_c":temp(),"mem_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"memory_pressure":memoryPressureSummary(),"process_memory":processMemorySummary(15),"swap":swapSummary(),"zram":zramStats(),"top_rss":topRSSProcesses(10),"rndis":ts,"rndis_ip":ip,"release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"bootstrap_log_tail":tail(filepath.Join(s.Root,"logs","hermesd.log"),60),"work_log_tail":tail(filepath.Join(s.Root,"logs","workd.log"),60)})}
+func (s *S)diag(w http.ResponseWriter,r *http.Request){if !s.auth(r){http.Error(w,"unauthorized",401);return};ts,ip:=iface("rndis0");js(w,map[string]any{"time":time.Now().Format(time.RFC3339),"temp_c":temp(),"mem_mb":mem(),"workd_rss_mb":selfRSS(),"mem_breakdown":memBreakdown(),"memory_pressure":memoryPressureSummary(),"process_memory":processMemorySummary(15),"swap":swapSummary(),"zram":zramStats(),"top_rss":topRSSProcesses(10),"top_anon":topAnonProcesses(10),"rndis":ts,"rndis_ip":ip,"release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"bootstrap_log_tail":tail(filepath.Join(s.Root,"logs","hermesd.log"),60),"work_log_tail":tail(filepath.Join(s.Root,"logs","workd.log"),60)})}
 func copyf(src,dst string)error{in,e:=os.Open(src);if e!=nil{return e};defer in.Close();if e=os.MkdirAll(filepath.Dir(dst),0700);e!=nil{return e};out,e:=os.OpenFile(dst,os.O_CREATE|os.O_TRUNC|os.O_WRONLY,0700);if e!=nil{return e};_,e=io.Copy(out,in);ce:=out.Close();if e!=nil{return e};return ce}
 func unzipPayload(bundle,stage string)error{z,e:=zip.OpenReader(bundle);if e!=nil{return e};defer z.Close();for _,f:=range z.File{n:=filepath.Clean(f.Name);if n=="manifest.json"||strings.HasPrefix(n,"payload/"){if strings.Contains(n,".."){return fmt.Errorf("unsafe path")};dst:=filepath.Join(stage,n);if f.FileInfo().IsDir(){os.MkdirAll(dst,0700);continue};rc,e:=f.Open();if e!=nil{return e};if e=os.MkdirAll(filepath.Dir(dst),0700);e!=nil{rc.Close();return e};o,e:=os.OpenFile(dst,os.O_CREATE|os.O_TRUNC|os.O_WRONLY,0700);if e!=nil{rc.Close();return e};_,e=io.Copy(o,rc);o.Close();rc.Close();if e!=nil{return e}}};return nil}
 var androidTransportOnce sync.Once
