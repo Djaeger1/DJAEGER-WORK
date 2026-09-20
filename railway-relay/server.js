@@ -151,6 +151,26 @@ function queueDeviceRead(pathname, waitMs=15000) {
     handCommand(cmd);
   });
 }
+function queueDevicePost(pathname, payload={}, waitMs=15000) {
+  const requestId=id();
+  const cmd={
+    id:requestId,
+    method:"POST",
+    path:pathname,
+    headers:{"content-type":"application/json","x-hermes-token":""},
+    body:JSON.stringify(payload||{}),
+    created_at:new Date().toISOString(),
+    expires_at:Date.now()+waitMs+2000
+  };
+  return new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>{
+      pending.delete(requestId);
+      reject(new Error("device_write_timeout"));
+    },waitMs);
+    pending.set(requestId,{resolve,reject,timer});
+    handCommand(cmd);
+  });
+}
 function decodeDeviceJson(upstream) {
   const status=Number(upstream?.status||502);
   if(status<200||status>=300) throw new Error("device_http_"+status);
@@ -529,6 +549,30 @@ const server = http.createServer(async (req,res)=>{
 
 server.listen(PORT,"0.0.0.0",()=>console.log(`relay listening on ${PORT} remote-link=enabled`));
 
+async function autonomousMaintenanceTick() {
+  try {
+    if(!deviceFresh()) return;
+    const status=decodeDeviceJson(await queueDeviceRead("/api/work/status",12000));
+    const release=String(status?.release||"");
+    if(!releaseAtLeast(release,2,5,14)) return;
+    const configured=String(status?.configured_release||"");
+    if(configured && configured!==release){
+      const r=decodeDeviceJson(await queueDevicePost("/api/work/maintenance",{action:"recover"},12000));
+      console.log("HERMES_MAINTENANCE "+JSON.stringify({action:"recover",state:r?.state||null,release,configured}));
+      return;
+    }
+    const chResp=await fetch("https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json",{headers:{"cache-control":"no-cache"}});
+    if(!chResp.ok) throw new Error("channel_http_"+chResp.status);
+    const ch=await chResp.json();
+    const latest=String(ch?.version||"");
+    if(!latest || latest===release) return;
+    const repair=/memory|recovery|forensics|pressure-guard|autonomous-maintenance/i.test(latest);
+    const r=decodeDeviceJson(await queueDevicePost("/api/work/maintenance",{action:"update",mode:repair?"REPAIR":"NORMAL"},12000));
+    console.log("HERMES_MAINTENANCE "+JSON.stringify({action:"update",mode:repair?"REPAIR":"NORMAL",state:r?.state||null,from:release,to:latest}));
+  } catch(e) {
+    console.log("HERMES_MAINTENANCE_ERROR "+String(e?.message||e));
+  }
+}
 async function logDeviceMemoryAudit() {
   try {
     if(!deviceFresh()) { console.log("HERMES_MEMORY_AUDIT DEVICE_LINK_STALE"); return; }
@@ -579,6 +623,8 @@ setTimeout(logDeviceMemoryAudit, 60000);
 setInterval(logDeviceRecovery, 5*60*1000);
 setInterval(logDeviceAutoupdate, 5*60*1000);
 setInterval(logDeviceMemoryAudit, 5*60*1000);
+setTimeout(autonomousMaintenanceTick, 75000);
+setInterval(autonomousMaintenanceTick, 5*60*1000);
 setInterval(logLatestSnapshot, 60000);
 setInterval(()=>{
   pruneQueue();

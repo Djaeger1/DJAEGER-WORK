@@ -9,6 +9,9 @@ OWNER="$STATE/autoupdate.owner"
 LOCK="$STATE/autoupdate.lock"
 FAILED="$STATE/autoupdate_failed_version"
 DAEMON_LOCK="$STATE/autoupdate.daemon.lock"
+MAINT_UPDATE="$STATE/maintenance.update"
+MAINT_RECOVER="$STATE/maintenance.recover"
+MAINT_ROLLBACK="$STATE/maintenance.rollback"
 mkdir -p "$STATE" "$ROOT/logs" "$ROOT/updates" "$ROOT/releases" "$ROOT/backups"
 SELF=$$
 if ! mkdir "$DAEMON_LOCK" 2>/dev/null; then
@@ -57,24 +60,60 @@ sleep "$initial"
 
 while true; do
   REL="$ROOT/releases/$(cat "$ROOT/current_release" 2>/dev/null)"
+  CUR="$(cat "$ROOT/current_release" 2>/dev/null | tr -d '\r\n')"
+  PREV="$(cat "$ROOT/previous_release" 2>/dev/null | tr -d '\r\n')"
+
+  # Autonomous guardian: recovery is independent of thermal/RAM update gates.
+  STATUS_JSON="$(/system/bin/wget -qO- http://127.0.0.1:8766/api/work/status 2>/dev/null)"
+  SERVING="$(printf '%s' "$STATUS_JSON" | sed -n 's/.*"release":"\([^"]*\)".*/\1/p' | head -1)"
+  if [ -f "$MAINT_ROLLBACK" ]; then
+    rm -f "$MAINT_ROLLBACK"
+    if [ -n "$PREV" ] && [ -x "$ROOT/releases/$PREV/bin/workd" ]; then
+      log "maintenance rollback requested current=$CUR previous=$PREV"
+      sh "$REL/worker/handoff.sh" "$ROOT" "$PREV" "$CUR" >/dev/null 2>&1 &
+      sleep 8
+      continue
+    fi
+  fi
+  if [ -f "$MAINT_RECOVER" ] || [ -z "$SERVING" ] || [ "$SERVING" != "$CUR" ]; then
+    rm -f "$MAINT_RECOVER"
+    if [ -n "$CUR" ] && [ -x "$REL/bin/workd" ] && [ -x "$REL/worker/handoff.sh" ]; then
+      log "guardian recover configured=$CUR serving=${SERVING:-OFFLINE}"
+      sh "$REL/worker/handoff.sh" "$ROOT" "$CUR" "$PREV" >/dev/null 2>&1 &
+      sleep 8
+      STATUS_JSON="$(/system/bin/wget -qO- http://127.0.0.1:8766/api/work/status 2>/dev/null)"
+      SERVING="$(printf '%s' "$STATUS_JSON" | sed -n 's/.*"release":"\([^"]*\)".*/\1/p' | head -1)"
+      if [ "$SERVING" = "$CUR" ]; then log "GUARDIAN_RECOVERY_PASS $CUR"; else log "GUARDIAN_RECOVERY_PENDING configured=$CUR serving=${SERVING:-OFFLINE}"; fi
+    fi
+  fi
+
   enabled="$(cfg AUTO_UPDATE_ENABLED)"; [ -n "$enabled" ] || enabled=1
   interval="$(cfg AUTO_UPDATE_INTERVAL_SECONDS)"; [ -n "$interval" ] || interval=900
   case "$interval" in *[!0-9]*|'') interval=900;; esac
   [ "$interval" -lt 300 ] 2>/dev/null && interval=300
 
-  if [ "$enabled" != "1" ]; then
+  FORCE_MODE=""
+  if [ -f "$MAINT_UPDATE" ]; then
+    FORCE_MODE="$(tr -d '\r\n' < "$MAINT_UPDATE" 2>/dev/null | tr 'a-z' 'A-Z')"
+    [ "$FORCE_MODE" = "REPAIR" ] || FORCE_MODE="NORMAL"
+  fi
+
+  if [ "$enabled" != "1" ] && [ -z "$FORCE_MODE" ]; then
     publish "DISABLED" "CONFIG_DISABLED"
     sleep "$interval"; continue
   fi
 
-  # Never compete with modem/tether recovery or thermally stressed device.
+  # Never compete with modem/tether recovery. Repair-mode maintenance may use
+  # a wider thermal ceiling solely to restore the control plane.
   if [ -x /system/bin/ip ] && ! /system/bin/ip addr show rndis0 2>/dev/null | grep -q 'inet '; then
     publish "DEFERRED" "TETHER_NOT_READY"
     sleep 60; continue
   fi
   TEMP_RAW="$(cat /sys/class/power_supply/battery/temp 2>/dev/null)"
   case "$TEMP_RAW" in *[!0-9]*|'') TEMP_RAW=0;; esac
-  [ "$TEMP_RAW" -gt 430 ] 2>/dev/null && { publish "DEFERRED" "THERMAL_GUARD"; sleep 120; continue; }
+  MAX_TEMP_RAW=430
+  [ "$FORCE_MODE" = "REPAIR" ] && MAX_TEMP_RAW=480
+  [ "$TEMP_RAW" -gt "$MAX_TEMP_RAW" ] 2>/dev/null && { publish "DEFERRED" "THERMAL_GUARD"; sleep 120; continue; }
   # Read the signed channel before the RAM gate so a designated memory-recovery
   # release can escape a low-RAM deadlock. Normal releases still require 256 MiB.
   CHANNEL="$(cfg UPDATE_CHANNEL_URL)"
@@ -94,7 +133,8 @@ while true; do
   MEM_KB="$(awk '/^MemAvailable:/{print $2;exit}' /proc/meminfo 2>/dev/null)"
   case "$MEM_KB" in *[!0-9]*|'') MEM_KB=999999;; esac
   MIN_MEM_KB=262144
-  case "$VER" in *memory-stability*|*memory-recovery*) MIN_MEM_KB=163840;; esac
+  case "$VER" in *memory-stability*|*memory-recovery*|*recovery-safe*|*memory-forensics*|*pressure-guard*|*autonomous-maintenance*) MIN_MEM_KB=163840;; esac
+  [ "$FORCE_MODE" = "REPAIR" ] && MIN_MEM_KB=163840
   [ "$MEM_KB" -lt "$MIN_MEM_KB" ] 2>/dev/null && { publish "DEFERRED" "LOW_RAM"; sleep 120; continue; }
 
   if ! mkdir "$LOCK" 2>/dev/null; then sleep 30; continue; fi
@@ -105,7 +145,7 @@ while true; do
 
   CUR="$(cat "$ROOT/current_release" 2>/dev/null | tr -d '\r\n')"
   if [ "$CUR" = "$VER" ]; then
-    rm -f "$FAILED" 2>/dev/null
+    rm -f "$FAILED" "$MAINT_UPDATE" 2>/dev/null
     publish "UP_TO_DATE" "CURRENT_IS_LATEST" "$VER"
     cleanup; sleep "$interval"; continue
   fi
@@ -186,7 +226,7 @@ while true; do
   done
 
   if [ "$HEALTHY" = 1 ]; then
-    rm -f "$FAILED"
+    rm -f "$FAILED" "$MAINT_UPDATE"
     publish "UP_TO_DATE" "AUTO_UPDATE_SUCCESS" "$VER"
     log "PASS $VER selftest_tries=$TRY"
     cleanup
