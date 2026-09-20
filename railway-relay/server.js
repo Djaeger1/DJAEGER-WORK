@@ -529,6 +529,15 @@ const server = http.createServer(async (req,res)=>{
 
 server.listen(PORT,"0.0.0.0",()=>console.log(`relay listening on ${PORT} remote-link=enabled`));
 
+async function logDeviceMemoryAudit() {
+  try {
+    if(!deviceFresh()) { console.log("HERMES_MEMORY_AUDIT DEVICE_LINK_STALE"); return; }
+    const r=decodeDeviceJson(await queueDeviceRead("/api/work/memory-audit",30000));
+    console.log("HERMES_MEMORY_AUDIT "+JSON.stringify(r));
+  } catch(e) {
+    console.log("HERMES_MEMORY_AUDIT_ERROR "+String(e?.message||e));
+  }
+}
 async function logDeviceAutoupdate() {
   try {
     if(!deviceFresh()) { console.log("HERMES_AUTOUPDATE DEVICE_LINK_STALE"); return; }
@@ -566,8 +575,10 @@ setTimeout(logLatestSnapshot, 3000);
 setTimeout(logDeviceRecovery, 12000);
 setTimeout(logDeviceAutoupdate, 18000);
 setTimeout(logDeviceAutoupdate, 45000);
+setTimeout(logDeviceMemoryAudit, 60000);
 setInterval(logDeviceRecovery, 5*60*1000);
 setInterval(logDeviceAutoupdate, 5*60*1000);
+setInterval(logDeviceMemoryAudit, 5*60*1000);
 setInterval(logLatestSnapshot, 60000);
 setInterval(()=>{
   pruneQueue();
