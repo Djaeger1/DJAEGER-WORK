@@ -1436,7 +1436,7 @@ func (s *S)youtubeOAuthStatus()map[string]any{
  c,ok:=s.loadYouTubeOAuth();state:="NOT_CONFIGURED";verifiedAt:=""
  if ok{state="CONFIGURED";var v map[string]any;if b,e:=os.ReadFile(s.youtubeOAuthStatePath());e==nil&&json.Unmarshal(b,&v)==nil{if x:=strings.TrimSpace(fmt.Sprint(v["state"]));x!=""&&x!="<nil>"{state=x};verifiedAt=strings.TrimSpace(fmt.Sprint(v["verified_at"]))}}
  client:="";if ok{client=c.ClientID;if len(client)>24{client=client[:12]+"…"+client[len(client)-12:]}}
- return map[string]any{"state":state,"configured":ok,"client_id_redacted":client,"scope":"https://www.googleapis.com/auth/youtube.upload","verified_at":verifiedAt,"secrets_exposed":false,"ai_used":false,"neurons_used":0}
+ return map[string]any{"state":state,"configured":ok,"client_id_redacted":client,"scope":"https://www.googleapis.com/auth/youtube.force-ssl","verified_at":verifiedAt,"secrets_exposed":false,"ai_used":false,"neurons_used":0}
 }
 func (s *S)youtubeOAuth(w http.ResponseWriter,r *http.Request){
  if r.Method=="GET"{js(w,s.youtubeOAuthStatus());return}
