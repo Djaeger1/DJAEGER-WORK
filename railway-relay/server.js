@@ -626,7 +626,7 @@ setTimeout(logLatestSnapshot, 3000);
 setTimeout(logDeviceRecovery, 12000);
 setTimeout(logDeviceAutoupdate, 18000);
 setTimeout(logDeviceAutoupdate, 45000);
-setTimeout(logDeviceMemoryAudit, 60000);
+setTimeout(logDeviceMemoryAudit, 5000);
 setInterval(logDeviceRecovery, 5*60*1000);
 setInterval(logDeviceAutoupdate, 5*60*1000);
 setInterval(logDeviceMemoryAudit, 5*60*1000);
