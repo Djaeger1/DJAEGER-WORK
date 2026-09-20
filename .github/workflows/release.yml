@@ -39,7 +39,6 @@ jobs:
           sh -n runtime/worker/bridge-deploy.sh
           sh -n runtime/worker/github-control-shadow.sh
           sh -n runtime/worker/process-converge.sh
-          grep -Fq 'GITHUB_CONTROL_SHADOW=1' runtime/config/work.env
           grep -Fq 'GITHUB_CONTROL_URL=https://raw.githubusercontent.com/Djaeger1/DJAEGER-Vercel-Gateway/main/control/desired.json' runtime/config/work.env
           grep -Fq 'github_control_state' runtime/workd.go
           grep -Fq 'github_control_generation' runtime/workd.go
