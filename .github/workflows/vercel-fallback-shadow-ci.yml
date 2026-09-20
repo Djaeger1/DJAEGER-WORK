@@ -1,0 +1,71 @@
+name: Vercel fallback shadow CI
+
+on:
+  push:
+    branches:
+      - vercel-fallback-shadow
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "runtime/worker/github-control-shadow.sh"
+      - "runtime/worker/tick.sh"
+      - "runtime/config/work.env"
+      - ".github/workflows/vercel-fallback-shadow-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  shadow-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.23.x'
+          cache: false
+
+      - name: Cross-compile ARMv7 workd
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -o /tmp/workd ./runtime/workd.go
+
+
+      - name: Shell syntax
+        run: |
+          bash -n runtime/worker/github-control-shadow.sh
+          bash -n runtime/worker/tick.sh
+
+      - name: Verify observer activation remains read-only
+        run: |
+          grep -qx 'GITHUB_CONTROL_SHADOW=1' runtime/config/work.env
+          grep -q 'GITHUB_CONTROL_INTERVAL_SECONDS=300' runtime/config/work.env
+          grep -q 'DJAEGER-Vercel-Gateway/main/control/desired.json' runtime/config/work.env
+          grep -q 'v2.5.15-github-shadow-readonly' runtime/manifest.json
+          grep -q 'github_control_state' runtime/workd.go
+          grep -q 'github_control_writes_allowed' runtime/workd.go
+
+      - name: Verify read-only contract
+        run: |
+          grep -q 'writes_allowed":false' runtime/worker/github-control-shadow.sh
+          grep -q 'CMD" != "OBSERVE"' runtime/worker/github-control-shadow.sh
+          grep -q 'WRITES" != "false"' runtime/worker/github-control-shadow.sh
+          ! grep -Eq '\b(reboot|setprop|magisk|ksud|su[[:space:]]+-c|rm[[:space:]]+-rf[[:space:]]+/data/adb)\b' runtime/worker/github-control-shadow.sh
+
+      - name: Verify no production relay replacement
+        run: |
+          grep -qx 'RAILWAY_RELAY_URL=https://hermes-work-chatgpt-relay-v3-production.up.railway.app' runtime/config/work.env
+          grep -qx 'REMOTE_RELAY_URL=https://hermes-work-chatgpt-relay-v3-production.up.railway.app' runtime/config/work.env
+
+      - name: Verify release packaging
+        run: |
+          grep -q 'HERMES_WORK_RUNTIME_v2.5.15_GITHUB_SHADOW_READONLY' .github/workflows/release.yml
+          grep -q 'cp worker/github-control-shadow.sh out/payload/worker/github-control-shadow.sh' .github/workflows/release.yml
+          grep -q 'v2.5.15-github-shadow-readonly' .github/workflows/release.yml
+
+      - name: Report
+        run: |
+          echo "SHADOW_SAFETY=PASS"
+          echo "DEVICE_WRITES=BLOCKED"
+          echo "OBSERVER_ACTIVATION=ON_READ_ONLY"
