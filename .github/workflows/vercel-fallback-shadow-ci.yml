@@ -22,6 +22,15 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.23.x'
+          cache: false
+
+      - name: Cross-compile ARMv7 workd
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -o /tmp/workd ./runtime/workd.go
+
 
       - name: Shell syntax
         run: |
@@ -48,6 +57,12 @@ jobs:
         run: |
           grep -qx 'RAILWAY_RELAY_URL=https://hermes-work-chatgpt-relay-v3-production.up.railway.app' runtime/config/work.env
           grep -qx 'REMOTE_RELAY_URL=https://hermes-work-chatgpt-relay-v3-production.up.railway.app' runtime/config/work.env
+
+      - name: Verify release packaging
+        run: |
+          grep -q 'HERMES_WORK_RUNTIME_v2.5.15_GITHUB_SHADOW_READONLY' .github/workflows/release.yml
+          grep -q 'cp worker/github-control-shadow.sh out/payload/worker/github-control-shadow.sh' .github/workflows/release.yml
+          grep -q 'v2.5.15-github-shadow-readonly' .github/workflows/release.yml
 
       - name: Report
         run: |
