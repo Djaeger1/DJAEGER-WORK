@@ -104,7 +104,7 @@ jobs:
           grep -Fq 'MAX_TEMP_RAW=430' runtime/worker/autoupdate.sh
           grep -Fq '/api/work/youtube/oauth' runtime/workd.go
           grep -Fq 'youtubeOAuthStatus()' runtime/workd.go
-          grep -Fq 'local_lan_only' runtime/workd.go
+          grep -Fq 'local_or_trusted_remote_only' runtime/workd.go
           grep -Fq 'oauth2.googleapis.com/token' runtime/workd.go
           grep -Fq '/api/work/youtube/publish' runtime/workd.go
           grep -Fq '/api/work/youtube/privacy' runtime/workd.go
