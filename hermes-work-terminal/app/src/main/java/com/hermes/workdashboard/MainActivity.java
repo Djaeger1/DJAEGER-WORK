@@ -53,8 +53,11 @@ public class MainActivity extends Activity {
     private static final String DEFAULT_RUNTIME = "http://192.168.42.129:8766";
     private static final String DEFAULT_BOOTSTRAP = "http://192.168.42.129:8765";
     private static final String PREFS = "hermes_work_dashboard";
+    private static final String PREF_REMOTE_URL = "remote_url";
+    private static final String PREF_REMOTE_KEY = "remote_key";
 
-    private final ExecutorService io = Executors.newSingleThreadExecutor();
+    // Parallel UI I/O prevents one slow local request from blocking every dashboard card.
+    private final ExecutorService io = Executors.newFixedThreadPool(4);
     private SharedPreferences prefs;
 
     private FrameLayout content;
@@ -914,44 +917,101 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void setConnectionBadge(String route) {
+        if ("LOCAL".equals(route)) {
+            online.setText("● LOKAL");
+            online.setTextColor(OK);
+            online.setBackground(solidBg(Color.rgb(5, 34, 23), Color.rgb(19, 81, 49), dp(20)));
+        } else if ("REMOTE".equals(route)) {
+            online.setText("● REMOTE");
+            online.setTextColor(ACCENT);
+            online.setBackground(solidBg(Color.rgb(8, 26, 48), Color.rgb(31, 78, 128), dp(20)));
+        } else if ("CHECKING".equals(route)) {
+            online.setText("● MEMERIKSA");
+            online.setTextColor(MUTED);
+            online.setBackground(solidBg(Color.rgb(25, 28, 34), Color.rgb(48, 58, 72), dp(20)));
+        } else {
+            online.setText("● TERPUTUS");
+            online.setTextColor(BAD);
+            online.setBackground(solidBg(Color.rgb(42, 17, 25), Color.rgb(83, 40, 50), dp(20)));
+        }
+    }
+
     private void refreshOnlineOnly() {
+        setConnectionBadge("CHECKING");
         apiAsync("GET", "/api/work/status", null, false, (code, s) -> {
-            if (code >= 200 && code < 300) {
-                online.setText("● TERHUBUNG");
-                online.setTextColor(OK);
-                online.setBackground(solidBg(Color.rgb(5, 34, 23), Color.rgb(19, 81, 49), dp(20)));
-            } else {
-                online.setText("● TERPUTUS");
-                online.setTextColor(BAD);
-                online.setBackground(solidBg(Color.rgb(42, 17, 25), Color.rgb(83, 40, 50), dp(20)));
-            }
+            if (code < 200 || code >= 300) setConnectionBadge("OFFLINE");
         });
     }
 
     private interface ApiCallback { void done(int code, String body); }
 
-    private void apiAsync(String method, String path, String body, boolean auth, ApiCallback cb) {
+    private void provisionRemotePair() {
         io.execute(() -> {
             try {
-                HttpResult r = request(method, runtimeUrl() + path, body, auth);
-                ui(() -> cb.done(r.code, r.body));
-            } catch (Exception e) {
-                ui(() -> {
-                    online.setText("● TERPUTUS"); online.setTextColor(BAD);
-                    cb.done(0, "GALAT: " + e.getMessage());
-                });
+                HttpResult p = requestWithTimeout("GET", runtimeUrl() + "/api/work/remote", null, false, "", 2500, 7000);
+                if (p.code < 200 || p.code >= 300) return;
+                JSONObject j = new JSONObject(p.body);
+                String u = clean(j.optString("remote_url", ""));
+                String k = j.optString("remote_key", "").trim();
+                if (!u.startsWith("https://") || k.length() < 32) return;
+                prefs.edit().putString(PREF_REMOTE_URL, u).putString(PREF_REMOTE_KEY, k).apply();
+            } catch (Exception ignored) {}
+        });
+    }
+
+    private void apiAsync(String method, String path, String body, boolean auth, ApiCallback cb) {
+        io.execute(() -> {
+            Exception localError = null;
+            try {
+                HttpResult local = requestWithTimeout(method, runtimeUrl() + path, body, auth, "", 2500, 8000);
+                if (local.code > 0) {
+                    if (local.code >= 200 && local.code < 300) {
+                        ui(() -> setConnectionBadge("LOCAL"));
+                        if ("/api/work/status".equals(path)) provisionRemotePair();
+                    }
+                    final HttpResult out = local;
+                    ui(() -> cb.done(out.code, out.body));
+                    return;
+                }
+            } catch (Exception e) { localError = e; }
+
+            String ru = remoteUrl();
+            String rk = remoteKey();
+            if (!ru.isEmpty() && !rk.isEmpty()) {
+                try {
+                    HttpResult remote = requestWithTimeout(method, ru + path, body, auth, rk, 5000, 45000);
+                    if (remote.code > 0) {
+                        if (remote.code >= 200 && remote.code < 300) ui(() -> setConnectionBadge("REMOTE"));
+                        final HttpResult out = remote;
+                        ui(() -> cb.done(out.code, out.body));
+                        return;
+                    }
+                } catch (Exception ignored) {}
             }
+
+            final String err = localError == null ? "jalur lokal dan remote tidak tersedia" : localError.getMessage();
+            ui(() -> {
+                setConnectionBadge("OFFLINE");
+                cb.done(0, "GALAT: " + err);
+            });
         });
     }
 
     private HttpResult request(String method, String target, String body, boolean auth) throws Exception {
+        return requestWithTimeout(method, target, body, auth, "", 5000, 60000);
+    }
+
+    private HttpResult requestWithTimeout(String method, String target, String body, boolean auth, String remoteKey,
+                                          int connectTimeout, int readTimeout) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(target).openConnection();
         c.setRequestMethod(method);
-        c.setConnectTimeout(5000);
-        c.setReadTimeout(60000);
+        c.setConnectTimeout(connectTimeout);
+        c.setReadTimeout(readTimeout);
         c.setUseCaches(false);
         c.setRequestProperty("Accept", "application/json, text/plain, */*");
         if (auth) c.setRequestProperty("X-Hermes-Token", token());
+        if (remoteKey != null && !remoteKey.isEmpty()) c.setRequestProperty("X-Djaeger-Remote-Key", remoteKey);
         if (body != null) {
             byte[] data = body.getBytes(StandardCharsets.UTF_8);
             c.setDoOutput(true);
@@ -974,6 +1034,11 @@ public class MainActivity extends Activity {
     }
 
     private String runtimeUrl() { return clean(prefs.getString("runtime", DEFAULT_RUNTIME)); }
+    private String remoteUrl() {
+        String s = prefs.getString(PREF_REMOTE_URL, "").trim();
+        return s.isEmpty() ? "" : clean(s);
+    }
+    private String remoteKey() { return prefs.getString(PREF_REMOTE_KEY, "").trim(); }
     private String token() { return prefs.getString("token", "").trim(); }
     private String bootstrapUrl() {
         try {
