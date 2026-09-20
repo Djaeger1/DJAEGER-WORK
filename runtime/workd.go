@@ -93,6 +93,7 @@ func (s *S)pushRailway(key string)(int,error){base:=strings.TrimRight(readenv(fi
 
 func (s *S)remoteConfig()(string,string,string){base:=strings.TrimRight(readenv(filepath.Join(s.Rel,"config","work.env"),"REMOTE_RELAY_URL"),"/");_,key:=s.bridgeCred();if base==""||key==""{return base,"",""};topic:=s.ntfyTopic(key);h:=sha256.Sum256([]byte("DJAEGER_WORK_REMOTE_CLIENT:"+topic));return base,topic,hex.EncodeToString(h[:])}
 func privateRemote(r *http.Request)bool{host,_,e:=net.SplitHostPort(r.RemoteAddr);if e!=nil{host=r.RemoteAddr};ip:=net.ParseIP(strings.TrimSpace(host));return ip!=nil&&(ip.IsLoopback()||ip.IsPrivate())}
+func loopbackRemote(r *http.Request)bool{host,_,e:=net.SplitHostPort(r.RemoteAddr);if e!=nil{host=r.RemoteAddr};ip:=net.ParseIP(strings.TrimSpace(host));return ip!=nil&&ip.IsLoopback()}
 func (s *S)remoteInfo(w http.ResponseWriter,r *http.Request){if !privateRemote(r){http.Error(w,"local_pairing_only",http.StatusForbidden);return};base,_,client:=s.remoteConfig();if base==""||client==""{http.Error(w,"remote_not_configured",http.StatusServiceUnavailable);return};js(w,map[string]any{"ok":true,"mode":"AUTO_LOCAL_REMOTE","local_url":fmt.Sprintf("http://192.168.42.129:%d",s.Port),"remote_url":base,"remote_key":client,"release":runtimeRelease(s)})}
 func (s *S)remoteDevicePost(base,topic,path string,v any)(int,error){b,_:=json.Marshal(v);req,e:=http.NewRequest("POST",base+path,strings.NewReader(string(b)));if e!=nil{return 0,e};req.Header.Set("X-Hermes-Topic",topic);req.Header.Set("Content-Type","application/json");cl:=androidHTTPClient();cl.Timeout=20*time.Second;resp,e:=cl.Do(req);if e!=nil{return 0,e};io.Copy(io.Discard,io.LimitReader(resp.Body,4096));resp.Body.Close();if resp.StatusCode>=200&&resp.StatusCode<300{return resp.StatusCode,nil};return resp.StatusCode,fmt.Errorf("remote post http %d",resp.StatusCode)}
 func (s *S)remotePoll(base,topic string)(map[string]any,error){req,e:=http.NewRequest("GET",base+"/remote/device/poll",nil);if e!=nil{return nil,e};req.Header.Set("X-Hermes-Topic",topic);cl:=androidHTTPClient();cl.Timeout=32*time.Second;resp,e:=cl.Do(req);if e!=nil{return nil,e};defer resp.Body.Close();b,_:=io.ReadAll(io.LimitReader(resp.Body,1048576));if resp.StatusCode<200||resp.StatusCode>=300{return nil,fmt.Errorf("remote poll http %d",resp.StatusCode)};var v map[string]any;if json.Unmarshal(b,&v)!=nil{return nil,fmt.Errorf("remote poll invalid json")};cmd,_:=v["command"].(map[string]any);return cmd,nil}
@@ -373,7 +374,7 @@ func (s *S)maintenance(w http.ResponseWriter,r *http.Request){
    os.WriteFile(filepath.Join(st,"maintenance.update"),[]byte(mode+"\n"),0600)
    js(w,map[string]any{"ok":true,"action":"update","mode":mode,"state":"QUEUED"})
  case"remote_update":
-   if !privateRemote(r){http.Error(w,"private remote required",http.StatusForbidden);return}
+   if !loopbackRemote(r){http.Error(w,"loopback remote required",http.StatusForbidden);return}
    out,code,e:=s.performSignedUpdate("PRIVATE_REMOTE")
    if e!=nil{http.Error(w,e.Error(),code);return}
    js(w,out)
