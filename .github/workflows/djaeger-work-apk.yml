@@ -100,6 +100,7 @@ jobs:
             '/api/work/youtube/oauth',
             '/api/work/youtube/publish',
             '/api/work/youtube/privacy',
+            '/api/work/youtube/thumbnail',
             'KONEKSI YOUTUBE',
             'HUBUNGKAN YOUTUBE',
             'UJI UPLOAD PRIVATE',
@@ -114,13 +115,13 @@ jobs:
           print("Six-menu DJAEGER WORK contract preserved.")
           PY
           grep -Fq 'applicationId "com.hermes.workdashboard"' hermes-work-terminal/app/build.gradle
-          grep -Fq 'versionCode 138' hermes-work-terminal/app/build.gradle
-          grep -Fq 'versionName "1.3.8"' hermes-work-terminal/app/build.gradle
+          grep -Fq 'versionCode 139' hermes-work-terminal/app/build.gradle
+          grep -Fq 'versionName "1.3.9"' hermes-work-terminal/app/build.gradle
           grep -Fq 'Executors.newFixedThreadPool(4)' "$SRC"
           grep -Fq 'X-Djaeger-Remote-Key' "$SRC"
           grep -Fq '● REMOTE' "$SRC"
           grep -Fq 'Djaeger1/DJAEGER-WORK/main/release/channel.json' "$SRC"
-          grep -Fq 'APP_VERSION=1.3.8' "$SRC"
+          grep -Fq 'APP_VERSION=1.3.9' "$SRC"
           grep -Fq '/status-feed' "$SRC"
           ! grep -Fq 'generateUpdateReport(out, null);' "$SRC"
           test ! -e hermes-work-terminal/signing/hermes_work_terminal.jks.b64
@@ -152,20 +153,20 @@ jobs:
           BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           "$BT/aapt" dump badging "$APK" | tee /tmp/badging.txt
           grep -Fq "package: name='com.hermes.workdashboard'" /tmp/badging.txt
-          grep -Fq "versionCode='138'" /tmp/badging.txt
-          grep -Fq "versionName='1.3.8'" /tmp/badging.txt
+          grep -Fq "versionCode='139'" /tmp/badging.txt
+          grep -Fq "versionName='1.3.9'" /tmp/badging.txt
           grep -Fq "application-label:'DJAEGER WORK'" /tmp/badging.txt
 
           if [ "$SIGNING_MODE" = "SIGNED" ]; then
             "$BT/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/apksigner.txt
             grep -Fq "certificate SHA-256 digest: 5b2fe7069026a0366d0c28e626ef836fb46141d6ed131a8cd5bc2ed06b774e9d" /tmp/apksigner.txt
-            OUT=DJAEGER_WORK_Dashboard_v1.3.8_SIGNED.apk
+            OUT=DJAEGER_WORK_Dashboard_v1.3.9_SIGNED.apk
           else
             if "$BT/apksigner" verify "$APK" >/dev/null 2>&1; then
               echo "Unexpected signature in validation-only build" >&2
               exit 1
             fi
-            OUT=DJAEGER_WORK_Dashboard_v1.3.8_UNSIGNED.apk
+            OUT=DJAEGER_WORK_Dashboard_v1.3.9_UNSIGNED.apk
           fi
 
           cp "$APK" "$OUT"
@@ -176,7 +177,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-WORK-Native-v1.3.8-${{ env.SIGNING_MODE }}
+          name: DJAEGER-WORK-Native-v1.3.9-${{ env.SIGNING_MODE }}
           path: |
             ${{ env.APK_OUTPUT }}
             SHA256.txt
