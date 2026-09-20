@@ -454,6 +454,20 @@ const server = http.createServer(async (req,res)=>{
   // repository cutover, a pre-cutover device may already have met today's old
   // repository target; in that case the relay can read the Production Desk and
   // expose exactly one zero-write migration candidate for the new renderer.
+  if (u.pathname === "/status-feed" && req.method === "GET") {
+    try {
+      const snap=safeSnapshot(await latestSnapshot());
+      return send(res,200,{
+        ok:true,
+        source:(directSnapshot&&Date.now()-directReceivedAt<20*60*1000)?"direct-data-only":"ntfy-data-only",
+        device_connected:deviceFresh(),
+        snapshot:snap
+      });
+    } catch(e) {
+      return send(res,503,{ok:false,error:String(e?.message||e)});
+    }
+  }
+
   if (u.pathname === "/studio-feed" && req.method === "GET") {
     let snap=null; let source="direct";
     const fresh=!!(directSnapshot&&Date.now()-directReceivedAt<20*60*1000);
