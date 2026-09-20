@@ -29,4 +29,15 @@ if [ -f "$AUP" ]; then
     fi
   fi
 fi
+GC="$REL/worker/github-control-shadow.sh"; GPID="$ROOT/state/github-control-shadow.pid"
+GC_ENABLED="$(sed -n 's/^GITHUB_CONTROL_SHADOW=//p' "$REL/config/work.env" 2>/dev/null | tail -1)"
+if [ "$GC_ENABLED" = "1" ] && [ -f "$GC" ]; then
+  OLD_GPID="$(cat "$GPID" 2>/dev/null)"
+  case "$OLD_GPID" in *[!0-9]*|'') OLD_GPID="";; esac
+  if [ -z "$OLD_GPID" ] || ! kill -0 "$OLD_GPID" 2>/dev/null; then
+    HERMES_ROOT="$ROOT" nohup /system/bin/sh "$GC" >>"$ROOT/logs/github-control-shadow.log" 2>&1 &
+    echo $! > "$GPID"
+  fi
+fi
+
 exit 0
