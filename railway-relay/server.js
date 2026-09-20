@@ -22,6 +22,7 @@ const pollWaiters = [];
 const pending = new Map();
 let deviceSeenAt = 0;
 let deviceMeta = {};
+let lastReconnectAuditAt = 0;
 
 function send(res, code, obj, extraHeaders={}) {
   const body = JSON.stringify(obj);
@@ -403,9 +404,14 @@ const server = http.createServer(async (req,res)=>{
   // Device side: outbound-only long-poll tunnel. Safe behind CGNAT.
   if (u.pathname === "/remote/device/heartbeat" && req.method === "POST") {
     if (!deviceAuth(req)) return send(res,401,{ok:false,error:"unauthorized"});
+    const wasFresh=deviceFresh();
     let meta={};
     try { const raw=await readBody(req,65536); meta=raw?JSON.parse(raw):{}; } catch {}
     deviceSeenAt=Date.now();
+    if(!wasFresh && Date.now()-lastReconnectAuditAt>60000){
+      lastReconnectAuditAt=Date.now();
+      setTimeout(logDeviceMemoryAudit,750);
+    }
     deviceMeta={
       release:String(meta.release||"").slice(0,80),
       device:String(meta.device||"REDMI_5A").slice(0,80),
