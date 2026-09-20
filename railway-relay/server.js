@@ -280,8 +280,11 @@ function safeSnapshot(x={}) {
     workd_rss_mb:x.workd_rss_mb ?? null,
     mem_breakdown:(x.mem_breakdown && typeof x.mem_breakdown==="object") ? x.mem_breakdown : null,
     process_memory:(x.process_memory && typeof x.process_memory==="object") ? x.process_memory : null,
+    memory_pressure:(x.memory_pressure && typeof x.memory_pressure==="object") ? x.memory_pressure : null,
+    swap:(x.swap && typeof x.swap==="object") ? x.swap : null,
     zram:(x.zram && typeof x.zram==="object") ? x.zram : null,
     top_rss:Array.isArray(x.top_rss) ? x.top_rss.slice(0,10).map(p=>({pid:Number(p?.pid||0),name:String(p?.name||"").slice(0,80),rss_mb:Number(p?.rss_mb||0)})) : [],
+    top_anon:Array.isArray(x.top_anon) ? x.top_anon.slice(0,10).map(p=>({pid:Number(p?.pid||0),name:String(p?.name||"").slice(0,80),anon_mb:Number(p?.anon_mb||0),rss_mb:Number(p?.rss_mb||0),swap_mb:Number(p?.swap_mb||0)})) : [],
     worker_state:x.worker_state ?? null,
     safe_mode:x.safe_mode ?? null,
     research_total:x.research_total ?? null,
@@ -326,6 +329,10 @@ function safeSnapshot(x={}) {
     feedback_engine:x.feedback_engine ?? null,
     auto_update_state:x.auto_update_state ?? null,
     auto_update_last_check:x.auto_update_last_check ?? null,
+    github_control_state:x.github_control_state ?? null,
+    github_control_reason:x.github_control_reason ?? null,
+    github_control_generation:x.github_control_generation ?? null,
+    github_control_writes_allowed:x.github_control_writes_allowed ?? false,
     bridge_agent:x.bridge_agent ?? null,
     ai_used:x.ai_used ?? false,
     neurons_used:x.neurons_used ?? 0,
@@ -554,7 +561,7 @@ async function autonomousMaintenanceTick() {
     if(!deviceFresh()) return;
     const status=decodeDeviceJson(await queueDeviceRead("/api/work/status",12000));
     const release=String(status?.release||"");
-    if(!releaseAtLeast(release,2,5,14)) return;
+    if(!releaseAtLeast(release,2,5,11)) return;
     const configured=String(status?.configured_release||"");
     if(configured && configured!==release){
       const r=decodeDeviceJson(await queueDevicePost("/api/work/maintenance",{action:"recover"},12000));
@@ -623,7 +630,7 @@ setTimeout(logDeviceMemoryAudit, 60000);
 setInterval(logDeviceRecovery, 5*60*1000);
 setInterval(logDeviceAutoupdate, 5*60*1000);
 setInterval(logDeviceMemoryAudit, 5*60*1000);
-setTimeout(autonomousMaintenanceTick, 75000);
+setTimeout(autonomousMaintenanceTick, 15000);
 setInterval(autonomousMaintenanceTick, 5*60*1000);
 setInterval(logLatestSnapshot, 60000);
 setInterval(()=>{
