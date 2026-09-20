@@ -5,6 +5,22 @@ PID="$ROOT/state/workd.pid"; LOG="$ROOT/logs/workd.log"; APID="$ROOT/state/autou
 mkdir -p "$ROOT/data/research" "$ROOT/data/knowledge" "$ROOT/data/database" "$ROOT/state" "$ROOT/logs" "$ROOT/backups" "$ROOT/updates"
 [ -f "$ROOT/state/handoff.lock" ] && exit 0
 
+QUARANTINE="$(sed -n 's/^EMERGENCY_QUARANTINE=//p' "$REL/config/work.env" 2>/dev/null | tail -1)"
+if [ "$QUARANTINE" = "1" ]; then
+  printf '%s\n' "EMERGENCY_CPU_THERMAL_QUARANTINE" > "$ROOT/state/safe_mode"
+  printf '%s\n' "EMERGENCY_CPU_THERMAL_QUARANTINE" > "$ROOT/state/worker_paused"
+  if [ -f "$REL/worker/process-converge.sh" ]; then
+    HERMES_ROOT="$ROOT" /system/bin/sh "$REL/worker/process-converge.sh" >>"$ROOT/logs/process-converge.log" 2>&1 || true
+  fi
+  if ! { [ -f "$PID" ] && kill -0 "$(cat "$PID" 2>/dev/null)" 2>/dev/null; }; then
+    nohup "$REL/bin/workd" --root "$ROOT" --release "$REL" >>"$LOG" 2>&1 &
+    echo $! > "$PID"
+  fi
+  rm -f "$ROOT/state/autoupdate.pid" "$ROOT/state/autoupdate.owner" "$ROOT/state/github-control-shadow.pid" 2>/dev/null
+  rm -rf "$ROOT/state/autoupdate.daemon.lock" 2>/dev/null
+  exit 0
+fi
+
 if ! { [ -f "$PID" ] && kill -0 "$(cat "$PID" 2>/dev/null)" 2>/dev/null; }; then
   nohup "$REL/bin/workd" --root "$ROOT" --release "$REL" >>"$LOG" 2>&1 &
   echo $! > "$PID"
