@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -Fq 'UPDATE_CHANNEL_URL=https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json' runtime/config/work.env
-          grep -Fq '"version":"v2.5.11-recovery-safe"' runtime/manifest.json
+          grep -Fq '"version":"v2.5.12-pressure-guard"' runtime/manifest.json
           sh -n runtime/worker/tick.sh
           sh -n runtime/worker/handoff.sh
           sh -n runtime/worker/autoupdate.sh
@@ -55,6 +55,9 @@ jobs:
           grep -Fq 'handoff.lock' runtime/worker/handoff.sh
           grep -Fq 'handoff.lock' runtime/worker/tick.sh
           grep -Fq '/api/work/memory-audit' runtime/workd.go
+          grep -Fq 'last_guard_reason' runtime/workd.go
+          grep -Fq 'studioTick=0' runtime/workd.go
+          grep -Fq 'worker=reason' runtime/workd.go
           ! sed -n '/func (s \*S)bridgeSnapshot()/,/func (s \*S)ntfyTopic/p' runtime/workd.go | grep -Fq 'process_memory'
           grep -Fq 'MIN_MEM_KB=163840' runtime/worker/autoupdate.sh
 
@@ -74,16 +77,16 @@ jobs:
           cp config/work.env out/payload/config/work.env
           chmod 755 out/payload/bin/workd out/payload/worker/*.sh
           cd out
-          zip -Xqr ../HERMES_WORK_RUNTIME_v2.5.11_RECOVERY_SAFE.zip manifest.json payload
+          zip -Xqr ../HERMES_WORK_RUNTIME_v2.5.12_PRESSURE_GUARD.zip manifest.json payload
           cd ..
-          sha256sum HERMES_WORK_RUNTIME_v2.5.11_RECOVERY_SAFE.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v2.5.11_RECOVERY_SAFE.zip.sha256
-          printf '{"channel":"stable","version":"v2.5.11-recovery-safe","bundle":"HERMES_WORK_RUNTIME_v2.5.11_RECOVERY_SAFE.zip","sha256":"%s"}\n' "$(cat HERMES_WORK_RUNTIME_v2.5.11_RECOVERY_SAFE.zip.sha256)" > channel.json
+          sha256sum HERMES_WORK_RUNTIME_v2.5.12_PRESSURE_GUARD.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v2.5.12_PRESSURE_GUARD.zip.sha256
+          printf '{"channel":"stable","version":"v2.5.12-pressure-guard","bundle":"HERMES_WORK_RUNTIME_v2.5.12_PRESSURE_GUARD.zip","sha256":"%s"}\n' "$(cat HERMES_WORK_RUNTIME_v2.5.12_PRESSURE_GUARD.zip.sha256)" > channel.json
 
       - name: Upload installable package
         uses: actions/upload-artifact@v4
         with:
-          name: HERMES_WORK_RUNTIME_v2.5.11_RECOVERY_SAFE
-          path: runtime/HERMES_WORK_RUNTIME_v2.5.11_RECOVERY_SAFE.zip
+          name: HERMES_WORK_RUNTIME_v2.5.12_PRESSURE_GUARD
+          path: runtime/HERMES_WORK_RUNTIME_v2.5.12_PRESSURE_GUARD.zip
           retention-days: 30
 
       - name: Publish isolated stable channel
@@ -91,8 +94,8 @@ jobs:
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"
-          cp runtime/HERMES_WORK_RUNTIME_v2.5.11_RECOVERY_SAFE.zip "$tmp/"
-          cp runtime/HERMES_WORK_RUNTIME_v2.5.11_RECOVERY_SAFE.zip.sha256 "$tmp/"
+          cp runtime/HERMES_WORK_RUNTIME_v2.5.12_PRESSURE_GUARD.zip "$tmp/"
+          cp runtime/HERMES_WORK_RUNTIME_v2.5.12_PRESSURE_GUARD.zip.sha256 "$tmp/"
           cp runtime/channel.json "$tmp/"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -101,15 +104,15 @@ jobs:
             git fetch origin main
             git checkout -B main origin/main
             mkdir -p release
-            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.11_RECOVERY_SAFE.zip" release/
-            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.11_RECOVERY_SAFE.zip.sha256" release/
+            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.12_PRESSURE_GUARD.zip" release/
+            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.12_PRESSURE_GUARD.zip.sha256" release/
             cp "$tmp/channel.json" release/
             git add release/
             if git diff --cached --quiet; then
               echo "Release channel already current."
               exit 0
             fi
-            git commit -m "Publish DJAEGER WORK v2.5.11 recovery safe"
+            git commit -m "Publish DJAEGER WORK v2.5.12 pressure guard"
             if git push origin HEAD:main; then
               exit 0
             fi

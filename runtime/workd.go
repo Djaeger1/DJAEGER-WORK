@@ -62,7 +62,7 @@ func (s *S)studioSummaryLite()map[string]any{
 }
 func (s *S)bridgeSnapshot()map[string]any{
  ts,_:=iface("rndis0");worker:="READY"
- if exists(filepath.Join(s.Root,"state","safe_mode")){worker="SAFE_MODE"}else if exists(filepath.Join(s.Root,"state","worker_paused")){worker="PAUSED"}
+ if ok,reason:=guard(s);!ok{worker=reason}
  au:=s.autoUpdateInfo();db:=s.dailyBriefSummaryLite();pl:=s.plannerSummaryLite();ho:=s.handoffSummaryLite();studio:=s.studioSummaryLite()
  prepN,prepTopic:=jsonPackageSummary(s.scriptPrepDir());scriptN,scriptTopic:=jsonPackageSummary(s.scriptDir());prodN,prodTopic:=productionPackageSummary(s)
  pub:=s.publicationSummary();fb:=s.performanceSummary()
@@ -255,12 +255,18 @@ func (s *S)schedulerLoop(){
  }
  studioTick:=0
  for{
-   studioTick++;if studioTick>=5{s.pollStudioResult();s.pollPublicationResult();studioTick=0}
+   ok,reason:=guard(s)
+   if ok{
+     studioTick++;if studioTick>=5{s.pollStudioResult();s.pollPublicationResult();studioTick=0}
+   }else{
+     studioTick=0
+     os.WriteFile(filepath.Join(s.Root,"state","last_guard_reason"),[]byte(reason),0600)
+   }
    cfg:=readenv(filepath.Join(s.Rel,"config","work.env"),"RESEARCH_SCHEDULE");if cfg==""{cfg="08:00"}
    now:=time.Now();day:=now.Format("2006-01-02");last:=strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_auto_research_date")))
    due:=now.Hour()*60+now.Minute()>=minutesOfDay(cfg)
-   if due&&last!=day{
-     if ok,_:=guard(s);ok{if _,e:=s.autoResearch();e==nil{os.WriteFile(filepath.Join(s.Root,"state","last_auto_research_date"),[]byte(day),0600)}}
+   if due&&last!=day&&ok{
+     if _,e:=s.autoResearch();e==nil{os.WriteFile(filepath.Join(s.Root,"state","last_auto_research_date"),[]byte(day),0600)}
    }
    time.Sleep(60*time.Second)
  }
