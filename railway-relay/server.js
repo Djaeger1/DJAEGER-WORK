@@ -3,6 +3,7 @@ import https from "node:https";
 import crypto from "node:crypto";
 
 // DJAEGER WORK Auto Studio cutover deploy trigger v2.0.1
+// relay source sync: memory telemetry v2.5.6
 
 const PORT = Number(process.env.PORT || 3000);
 const TOPIC = process.env.NTFY_TOPIC || "";
