@@ -1,0 +1,49 @@
+name: Self-enforced quarantine CI
+
+on:
+  push:
+    branches: [v2519-self-enforced-quarantine]
+  pull_request:
+    branches: [main]
+    paths:
+      - "runtime/workd.go"
+      - "runtime/manifest.json"
+      - ".github/workflows/release.yml"
+      - ".github/workflows/self-enforced-quarantine-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.23.x'
+          cache: false
+      - name: ARMv7 build
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -o /tmp/workd ./runtime/workd.go
+      - name: Verify self-enforced quarantine
+        run: |
+          grep -q 'enforceEmergencyQuarantine(s)' runtime/workd.go
+          grep -q 'EMERGENCY_CPU_THERMAL_QUARANTINE' runtime/workd.go
+          grep -q 'case"safe_mode","quarantine"' runtime/workd.go
+          grep -q 'tether_preserved' runtime/workd.go
+          grep -q 'EMERGENCY_QUARANTINE.*5\*time.Minute' runtime/workd.go
+          grep -q 'convergeHermesWorkersNative' runtime/workd.go
+          grep -q 'HERMES_WORK_RELEASE_WORKERS_NATIVE' runtime/workd.go
+          ! grep -q 'process-converge.sh' runtime/worker/tick.sh
+      - name: Verify release
+        run: |
+          grep -q '"version":"v2.5.19-self-enforced-quarantine"' runtime/manifest.json
+          grep -q 'HERMES_WORK_RUNTIME_v2.5.19_SELF_ENFORCED_QUARANTINE' .github/workflows/release.yml
+      - name: Safety
+        run: |
+          ! grep -Eq 'reboot|drop_caches|force-stop|system_server|qcril|telephony|networkstack' runtime/workd.go
+      - name: Report
+        run: |
+          echo "SELF_ENFORCED_QUARANTINE=PASS"
+          echo "TETHER_PRESERVED=YES"

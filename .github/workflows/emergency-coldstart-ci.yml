@@ -45,16 +45,17 @@ jobs:
 
       - name: Verify helper suppression
         run: |
-          grep -q 'process-converge.sh' runtime/worker/tick.sh
-          grep -q 'process-converge.sh' runtime/worker/handoff.sh
+          ! grep -q 'process-converge.sh' runtime/worker/tick.sh
+          grep -q 'convergeHermesWorkersNative' runtime/workd.go
+          grep -q 'HERMES_WORK_RELEASE_WORKERS_NATIVE' runtime/workd.go
           grep -q 'rm -f "$ROOT/state/autoupdate.pid"' runtime/worker/tick.sh
           grep -q 'rm -rf "$ROOT/state/autoupdate.daemon.lock"' runtime/worker/tick.sh
           ! grep -Eq 'reboot|setprop|drop_caches|system_server|telephony|networkstack|qcril|force-stop' runtime/worker/tick.sh
 
       - name: Verify release
         run: |
-          grep -q '"version":"v2.5.18-emergency-coldstart-quarantine"' runtime/manifest.json
-          grep -q 'HERMES_WORK_RUNTIME_v2.5.18_EMERGENCY_COLDSTART_QUARANTINE' .github/workflows/release.yml
+          grep -Eq '"version":"v2\.5\.(18-emergency-coldstart-quarantine|19-self-enforced-quarantine)"' runtime/manifest.json
+          grep -Eq 'HERMES_WORK_RUNTIME_v2\.5\.(18_EMERGENCY_COLDSTART_QUARANTINE|19_SELF_ENFORCED_QUARANTINE)' .github/workflows/release.yml
 
       - name: Report
         run: |
