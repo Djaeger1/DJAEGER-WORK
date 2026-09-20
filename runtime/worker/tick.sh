@@ -12,9 +12,20 @@ fi
 AUP="$REL/worker/autoupdate.sh"
 if [ -f "$AUP" ]; then
   OLD_AUP="$(cat "$APID" 2>/dev/null)"
+  case "$OLD_AUP" in *[!0-9]*|'') OLD_AUP="";; esac
   if [ -z "$OLD_AUP" ] || ! kill -0 "$OLD_AUP" 2>/dev/null; then
-    HERMES_ROOT="$ROOT" nohup /system/bin/sh "$AUP" >>"$ROOT/logs/autoupdate.log" 2>&1 &
-    echo $! > "$APID"
+    FOUND=""
+    for P in /proc/[0-9]*; do
+      N="${P#/proc/}"
+      CMD="$(tr '\000' ' ' < "$P/cmdline" 2>/dev/null)"
+      case "$CMD" in *"$ROOT/releases/"*"/worker/autoupdate.sh"* ) FOUND="$N"; break;; esac
+    done
+    if [ -n "$FOUND" ]; then
+      echo "$FOUND" > "$APID"
+    else
+      HERMES_ROOT="$ROOT" nohup /system/bin/sh "$AUP" >>"$ROOT/logs/autoupdate.log" 2>&1 &
+      echo $! > "$APID"
+    fi
   fi
 fi
 exit 0
