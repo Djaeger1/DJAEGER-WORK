@@ -311,7 +311,7 @@ public class MainActivity extends Activity {
         });
 
         apiAsync("GET", "/api/work/research", null, false, (code, s) -> {
-            try { last.setText("Riset terakhir: " + dash(new JSONObject(s).optString("last_research"))); } catch (Exception ignored) {}
+            try { last.setText("Riset terakhir: " + formatWibTime(new JSONObject(s).optString("last_research"))); } catch (Exception ignored) {}
         });
 
         apiAsync("GET", "/api/work/brief", null, false, (code, s) -> {
@@ -391,7 +391,7 @@ public class MainActivity extends Activity {
                 briefList.setText(list.toString());
 
                 String generated = j.optString("generated_at", "");
-                briefGenerated.setText("Dibuat: " + (generated.isEmpty() ? "—" : generated));
+                briefGenerated.setText("Dibuat: " + (generated.isEmpty() ? "—" : formatWibTime(generated)));
             } catch (Exception e) {
                 topTitle.setText("Ringkasan Harian belum dapat dibaca.");
                 briefAction.setText("Coba segarkan setelah riset selesai.");
@@ -662,7 +662,7 @@ public class MainActivity extends Activity {
                 if (!verified.isEmpty()) {
                     String scope = j.optString("scope", "https://www.googleapis.com/auth/youtube.force-ssl");
                     if (scope.startsWith("https://www.googleapis.com/auth/")) scope = scope.substring("https://www.googleapis.com/auth/".length());
-                    ytOut.setText("Terverifikasi: " + verified + "\nScope: " + scope);
+                    ytOut.setText("Terverifikasi: " + formatWibTime(verified) + "\nScope: " + scope);
                 }
             } catch (Exception e) {
                 ytState.setText("Status OAuth: belum tersedia");
@@ -926,7 +926,7 @@ public class MainActivity extends Activity {
                         final String title = v.optString("topic", "Tanpa judul");
                         final String pr = v.optString("privacy", "private").toUpperCase(Locale.US);
                         String status = v.optString("status", "—");
-                        String updated = v.optString("updated_at", "");
+                        String updated = formatWibTime(v.optString("updated_at", ""));
                         String thumbState = v.optString("thumbnail_state", "");
 
                         LinearLayout vc = card();
@@ -1181,7 +1181,7 @@ public class MainActivity extends Activity {
         io.execute(() -> {
             StringBuilder report = new StringBuilder();
             report.append("===== HASIL PEMBARUAN DJAEGER WORK =====\n");
-            report.append("APP_VERSION=1.3.7\n");
+            report.append("APP_VERSION=1.3.8\n");
             report.append("RUNTIME_URL=").append(runtimeUrl()).append("\n");
             report.append("GENERATED_AT=").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new java.util.Date())).append("\n\n");
 
@@ -1455,6 +1455,42 @@ public class MainActivity extends Activity {
         if (!s.startsWith("http://") && !s.startsWith("https://")) s = "http://" + s;
         while (s.endsWith("/")) s = s.substring(0, s.length() - 1);
         return s;
+    }
+
+    private java.util.Date parseIsoTime(String raw) {
+        if (raw == null || raw.trim().isEmpty() || "—".equals(raw.trim())) return null;
+        String v = raw.trim();
+        String[] patterns = {
+                "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+                "yyyy-MM-dd'T'HH:mm:ssXXX",
+                "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+                "yyyy-MM-dd'T'HH:mm:ss'Z'"
+        };
+        for (String pattern : patterns) {
+            try {
+                java.text.SimpleDateFormat in = new java.text.SimpleDateFormat(pattern, Locale.US);
+                in.setLenient(false);
+                if (pattern.endsWith("'Z'")) in.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+                return in.parse(v);
+            } catch (Exception ignored) {}
+        }
+        return null;
+    }
+
+    private String formatWibTime(String raw) {
+        java.util.Date d = parseIsoTime(raw);
+        if (d == null) return dash(raw);
+        java.text.SimpleDateFormat out = new java.text.SimpleDateFormat("dd MMM yyyy · HH:mm 'WIB'", new Locale("id", "ID"));
+        out.setTimeZone(java.util.TimeZone.getTimeZone("Asia/Jakarta"));
+        return out.format(d);
+    }
+
+    private String formatWibDate(String raw) {
+        java.util.Date d = parseIsoTime(raw);
+        if (d == null) return dash(raw);
+        java.text.SimpleDateFormat out = new java.text.SimpleDateFormat("dd MMM yyyy", new Locale("id", "ID"));
+        out.setTimeZone(java.util.TimeZone.getTimeZone("Asia/Jakarta"));
+        return out.format(d);
     }
 
     private LinearLayout card() {
