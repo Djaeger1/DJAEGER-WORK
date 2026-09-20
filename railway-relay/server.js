@@ -256,6 +256,7 @@ function safeSnapshot(x={}) {
     tether_state:x.tether_state ?? null,
     temperature_c:x.temperature_c ?? null,
     mem_available_mb:x.mem_available_mb ?? null,
+    workd_rss_mb:x.workd_rss_mb ?? null,
     worker_state:x.worker_state ?? null,
     safe_mode:x.safe_mode ?? null,
     research_total:x.research_total ?? null,

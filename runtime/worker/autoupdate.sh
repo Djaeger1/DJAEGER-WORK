@@ -62,27 +62,30 @@ while true; do
   TEMP_RAW="$(cat /sys/class/power_supply/battery/temp 2>/dev/null)"
   case "$TEMP_RAW" in *[!0-9]*|'') TEMP_RAW=0;; esac
   [ "$TEMP_RAW" -gt 430 ] 2>/dev/null && { publish "DEFERRED" "THERMAL_GUARD"; sleep 120; continue; }
-  MEM_KB="$(awk '/^MemAvailable:/{print $2;exit}' /proc/meminfo 2>/dev/null)"
-  case "$MEM_KB" in *[!0-9]*|'') MEM_KB=999999;; esac
-  [ "$MEM_KB" -lt 262144 ] 2>/dev/null && { publish "DEFERRED" "LOW_RAM"; sleep 120; continue; }
-
-  if ! mkdir "$LOCK" 2>/dev/null; then sleep 30; continue; fi
-  trap cleanup EXIT HUP INT TERM
-
+  # Read the signed channel before the RAM gate so a designated memory-recovery
+  # release can escape a low-RAM deadlock. Normal releases still require 256 MiB.
   CHANNEL="$(cfg UPDATE_CHANNEL_URL)"
   if [ -z "$CHANNEL" ]; then
-    publish "ERROR" "CHANNEL_MISSING"; cleanup; sleep "$interval"; continue
+    publish "ERROR" "CHANNEL_MISSING"; sleep "$interval"; continue
   fi
-
   CH="$ROOT/updates/channel.auto.json"
   if ! /system/bin/wget -qO "$CH.tmp" "$CHANNEL" 2>/dev/null; then
-    rm -f "$CH.tmp"; publish "RETRYING" "CHANNEL_FETCH_FAILED"; cleanup; sleep 120; continue
+    rm -f "$CH.tmp"; publish "RETRYING" "CHANNEL_FETCH_FAILED"; sleep 120; continue
   fi
   mv -f "$CH.tmp" "$CH"
 
   VER="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CH" | head -1)"
   BUNDLE="$(sed -n 's/.*"bundle"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CH" | head -1)"
   SHA="$(sed -n 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([0-9A-Fa-f]*\)".*/\1/p' "$CH" | head -1 | tr 'A-F' 'a-f')"
+
+  MEM_KB="$(awk '/^MemAvailable:/{print $2;exit}' /proc/meminfo 2>/dev/null)"
+  case "$MEM_KB" in *[!0-9]*|'') MEM_KB=999999;; esac
+  MIN_MEM_KB=262144
+  case "$VER" in *memory-stability*|*memory-recovery*) MIN_MEM_KB=163840;; esac
+  [ "$MEM_KB" -lt "$MIN_MEM_KB" ] 2>/dev/null && { publish "DEFERRED" "LOW_RAM"; sleep 120; continue; }
+
+  if ! mkdir "$LOCK" 2>/dev/null; then sleep 30; continue; fi
+  trap cleanup EXIT HUP INT TERM
   case "$VER" in *[!A-Za-z0-9._-]*|'') publish "ERROR" "INVALID_VERSION"; cleanup; sleep "$interval"; continue;; esac
   case "$BUNDLE" in *[!A-Za-z0-9._-]*|'') publish "ERROR" "INVALID_BUNDLE"; cleanup; sleep "$interval"; continue;; esac
   [ "${#SHA}" -eq 64 ] || { publish "ERROR" "INVALID_SHA" "$VER"; cleanup; sleep "$interval"; continue; }
