@@ -39,10 +39,15 @@ jobs:
 
       - name: Verify observer activation remains read-only
         run: |
-          grep -qx 'GITHUB_CONTROL_SHADOW=1' runtime/config/work.env
+          if grep -qx 'EMERGENCY_QUARANTINE=1' runtime/config/work.env; then
+            grep -qx 'GITHUB_CONTROL_SHADOW=0' runtime/config/work.env
+            grep -q 'v2.5.19-self-enforced-quarantine' runtime/manifest.json
+          else
+            grep -qx 'GITHUB_CONTROL_SHADOW=1' runtime/config/work.env
+            grep -q 'v2.5.15-github-shadow-readonly' runtime/manifest.json
+          fi
           grep -q 'GITHUB_CONTROL_INTERVAL_SECONDS=300' runtime/config/work.env
           grep -q 'DJAEGER-Vercel-Gateway/main/control/desired.json' runtime/config/work.env
-          grep -q 'v2.5.15-github-shadow-readonly' runtime/manifest.json
           grep -q 'github_control_state' runtime/workd.go
           grep -q 'github_control_writes_allowed' runtime/workd.go
 
@@ -60,12 +65,17 @@ jobs:
 
       - name: Verify release packaging
         run: |
-          grep -q 'HERMES_WORK_RUNTIME_v2.5.15_GITHUB_SHADOW_READONLY' .github/workflows/release.yml
+          if grep -qx 'EMERGENCY_QUARANTINE=1' runtime/config/work.env; then
+            grep -q 'HERMES_WORK_RUNTIME_v2.5.19_SELF_ENFORCED_QUARANTINE' .github/workflows/release.yml
+            grep -q 'v2.5.19-self-enforced-quarantine' .github/workflows/release.yml
+          else
+            grep -q 'HERMES_WORK_RUNTIME_v2.5.15_GITHUB_SHADOW_READONLY' .github/workflows/release.yml
+            grep -q 'v2.5.15-github-shadow-readonly' .github/workflows/release.yml
+          fi
           grep -q 'cp worker/github-control-shadow.sh out/payload/worker/github-control-shadow.sh' .github/workflows/release.yml
-          grep -q 'v2.5.15-github-shadow-readonly' .github/workflows/release.yml
 
       - name: Report
         run: |
           echo "SHADOW_SAFETY=PASS"
           echo "DEVICE_WRITES=BLOCKED"
-          echo "OBSERVER_ACTIVATION=ON_READ_ONLY"
+          echo "OBSERVER_ACTIVATION=READ_ONLY_OR_EMERGENCY_OFF"
