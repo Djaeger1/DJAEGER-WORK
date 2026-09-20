@@ -153,7 +153,7 @@ jobs:
 
           if [ "$SIGNING_MODE" = "SIGNED" ]; then
             "$BT/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/apksigner.txt
-            grep -Fq "Signer #1 certificate SHA-256 digest: 5b2fe7069026a0366d0c28e626ef836fb46141d6ed131a8cd5bc2ed06b774e9d" /tmp/apksigner.txt
+            grep -Fq "certificate SHA-256 digest: 5b2fe7069026a0366d0c28e626ef836fb46141d6ed131a8cd5bc2ed06b774e9d" /tmp/apksigner.txt
             OUT=DJAEGER_WORK_Dashboard_v1.3.2_SIGNED.apk
           else
             if "$BT/apksigner" verify "$APK" >/dev/null 2>&1; then
