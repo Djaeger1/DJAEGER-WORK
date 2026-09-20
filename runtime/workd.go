@@ -1265,6 +1265,117 @@ func validateYouTubeOAuth(c YouTubeOAuthCredential)(int,error){
  if json.Unmarshal(b,&x)!=nil||strings.TrimSpace(x.AccessToken)==""{return 0,fmt.Errorf("oauth token response invalid")}
  return x.ExpiresIn,nil
 }
+
+var youtubePublishMu sync.Mutex
+var youtubePublishBusy bool
+
+func youtubeAccessToken(c YouTubeOAuthCredential)(string,int,error){
+ v:=url.Values{};v.Set("client_id",strings.TrimSpace(c.ClientID));v.Set("client_secret",strings.TrimSpace(c.ClientSecret));v.Set("refresh_token",strings.TrimSpace(c.RefreshToken));v.Set("grant_type","refresh_token")
+ req,e:=http.NewRequest("POST","https://oauth2.googleapis.com/token",strings.NewReader(v.Encode()));if e!=nil{return"",0,e}
+ req.Header.Set("Content-Type","application/x-www-form-urlencoded")
+ cl:=androidHTTPClient();cl.Timeout=30*time.Second;resp,e:=cl.Do(req);if e!=nil{return"",0,e};defer resp.Body.Close()
+ b,_:=io.ReadAll(io.LimitReader(resp.Body,131072))
+ if resp.StatusCode<200||resp.StatusCode>=300{
+  var ge map[string]any;_ = json.Unmarshal(b,&ge);code:=strings.TrimSpace(fmt.Sprint(ge["error"]));desc:=strings.TrimSpace(fmt.Sprint(ge["error_description"]))
+  if code==""||code=="<nil>"{code=fmt.Sprintf("http_%d",resp.StatusCode)}
+  if desc!=""&&desc!="<nil>"{return"",0,fmt.Errorf("%s: %s",code,desc)}
+  return"",0,fmt.Errorf("%s",code)
+ }
+ var x struct{AccessToken string \`json:"access_token"\`;ExpiresIn int \`json:"expires_in"\`}
+ if json.Unmarshal(b,&x)!=nil||strings.TrimSpace(x.AccessToken)==""{return"",0,fmt.Errorf("oauth token response invalid")}
+ return strings.TrimSpace(x.AccessToken),x.ExpiresIn,nil
+}
+func youtubeClip(s string,n int)string{r:=[]rune(strings.TrimSpace(s));if len(r)>n{return string(r[:n])};return string(r)}
+func youtubeAPIError(b []byte,code int)string{
+ var x struct{Error struct{Message string \`json:"message"\`;Status string \`json:"status"\`} \`json:"error"\`}
+ if json.Unmarshal(b,&x)==nil{m:=youtubeClip(x.Error.Message,300);if m!=""{return m};if x.Error.Status!=""{return youtubeClip(x.Error.Status,120)}}
+ return fmt.Sprintf("http_%d",code)
+}
+func youtubeAssetAllowed(raw string)bool{
+ u,e:=url.Parse(strings.TrimSpace(raw));if e!=nil||u.Scheme!="https"{return false}
+ h:=strings.ToLower(u.Hostname())
+ return h=="github.com"||h=="objects.githubusercontent.com"||h=="release-assets.githubusercontent.com"
+}
+func (s *S)youtubePublishStatePath()string{return filepath.Join(s.Root,"state","youtube_publish.json")}
+func (s *S)writeYouTubePublishState(v map[string]any){
+ v["updated_at"]=time.Now().Format(time.RFC3339);v["ai_used"]=false;v["neurons_used"]=0
+ b,_:=json.Marshal(v);os.MkdirAll(filepath.Dir(s.youtubePublishStatePath()),0700);tmp:=s.youtubePublishStatePath()+".tmp";_ = os.WriteFile(tmp,b,0600);_ = os.Rename(tmp,s.youtubePublishStatePath())
+}
+func (s *S)youtubePublishStatus()map[string]any{
+ v:=map[string]any{"state":"IDLE","privacy":"private","engine":"YOUTUBE_DEVICE_PUBLISHER_V1","ai_used":false,"neurons_used":0}
+ if b,e:=os.ReadFile(s.youtubePublishStatePath());e==nil{_ = json.Unmarshal(b,&v)}
+ nextID:="";nextTopic:="";for _,p:=range s.loadPlan(){if p.Stage=="UPLOAD_READY"{nextID=p.ID;nextTopic=p.Title;break}}
+ _,oauth:=s.loadYouTubeOAuth();v["oauth_configured"]=oauth;v["next_planner_id"]=nextID;v["next_topic"]=nextTopic
+ youtubePublishMu.Lock();v["busy"]=youtubePublishBusy;youtubePublishMu.Unlock()
+ return v
+}
+func (s *S)youtubeCandidate(id string)(PlanItem,StudioResult,ScriptPackage,error){
+ plans:=s.syncPlanner();var p PlanItem;found:=false
+ for _,x:=range plans{if (id==""&&x.Stage=="UPLOAD_READY")||(id!=""&&x.ID==id&&x.Stage=="UPLOAD_READY"){p=x;found=true;break}}
+ if !found{return p,StudioResult{},ScriptPackage{},fmt.Errorf("no upload-ready video")}
+ sr,ok:=s.loadStudioResult(p.ID);if !ok||strings.TrimSpace(sr.VideoURL)==""{return p,sr,ScriptPackage{},fmt.Errorf("rendered video not found")}
+ if !youtubeAssetAllowed(sr.VideoURL){return p,sr,ScriptPackage{},fmt.Errorf("rendered video url rejected")}
+ var sp ScriptPackage
+ if b,e:=os.ReadFile(filepath.Join(s.scriptDir(),p.ID+".json"));e!=nil||json.Unmarshal(b,&sp)!=nil{return p,sr,sp,fmt.Errorf("script metadata not found")}
+ return p,sr,sp,nil
+}
+func (s *S)runYouTubePrivateUpload(p PlanItem,sr StudioResult,sp ScriptPackage){
+ defer func(){youtubePublishMu.Lock();youtubePublishBusy=false;youtubePublishMu.Unlock()}()
+ fail:=func(msg string){s.writeYouTubePublishState(map[string]any{"state":"FAILED","privacy":"private","planner_id":p.ID,"topic":p.Title,"error":youtubeClip(msg,500),"engine":"YOUTUBE_DEVICE_PUBLISHER_V1"})}
+ c,ok:=s.loadYouTubeOAuth();if !ok{fail("youtube oauth not configured");return}
+ token,_,e:=youtubeAccessToken(c);if e!=nil{fail("oauth refresh failed: "+e.Error());return}
+ os.MkdirAll(filepath.Join(s.Root,"updates"),0700);f,e:=os.CreateTemp(filepath.Join(s.Root,"updates"),"youtube-*.mp4");if e!=nil{fail("temporary video create failed");return};tmp:=f.Name();f.Close();defer os.Remove(tmp)
+ req,e:=http.NewRequest("GET",sr.VideoURL,nil);if e!=nil{fail("video download request failed");return};req.Header.Set("User-Agent","HERMES-WORK-YouTube/1.0")
+ cl:=androidHTTPClient();cl.Timeout=15*time.Minute;resp,e:=cl.Do(req);if e!=nil{fail("video download failed: "+e.Error());return}
+ if resp.StatusCode<200||resp.StatusCode>=300{resp.Body.Close();fail(fmt.Sprintf("video download http %d",resp.StatusCode));return}
+ if resp.ContentLength>536870912{resp.Body.Close();fail("video exceeds 512MB safety limit");return}
+ out,e:=os.OpenFile(tmp,os.O_WRONLY|os.O_TRUNC,0600);if e!=nil{resp.Body.Close();fail("temporary video open failed");return}
+ n,copyErr:=io.Copy(out,io.LimitReader(resp.Body,536870913));out.Close();resp.Body.Close()
+ if copyErr!=nil||n<=0||n>536870912{fail("video download incomplete or oversized");return}
+
+ title:=youtubeClip(sp.VideoTitle,100);if title==""{title=youtubeClip(p.Title,100)};if title==""{title="DJAEGER WORK"}
+ desc:=strings.TrimSpace(sp.Description);if len(sp.Hashtags)>0{desc=strings.TrimSpace(desc+"\n\n"+strings.Join(sp.Hashtags," "))};desc=youtubeClip(desc,4800)
+ meta:=map[string]any{"snippet":map[string]any{"title":title,"description":desc,"categoryId":"27"},"status":map[string]any{"privacyStatus":"private","selfDeclaredMadeForKids":true}}
+ mb,_:=json.Marshal(meta)
+ initReq,e:=http.NewRequest("POST","https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",strings.NewReader(string(mb)));if e!=nil{fail("youtube session request failed");return}
+ initReq.Header.Set("Authorization","Bearer "+token);initReq.Header.Set("Content-Type","application/json; charset=UTF-8");initReq.Header.Set("X-Upload-Content-Type","video/mp4");initReq.Header.Set("X-Upload-Content-Length",strconv.FormatInt(n,10))
+ ic:=androidHTTPClient();ic.Timeout=60*time.Second;ir,e:=ic.Do(initReq);if e!=nil{fail("youtube session failed: "+e.Error());return}
+ ib,_:=io.ReadAll(io.LimitReader(ir.Body,262144));ir.Body.Close()
+ if ir.StatusCode<200||ir.StatusCode>=300{fail("youtube session rejected: "+youtubeAPIError(ib,ir.StatusCode));return}
+ uploadURL:=strings.TrimSpace(ir.Header.Get("Location"));if uploadURL==""{fail("youtube upload location missing");return}
+
+ vf,e:=os.Open(tmp);if e!=nil{fail("temporary video reopen failed");return};defer vf.Close()
+ upReq,e:=http.NewRequest("PUT",uploadURL,vf);if e!=nil{fail("youtube upload request failed");return}
+ upReq.ContentLength=n;upReq.Header.Set("Authorization","Bearer "+token);upReq.Header.Set("Content-Type","video/mp4")
+ uc:=androidHTTPClient();uc.Timeout=20*time.Minute;ur,e:=uc.Do(upReq);if e!=nil{fail("youtube upload failed: "+e.Error());return}
+ ub,_:=io.ReadAll(io.LimitReader(ur.Body,524288));ur.Body.Close()
+ if ur.StatusCode<200||ur.StatusCode>=300{fail("youtube upload rejected: "+youtubeAPIError(ub,ur.StatusCode));return}
+ var done struct{ID string \`json:"id"\`};if json.Unmarshal(ub,&done)!=nil||strings.TrimSpace(done.ID)==""{fail("youtube response missing video id");return}
+ vid:=strings.TrimSpace(done.ID);at:=time.Now().Format(time.RFC3339)
+ rec:=PublicationRecord{PlannerID:p.ID,Topic:p.Title,Platform:"youtube",ExternalID:vid,URL:"https://youtu.be/"+vid,Channel:"YouTube",Status:"UPLOADED_PRIVATE",PublishedAt:at,RecordedAt:at}
+ if e=s.appendPublication(rec);e!=nil{fail("video uploaded but local publication record failed");return}
+ plans:=s.syncPlanner();for i:=range plans{if plans[i].ID==p.ID{plans[i].Stage="PUBLISHED";plans[i].UpdatedAt=at;break}};_ = s.savePlan(plans)
+ s.writeYouTubePublishState(map[string]any{"state":"SUCCESS","privacy":"private","planner_id":p.ID,"topic":p.Title,"video_id":vid,"url":"https://youtu.be/"+vid,"status":"UPLOADED_PRIVATE","engine":"YOUTUBE_DEVICE_PUBLISHER_V1"})
+}
+func (s *S)youtubePublish(w http.ResponseWriter,r *http.Request){
+ if r.Method=="GET"{js(w,s.youtubePublishStatus());return}
+ if r.Method!="POST"{http.Error(w,"method not allowed",405);return}
+ if !s.auth(r){http.Error(w,"unauthorized",401);return}
+ if !privateRemote(r)||loopbackRemote(r){http.Error(w,"local_lan_only",403);return}
+ if ok,reason:=guard(s);!ok{http.Error(w,"worker guard: "+reason,409);return}
+ var q struct{PlannerID string \`json:"planner_id"\`;Privacy string \`json:"privacy"\`}
+ if r.Body!=nil{_ = json.NewDecoder(io.LimitReader(r.Body,65536)).Decode(&q)}
+ q.PlannerID=strings.TrimSpace(q.PlannerID);q.Privacy=strings.ToLower(strings.TrimSpace(q.Privacy));if q.Privacy==""{q.Privacy="private"}
+ if q.Privacy!="private"{http.Error(w,"publisher v1 only allows private uploads",400);return}
+ if q.PlannerID!=""&&!safePlanID(q.PlannerID){http.Error(w,"invalid planner id",400);return}
+ p,sr,sp,e:=s.youtubeCandidate(q.PlannerID);if e!=nil{http.Error(w,e.Error(),409);return}
+ youtubePublishMu.Lock();if youtubePublishBusy{youtubePublishMu.Unlock();http.Error(w,"youtube upload already in progress",409);return};youtubePublishBusy=true;youtubePublishMu.Unlock()
+ s.writeYouTubePublishState(map[string]any{"state":"UPLOADING","privacy":"private","planner_id":p.ID,"topic":p.Title,"engine":"YOUTUBE_DEVICE_PUBLISHER_V1"})
+ go s.runYouTubePrivateUpload(p,sr,sp)
+ w.WriteHeader(http.StatusAccepted);js(w,map[string]any{"ok":true,"state":"UPLOADING","privacy":"private","planner_id":p.ID,"topic":p.Title})
+}
+
+
 func (s *S)youtubeOAuthStatus()map[string]any{
  c,ok:=s.loadYouTubeOAuth();state:="NOT_CONFIGURED";verifiedAt:=""
  if ok{state="CONFIGURED";var v map[string]any;if b,e:=os.ReadFile(s.youtubeOAuthStatePath());e==nil&&json.Unmarshal(b,&v)==nil{if x:=strings.TrimSpace(fmt.Sprint(v["state"]));x!=""&&x!="<nil>"{state=x};verifiedAt=strings.TrimSpace(fmt.Sprint(v["verified_at"]))}}
@@ -1515,7 +1626,7 @@ func convergeHermesWorkersNative(s *S){
  b,_:=json.Marshal(v);_ = os.WriteFile(filepath.Join(s.Root,"state","process-converge.json"),b,0600)
 }
 
-func main(){root:=flag.String("root","/data/adb/hermes_work","");rel:=flag.String("release","","");flag.Parse();p:=8766;if x:=readenv(filepath.Join(*rel,"config","work.env"),"WORK_PORT");x!=""{p,_=strconv.Atoi(x)};s:=&S{Root:*root,Rel:*rel,Port:p,Token:readenv(filepath.Join(*root,"config.env"),"ADMIN_TOKEN")};enforceEmergencyQuarantine(s);m:=http.NewServeMux();m.HandleFunc("/",s.index);m.HandleFunc("/api/work/status",s.status);m.HandleFunc("/api/work/action",s.action);m.HandleFunc("/api/work/diagnostics",s.diag);m.HandleFunc("/api/work/memory-audit",s.memoryAudit);m.HandleFunc("/api/work/maintenance",s.maintenance);m.HandleFunc("/api/work/update",s.update);m.HandleFunc("/api/work/collect",s.collect);m.HandleFunc("/api/work/research",s.research);m.HandleFunc("/api/work/brief",s.brief);m.HandleFunc("/api/work/opportunities",s.opportunities);m.HandleFunc("/api/work/planner",s.planner);m.HandleFunc("/api/work/script-prep",s.scriptPrep);m.HandleFunc("/api/work/scripts",s.scripts);m.HandleFunc("/api/work/production",s.production);m.HandleFunc("/api/work/production/download",s.productionDownload);m.HandleFunc("/api/work/handoff",s.handoff);m.HandleFunc("/api/work/desk",s.desk);m.HandleFunc("/api/work/job",s.jobDetail);m.HandleFunc("/api/work/studio",s.studio);m.HandleFunc("/api/work/publication",s.publication);m.HandleFunc("/api/work/youtube/oauth",s.youtubeOAuth);m.HandleFunc("/api/work/channel/import",s.channelImport);m.HandleFunc("/api/work/performance",s.performance);m.HandleFunc("/api/work/schedule",s.schedule);m.HandleFunc("/api/work/run-research",s.runResearch);m.HandleFunc("/api/work/daily",s.daily);m.HandleFunc("/api/work/channel",s.channel);m.HandleFunc("/api/work/knowledge",s.knowledge);m.HandleFunc("/api/work/recovery",s.recovery);m.HandleFunc("/api/work/bridge",s.bridgeStatus);m.HandleFunc("/api/work/autoupdate",s.autoUpdateStatus);m.HandleFunc("/api/work/remote",s.remoteInfo);if readenv(filepath.Join(s.Rel,"config","work.env"),"EMERGENCY_QUARANTINE")=="1"{go func(){time.Sleep(2*time.Second);convergeHermesWorkersNative(s)}()};go s.schedulerLoop();go s.bridgeLoop();go s.remoteLinkLoop();http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d",p),m)}
+func main(){root:=flag.String("root","/data/adb/hermes_work","");rel:=flag.String("release","","");flag.Parse();p:=8766;if x:=readenv(filepath.Join(*rel,"config","work.env"),"WORK_PORT");x!=""{p,_=strconv.Atoi(x)};s:=&S{Root:*root,Rel:*rel,Port:p,Token:readenv(filepath.Join(*root,"config.env"),"ADMIN_TOKEN")};enforceEmergencyQuarantine(s);m:=http.NewServeMux();m.HandleFunc("/",s.index);m.HandleFunc("/api/work/status",s.status);m.HandleFunc("/api/work/action",s.action);m.HandleFunc("/api/work/diagnostics",s.diag);m.HandleFunc("/api/work/memory-audit",s.memoryAudit);m.HandleFunc("/api/work/maintenance",s.maintenance);m.HandleFunc("/api/work/update",s.update);m.HandleFunc("/api/work/collect",s.collect);m.HandleFunc("/api/work/research",s.research);m.HandleFunc("/api/work/brief",s.brief);m.HandleFunc("/api/work/opportunities",s.opportunities);m.HandleFunc("/api/work/planner",s.planner);m.HandleFunc("/api/work/script-prep",s.scriptPrep);m.HandleFunc("/api/work/scripts",s.scripts);m.HandleFunc("/api/work/production",s.production);m.HandleFunc("/api/work/production/download",s.productionDownload);m.HandleFunc("/api/work/handoff",s.handoff);m.HandleFunc("/api/work/desk",s.desk);m.HandleFunc("/api/work/job",s.jobDetail);m.HandleFunc("/api/work/studio",s.studio);m.HandleFunc("/api/work/publication",s.publication);m.HandleFunc("/api/work/youtube/oauth",s.youtubeOAuth);m.HandleFunc("/api/work/youtube/publish",s.youtubePublish);m.HandleFunc("/api/work/channel/import",s.channelImport);m.HandleFunc("/api/work/performance",s.performance);m.HandleFunc("/api/work/schedule",s.schedule);m.HandleFunc("/api/work/run-research",s.runResearch);m.HandleFunc("/api/work/daily",s.daily);m.HandleFunc("/api/work/channel",s.channel);m.HandleFunc("/api/work/knowledge",s.knowledge);m.HandleFunc("/api/work/recovery",s.recovery);m.HandleFunc("/api/work/bridge",s.bridgeStatus);m.HandleFunc("/api/work/autoupdate",s.autoUpdateStatus);m.HandleFunc("/api/work/remote",s.remoteInfo);if readenv(filepath.Join(s.Rel,"config","work.env"),"EMERGENCY_QUARANTINE")=="1"{go func(){time.Sleep(2*time.Second);convergeHermesWorkersNative(s)}()};go s.schedulerLoop();go s.bridgeLoop();go s.remoteLinkLoop();http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d",p),m)}
 const page=`<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HERMES WORK</title>
