@@ -725,6 +725,26 @@ async function logDeviceRecovery() {
     console.log("HERMES_RECOVERY_ERROR "+String(e?.message||e));
   }
 }
+
+async function logYouTubeVideoManager() {
+  try {
+    if(!deviceFresh()) { console.log("HERMES_YOUTUBE_VIDEOS DEVICE_LINK_STALE"); return; }
+    const r=decodeDeviceJson(await queueDeviceRead("/api/work/youtube/videos?page=1&limit=10",15000));
+    const items=Array.isArray(r?.items)?r.items.map(v=>({
+      publication_id:String(v?.publication_id||"").slice(0,120),
+      video_id:String(v?.video_id||"").slice(0,32),
+      topic:String(v?.topic||"").slice(0,160),
+      privacy:String(v?.privacy||"").slice(0,32),
+      status:String(v?.status||"").slice(0,80),
+      thumbnail_state:String(v?.thumbnail_state||"").slice(0,32),
+      thumbnail_error:String(v?.thumbnail_error||"").slice(0,500)
+    })):[];
+    console.log("HERMES_YOUTUBE_VIDEOS "+JSON.stringify({total:Number(r?.total||0),items}));
+  } catch(e) {
+    console.log("HERMES_YOUTUBE_VIDEOS_ERROR "+String(e?.message||e));
+  }
+}
+
 async function logLatestSnapshot() {
   try {
     const snap = safeSnapshot(await latestSnapshot());
@@ -736,6 +756,7 @@ async function logLatestSnapshot() {
 setTimeout(logLatestSnapshot, 3000);
 setTimeout(logDeviceRecovery, 12000);
 setTimeout(logDeviceAutoupdate, 18000);
+setTimeout(logYouTubeVideoManager, 14000);
 setTimeout(logDeviceAutoupdate, 45000);
 setTimeout(logDeviceMemoryAudit, 5000);
 setInterval(logDeviceRecovery, 5*60*1000);
