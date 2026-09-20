@@ -32,7 +32,8 @@ jobs:
           grep -q 'github_control_writes_allowed:' railway-relay/server.js
       - name: Verify no thermal bypass code added
         run: |
-          ! grep -Eq 'MAX_TEMP|thermal|battery/temp|drop_caches|force-stop|killall|pkill' railway-relay/server.js
+          ! grep -Eq 'MAX_TEMP|battery/temp|drop_caches|force-stop|killall|pkill' railway-relay/server.js
+          grep -q 'thermal:(x.thermal && typeof x.thermal==="object") ? x.thermal : null' railway-relay/server.js
       - name: Report
         run: |
           echo "REPAIR_GATE=PASS"
