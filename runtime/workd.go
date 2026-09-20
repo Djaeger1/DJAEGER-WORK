@@ -1,5 +1,5 @@
 package main
-import("archive/zip";"crypto/rand";"crypto/sha256";"crypto/tls";"crypto/x509";"encoding/base64";"encoding/hex";"encoding/json";"flag";"fmt";"io";"net";"net/http";"net/url";"os";"path/filepath";"sort";"strconv";"strings";"sync";"time")
+import("archive/zip";"crypto/rand";"crypto/sha256";"crypto/tls";"crypto/x509";"encoding/base64";"encoding/hex";"encoding/json";"flag";"fmt";"io";"net";"net/http";"net/url";"os";"path/filepath";"sort";"strconv";"strings";"sync";"syscall";"time")
 type S struct{Root,Rel string;Port int;Token string}
 func runtimeRelease(s *S)string{v:=filepath.Base(filepath.Clean(s.Rel));if v==""||v=="."||v=="/"{return"UNKNOWN"};return v}
 func readenv(p,k string)string{b,_:=os.ReadFile(p);for _,l:=range strings.Split(string(b),"\n"){x:=strings.SplitN(l,"=",2);if len(x)==2&&x[0]==k{return strings.TrimSpace(x[1])}};return ""}
