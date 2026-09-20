@@ -638,8 +638,13 @@ public class MainActivity extends Activity {
         yt.addView(ytOut);
         Button ytPublish = actionButton("UJI UPLOAD PRIVATE", false);
         yt.addView(ytPublish);
+        Button ytUnlisted = actionButton("UBAH KE UNLISTED", false);
+        Button ytPublic = actionButton("PUBLIKASIKAN KE YOUTUBE", true);
+        yt.addView(ytUnlisted);
+        yt.addView(ytPublic);
         TextView ytPublishOut = mono("Publisher: memeriksa…");
         yt.addView(ytPublishOut);
+        final String[] ytVideoId = {""};
         body.addView(yt);
 
         apiAsync("GET", "/api/work/youtube/oauth", null, false, (code, response) -> {
@@ -662,6 +667,7 @@ public class MainActivity extends Activity {
                     JSONObject j = new JSONObject(response);
                     String state = j.optString("state", "IDLE");
                     String topic = j.optString("next_topic", "");
+                    ytVideoId[0] = j.optString("video_id", "");
                     String msg = "Publisher: " + localizeStatus(state);
                     if (!topic.isEmpty()) msg += "\nSiap diuji: " + topic;
                     if ("SUCCESS".equals(state)) {
@@ -678,6 +684,49 @@ public class MainActivity extends Activity {
             } else {
                 ytPublishOut.setText("Publisher belum tersedia di runtime.");
             }
+        });
+
+        ytUnlisted.setOnClickListener(v -> {
+            if (ytVideoId[0].isEmpty()) {
+                ytPublishOut.setText("Belum ada video upload yang dapat diubah.");
+                return;
+            }
+            try {
+                JSONObject payload = new JSONObject();
+                payload.put("video_id", ytVideoId[0]);
+                payload.put("privacy", "unlisted");
+                apiAsync("POST", "/api/work/youtube/privacy", payload.toString(), true, (code, response) -> {
+                    if (code >= 200 && code < 300) ytPublishOut.setText("Privasi YouTube diubah ke UNLISTED.");
+                    else ytPublishOut.setText("Gagal mengubah privasi. HTTP " + code + "\n" + response.trim());
+                });
+            } catch (Exception e) {
+                ytPublishOut.setText("Gagal menyiapkan perubahan privasi.");
+            }
+        });
+
+        ytPublic.setOnClickListener(v -> {
+            if (ytVideoId[0].isEmpty()) {
+                ytPublishOut.setText("Belum ada video upload yang dapat dipublikasikan.");
+                return;
+            }
+            new AlertDialog.Builder(this)
+                    .setTitle("Publikasikan video?")
+                    .setMessage("Video akan berubah dari PRIVATE/UNLISTED menjadi PUBLIC di YouTube.")
+                    .setNegativeButton("BATAL", null)
+                    .setPositiveButton("PUBLIKASIKAN", (d, which) -> {
+                        try {
+                            JSONObject payload = new JSONObject();
+                            payload.put("video_id", ytVideoId[0]);
+                            payload.put("privacy", "public");
+                            apiAsync("POST", "/api/work/youtube/privacy", payload.toString(), true, (code, response) -> {
+                                if (code >= 200 && code < 300) ytPublishOut.setText("Video sekarang PUBLIC di YouTube.");
+                                else ytPublishOut.setText("Gagal mempublikasikan. HTTP " + code + "\n" + response.trim());
+                            });
+                        } catch (Exception e) {
+                            ytPublishOut.setText("Gagal menyiapkan publikasi.");
+                        }
+                    })
+                    .show();
         });
 
         ytPublish.setOnClickListener(v -> {
@@ -944,7 +993,7 @@ public class MainActivity extends Activity {
         io.execute(() -> {
             StringBuilder report = new StringBuilder();
             report.append("===== HASIL PEMBARUAN DJAEGER WORK =====\n");
-            report.append("APP_VERSION=1.3.3\n");
+            report.append("APP_VERSION=1.3.4\n");
             report.append("RUNTIME_URL=").append(runtimeUrl()).append("\n");
             report.append("GENERATED_AT=").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new java.util.Date())).append("\n\n");
 
