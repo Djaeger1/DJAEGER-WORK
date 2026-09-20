@@ -54,8 +54,8 @@ jobs:
 
       - name: Verify release
         run: |
-          grep -Eq '"version":"v2\.5\.(18-emergency-coldstart-quarantine|19-self-enforced-quarantine|20-cpu-thermal-telemetry-quarantine)"' runtime/manifest.json
-          grep -Eq 'HERMES_WORK_RUNTIME_v2\.5\.(18_EMERGENCY_COLDSTART_QUARANTINE|19_SELF_ENFORCED_QUARANTINE|20_CPU_THERMAL_TELEMETRY_QUARANTINE)' .github/workflows/release.yml
+          grep -Eq '"version":"v2\.5\.(18-emergency-coldstart-quarantine|19-self-enforced-quarantine|20-cpu-thermal-telemetry-quarantine|21-remote-pinned-selfupdate-quarantine)"' runtime/manifest.json
+          grep -Eq 'HERMES_WORK_RUNTIME_v2\.5\.(18_EMERGENCY_COLDSTART_QUARANTINE|19_SELF_ENFORCED_QUARANTINE|20_CPU_THERMAL_TELEMETRY_QUARANTINE|21_REMOTE_PINNED_SELFUPDATE_QUARANTINE)' .github/workflows/release.yml
 
       - name: Report
         run: |
