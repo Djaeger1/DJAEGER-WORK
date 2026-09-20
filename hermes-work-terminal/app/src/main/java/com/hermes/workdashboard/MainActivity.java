@@ -616,6 +616,79 @@ public class MainActivity extends Activity {
         auto.addView(text("Penalaran Lokal · DITUNDA", 13, WARN, true));
         body.addView(auto);
 
+        LinearLayout yt = card();
+        yt.addView(text("KONEKSI YOUTUBE", 11, MUTED, true));
+        TextView ytState = text("Status OAuth: memeriksa…", 13, WARN, true);
+        ytState.setPadding(0, dp(6), 0, dp(2));
+        yt.addView(ytState);
+        TextView ytInfo = text("Hubungkan sekali menggunakan kredensial OAuth yang sudah dibuat. Secret dan refresh token tidak akan ditampilkan kembali.", 11, MUTED, false);
+        ytInfo.setPadding(0, 0, 0, dp(4));
+        yt.addView(ytInfo);
+
+        EditText ytClient = field("OAuth Client ID",
+                "910486209919-ruoq63jcu23rf2nrgn4hc7ou7j3cn3la.apps.googleusercontent.com", false);
+        EditText ytSecret = field("OAuth Client Secret", "", true);
+        EditText ytRefresh = field("Refresh Token", "", true);
+        yt.addView(ytClient);
+        yt.addView(ytSecret);
+        yt.addView(ytRefresh);
+        Button ytConnect = actionButton("HUBUNGKAN YOUTUBE", true);
+        yt.addView(ytConnect);
+        TextView ytOut = mono("Menunggu kredensial.");
+        yt.addView(ytOut);
+        body.addView(yt);
+
+        apiAsync("GET", "/api/work/youtube/oauth", null, false, (code, response) -> {
+            try {
+                JSONObject j = new JSONObject(response);
+                String state = j.optString("state", "NOT_CONFIGURED");
+                ytState.setText("Status OAuth: " + localizeStatus(state));
+                ytState.setTextColor("VERIFIED".equals(state) ? OK : WARN);
+                String verified = j.optString("verified_at", "");
+                if (!verified.isEmpty()) ytOut.setText("Terverifikasi: " + verified + "\nScope: youtube.upload");
+            } catch (Exception e) {
+                ytState.setText("Status OAuth: belum tersedia");
+                ytState.setTextColor(WARN);
+            }
+        });
+
+        ytConnect.setOnClickListener(v -> {
+            String client = ytClient.getText().toString().trim();
+            String secret = ytSecret.getText().toString().trim();
+            String refreshToken = ytRefresh.getText().toString().trim();
+            if (token().isEmpty()) {
+                ytOut.setText("TOKEN ADMIN belum tersimpan. Buka menu PEMBARUAN → KONEKSI, simpan TOKEN ADMIN, lalu kembali ke SISTEM.");
+                return;
+            }
+            if (client.isEmpty() || secret.isEmpty() || refreshToken.isEmpty()) {
+                ytOut.setText("Client ID, Client Secret, dan Refresh Token wajib diisi.");
+                return;
+            }
+            ytConnect.setEnabled(false);
+            ytOut.setText("Memverifikasi ke Google…");
+            try {
+                JSONObject payload = new JSONObject();
+                payload.put("client_id", client);
+                payload.put("client_secret", secret);
+                payload.put("refresh_token", refreshToken);
+                apiAsync("POST", "/api/work/youtube/oauth", payload.toString(), true, (code, response) -> {
+                    ytConnect.setEnabled(true);
+                    if (code >= 200 && code < 300) {
+                        ytSecret.setText("");
+                        ytRefresh.setText("");
+                        ytState.setText("Status OAuth: TERVERIFIKASI");
+                        ytState.setTextColor(OK);
+                        ytOut.setText("YouTube terhubung. Secret disimpan aman di Redmi 5A dan tidak ditampilkan kembali.");
+                    } else {
+                        ytOut.setText("Gagal menghubungkan YouTube. HTTP " + code + "\n" + response.trim());
+                    }
+                });
+            } catch (Exception e) {
+                ytConnect.setEnabled(true);
+                ytOut.setText("Gagal menyiapkan data OAuth.");
+            }
+        });
+
         LinearLayout comps = card();
         comps.addView(text("KOMPONEN", 11, MUTED, true));
         TextView comp = text("Memuat…", 13, TEXT, false);
