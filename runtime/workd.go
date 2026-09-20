@@ -372,6 +372,11 @@ func (s *S)maintenance(w http.ResponseWriter,r *http.Request){
    mode:=strings.ToUpper(strings.TrimSpace(q.Mode));if mode!="REPAIR"{mode="NORMAL"}
    os.WriteFile(filepath.Join(st,"maintenance.update"),[]byte(mode+"\n"),0600)
    js(w,map[string]any{"ok":true,"action":"update","mode":mode,"state":"QUEUED"})
+ case"remote_update":
+   if !privateRemote(r){http.Error(w,"private remote required",http.StatusForbidden);return}
+   out,code,e:=s.performSignedUpdate("PRIVATE_REMOTE")
+   if e!=nil{http.Error(w,e.Error(),code);return}
+   js(w,out)
  case"recover":
    os.WriteFile(filepath.Join(st,"maintenance.recover"),[]byte(time.Now().Format(time.RFC3339)+"\n"),0600)
    js(w,map[string]any{"ok":true,"action":"recover","state":"QUEUED"})
@@ -410,7 +415,95 @@ func sharedAndroidTransport()*http.Transport{
  return androidTransport
 }
 func androidHTTPClient()*http.Client{return &http.Client{Timeout:45*time.Second,Transport:sharedAndroidTransport()}}
-func (s *S)update(w http.ResponseWriter,r *http.Request){if !s.auth(r){http.Error(w,"unauthorized",401);return};ch:=readenv(filepath.Join(s.Rel,"config","work.env"),"UPDATE_CHANNEL_URL");if ch==""{http.Error(w,"channel missing",500);return};cl:=androidHTTPClient();resp,e:=cl.Get(ch);if e!=nil{http.Error(w,e.Error(),502);return};defer resp.Body.Close();if resp.StatusCode!=200{http.Error(w,"channel http "+resp.Status,502);return};var m struct{Version,Bundle,Sha256 string};if e=json.NewDecoder(io.LimitReader(resp.Body,65536)).Decode(&m);e!=nil||m.Version==""||m.Bundle==""||len(m.Sha256)!=64{http.Error(w,"invalid channel",502);return};base:=ch[:strings.LastIndex(ch,"/")+1];tmp:=filepath.Join(s.Root,"updates",m.Version+".zip.tmp");os.MkdirAll(filepath.Dir(tmp),0700);br,e:=cl.Get(base+m.Bundle);if e!=nil{http.Error(w,e.Error(),502);return};defer br.Body.Close();if br.StatusCode!=200{http.Error(w,"bundle http "+br.Status,502);return};o,e:=os.Create(tmp);if e!=nil{http.Error(w,e.Error(),500);return};h:=sha256.New();_,e=io.Copy(io.MultiWriter(o,h),io.LimitReader(br.Body,32<<20));o.Close();if e!=nil{os.Remove(tmp);http.Error(w,e.Error(),500);return};got:=hex.EncodeToString(h.Sum(nil));if !strings.EqualFold(got,m.Sha256){os.Remove(tmp);http.Error(w,"sha256 mismatch",409);return};stage:=filepath.Join(s.Root,"releases",".stage-"+m.Version);os.RemoveAll(stage);os.MkdirAll(stage,0700);if e=unzipPayload(tmp,stage);e!=nil{os.RemoveAll(stage);http.Error(w,e.Error(),500);return};if !exists(filepath.Join(stage,"manifest.json"))||!exists(filepath.Join(stage,"payload","bin","workd"))||!exists(filepath.Join(stage,"payload","worker","tick.sh")){os.RemoveAll(stage);http.Error(w,"invalid bundle structure",409);return};dest:=filepath.Join(s.Root,"releases",m.Version);next:=dest+".new";os.RemoveAll(next);os.MkdirAll(next,0700);if e=copyf(filepath.Join(stage,"manifest.json"),filepath.Join(next,"manifest.json"));e!=nil{http.Error(w,e.Error(),500);return};filepath.Walk(filepath.Join(stage,"payload"),func(p string,i os.FileInfo,er error)error{if er!=nil||i.IsDir(){return er};rel,_:=filepath.Rel(filepath.Join(stage,"payload"),p);return copyf(p,filepath.Join(next,rel))});os.Chmod(filepath.Join(next,"bin","workd"),0755);os.Chmod(filepath.Join(next,"worker","tick.sh"),0755);cur:=strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release")));if cur!=""&&cur!=m.Version{os.WriteFile(filepath.Join(s.Root,"previous_release"),[]byte(cur+"\n"),0600)};os.RemoveAll(dest);if e=os.Rename(next,dest);e!=nil{http.Error(w,e.Error(),500);return};os.WriteFile(filepath.Join(s.Root,"current_release"),[]byte(m.Version+"\n"),0600);os.RemoveAll(stage);os.Rename(tmp,filepath.Join(s.Root,"updates",m.Version+".zip"));js(w,map[string]any{"ok":true,"state":"INSTALLED","version":m.Version,"sha256":got,"restart":false,"handoff":"scheduled"});if f,er:=os.OpenFile(filepath.Join(s.Root,"logs","handoff.log"),os.O_CREATE|os.O_APPEND|os.O_WRONLY,0600);er==nil{fmt.Fprintln(f,time.Now().Format(time.RFC3339),"handoff",m.Version);f.Close()};go func(){time.Sleep(700*time.Millisecond);p:=filepath.Join(dest,"worker","handoff.sh");if exists(p){os.StartProcess("/system/bin/sh",[]string{"sh",p,s.Root,m.Version,cur},&os.ProcAttr{Files:[]*os.File{nil,nil,nil}})}}()}
+const pinnedUpdateChannel="https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json"
+
+type UpdateResult struct{
+ Ok bool `json:"ok"`
+ State string `json:"state"`
+ Version string `json:"version"`
+ Sha256 string `json:"sha256"`
+ Restart bool `json:"restart"`
+ Handoff string `json:"handoff"`
+ Source string `json:"source"`
+ QuarantinePreserved bool `json:"quarantine_preserved"`
+}
+
+func (s *S)performSignedUpdate(source string)(UpdateResult,int,error){
+ out:=UpdateResult{Ok:false,State:"REJECTED",Source:source,QuarantinePreserved:exists(filepath.Join(s.Root,"state","safe_mode"))&&exists(filepath.Join(s.Root,"state","worker_paused"))}
+ ch:=strings.TrimSpace(readenv(filepath.Join(s.Rel,"config","work.env"),"UPDATE_CHANNEL_URL"))
+ if ch!=pinnedUpdateChannel{return out,http.StatusForbidden,fmt.Errorf("untrusted update channel")}
+ if !strings.HasPrefix(ch,"https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/"){return out,http.StatusForbidden,fmt.Errorf("untrusted update host")}
+ if source=="PRIVATE_REMOTE"{
+  if !out.QuarantinePreserved{return out,http.StatusConflict,fmt.Errorf("remote update requires quarantine")}
+  ts,_:=iface("rndis0");if ts!="UP"{return out,http.StatusConflict,fmt.Errorf("tether down")}
+  if mem()<220{return out,http.StatusConflict,fmt.Errorf("low ram")}
+  th:=thermalSummary()
+  if v,ok:=th["cpu_soc_max_c"].(float64);ok&&v>=85{return out,http.StatusConflict,fmt.Errorf("cpu soc thermal guard %.1fC",v)}
+ }
+ cl:=androidHTTPClient()
+ resp,e:=cl.Get(ch);if e!=nil{return out,http.StatusBadGateway,e}
+ defer resp.Body.Close()
+ if resp.StatusCode!=http.StatusOK{return out,http.StatusBadGateway,fmt.Errorf("channel http %s",resp.Status)}
+ var m struct{Version string `json:"version"`;Bundle string `json:"bundle"`;Sha256 string `json:"sha256"`}
+ if e=json.NewDecoder(io.LimitReader(resp.Body,65536)).Decode(&m);e!=nil{return out,http.StatusBadGateway,fmt.Errorf("invalid channel json")}
+ m.Version=strings.TrimSpace(m.Version);m.Bundle=strings.TrimSpace(m.Bundle);m.Sha256=strings.ToLower(strings.TrimSpace(m.Sha256))
+ if m.Version==""||m.Bundle==""||len(m.Sha256)!=64{return out,http.StatusBadGateway,fmt.Errorf("invalid channel")}
+ if strings.Contains(m.Bundle,"/")||strings.Contains(m.Bundle,"..")||!strings.HasSuffix(m.Bundle,".zip"){return out,http.StatusBadGateway,fmt.Errorf("invalid bundle name")}
+ for _,x:=range m.Sha256{if !strings.ContainsRune("0123456789abcdef",x){return out,http.StatusBadGateway,fmt.Errorf("invalid sha256")}}
+ curRuntime:=runtimeRelease(s)
+ if m.Version==curRuntime{return UpdateResult{Ok:true,State:"CURRENT",Version:m.Version,Sha256:m.Sha256,Restart:false,Handoff:"not_needed",Source:source,QuarantinePreserved:out.QuarantinePreserved},http.StatusOK,nil}
+
+ base:=ch[:strings.LastIndex(ch,"/")+1]
+ tmp:=filepath.Join(s.Root,"updates",m.Version+".zip.tmp")
+ _=os.MkdirAll(filepath.Dir(tmp),0700)
+ br,e:=cl.Get(base+m.Bundle);if e!=nil{return out,http.StatusBadGateway,e}
+ defer br.Body.Close()
+ if br.StatusCode!=http.StatusOK{return out,http.StatusBadGateway,fmt.Errorf("bundle http %s",br.Status)}
+ o,e:=os.OpenFile(tmp,os.O_CREATE|os.O_TRUNC|os.O_WRONLY,0600);if e!=nil{return out,http.StatusInternalServerError,e}
+ h:=sha256.New();n,e:=io.Copy(io.MultiWriter(o,h),io.LimitReader(br.Body,(32<<20)+1));ce:=o.Close()
+ if e!=nil||ce!=nil{_ = os.Remove(tmp);if e!=nil{return out,http.StatusInternalServerError,e};return out,http.StatusInternalServerError,ce}
+ if n>32<<20{_ = os.Remove(tmp);return out,http.StatusRequestEntityTooLarge,fmt.Errorf("bundle too large")}
+ got:=hex.EncodeToString(h.Sum(nil));if !strings.EqualFold(got,m.Sha256){_ = os.Remove(tmp);return out,http.StatusConflict,fmt.Errorf("sha256 mismatch")}
+
+ stage:=filepath.Join(s.Root,"releases",".stage-"+m.Version);_ = os.RemoveAll(stage);_ = os.MkdirAll(stage,0700)
+ if e=unzipPayload(tmp,stage);e!=nil{_ = os.RemoveAll(stage);_ = os.Remove(tmp);return out,http.StatusInternalServerError,e}
+ manPath:=filepath.Join(stage,"manifest.json");binPath:=filepath.Join(stage,"payload","bin","workd");tickPath:=filepath.Join(stage,"payload","worker","tick.sh");handoffPath:=filepath.Join(stage,"payload","worker","handoff.sh")
+ if !exists(manPath)||!exists(binPath)||!exists(tickPath)||!exists(handoffPath){_ = os.RemoveAll(stage);_ = os.Remove(tmp);return out,http.StatusConflict,fmt.Errorf("invalid bundle structure")}
+ var manifest struct{Version string `json:"version"`}
+ if b,e:=os.ReadFile(manPath);e!=nil||json.Unmarshal(b,&manifest)!=nil||strings.TrimSpace(manifest.Version)!=m.Version{_ = os.RemoveAll(stage);_ = os.Remove(tmp);return out,http.StatusConflict,fmt.Errorf("manifest version mismatch")}
+
+ dest:=filepath.Join(s.Root,"releases",m.Version);next:=dest+".new";_ = os.RemoveAll(next);_ = os.MkdirAll(next,0700)
+ if e=copyf(manPath,filepath.Join(next,"manifest.json"));e!=nil{_ = os.RemoveAll(stage);_ = os.Remove(tmp);return out,http.StatusInternalServerError,e}
+ if e=filepath.Walk(filepath.Join(stage,"payload"),func(p string,i os.FileInfo,er error)error{
+  if er!=nil{return er};if i.IsDir(){return nil};rel,e:=filepath.Rel(filepath.Join(stage,"payload"),p);if e!=nil{return e};return copyf(p,filepath.Join(next,rel))
+ });e!=nil{_ = os.RemoveAll(next);_ = os.RemoveAll(stage);_ = os.Remove(tmp);return out,http.StatusInternalServerError,e}
+ _=os.Chmod(filepath.Join(next,"bin","workd"),0755)
+ for _,x:=range []string{"tick.sh","handoff.sh","autoupdate.sh","bridge-deploy.sh","github-control-shadow.sh","process-converge.sh"}{p:=filepath.Join(next,"worker",x);if exists(p){_ = os.Chmod(p,0755)}}
+
+ configured:=strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release")))
+ if configured!=""&&configured!=m.Version{_ = os.WriteFile(filepath.Join(s.Root,"previous_release"),[]byte(configured+"\n"),0600)}
+ _=os.RemoveAll(dest)
+ if e=os.Rename(next,dest);e!=nil{_ = os.RemoveAll(stage);_ = os.Remove(tmp);return out,http.StatusInternalServerError,e}
+ if e=os.WriteFile(filepath.Join(s.Root,"current_release"),[]byte(m.Version+"\n"),0600);e!=nil{return out,http.StatusInternalServerError,e}
+ _=os.RemoveAll(stage);_ = os.Rename(tmp,filepath.Join(s.Root,"updates",m.Version+".zip"))
+
+ if source=="PRIVATE_REMOTE"{
+  // Preserve emergency state across handoff; remote update is never a resume command.
+  _=os.WriteFile(filepath.Join(s.Root,"state","safe_mode"),[]byte("EMERGENCY_CPU_THERMAL_QUARANTINE\n"),0600)
+  _=os.WriteFile(filepath.Join(s.Root,"state","worker_paused"),[]byte("EMERGENCY_CPU_THERMAL_QUARANTINE\n"),0600)
+ }
+ if lf,er:=os.OpenFile(filepath.Join(s.Root,"logs","handoff.log"),os.O_CREATE|os.O_APPEND|os.O_WRONLY,0600);er==nil{fmt.Fprintln(lf,time.Now().Format(time.RFC3339),"signed_update",source,m.Version);lf.Close()}
+ old:=curRuntime
+ go func(){time.Sleep(700*time.Millisecond);p:=filepath.Join(dest,"worker","handoff.sh");if exists(p){_,_=os.StartProcess("/system/bin/sh",[]string{"sh",p,s.Root,m.Version,old},&os.ProcAttr{Files:[]*os.File{nil,nil,nil}})}}()
+ return UpdateResult{Ok:true,State:"INSTALLED",Version:m.Version,Sha256:got,Restart:false,Handoff:"scheduled",Source:source,QuarantinePreserved:exists(filepath.Join(s.Root,"state","safe_mode"))&&exists(filepath.Join(s.Root,"state","worker_paused"))},http.StatusOK,nil
+}
+
+func (s *S)update(w http.ResponseWriter,r *http.Request){
+ if !s.auth(r){http.Error(w,"unauthorized",http.StatusUnauthorized);return}
+ out,code,e:=s.performSignedUpdate("ADMIN_LOCAL")
+ if e!=nil{http.Error(w,e.Error(),code);return}
+ js(w,out)
+}
 func guard(s *S)(bool,string){ts,_:=iface("rndis0");if ts!="UP"{return false,"TETHER_DOWN"};if temp()>=44{return false,"THERMAL_GUARD"};if mem()<220{return false,"LOW_RAM"};if exists(filepath.Join(s.Root,"state","safe_mode"))||exists(filepath.Join(s.Root,"state","worker_paused")){return false,"PAUSED"};return true,"READY"}
 func classify(t string)string{x:=strings.ToLower(t);cats:=map[string][]string{"colors":{"color","colour","warna","red","blue","green"},"numbers":{"number","count","angka","counting"},"alphabet":{"alphabet","abc","letter","phonics"},"animals":{"animal","cat","dog","dinosaur","hewan"},"shapes":{"shape","circle","square","bentuk"},"habits":{"habit","brush","wash","sharing","kebiasaan"},"english":{"english","vocabulary","word"},"stories":{"story","stories","tale","cerita"}};for k,ws:=range cats{for _,w:=range ws{if strings.Contains(x,w){return k}}};return "other"}
 func (s *S)collect(w http.ResponseWriter,r *http.Request){if !s.auth(r){http.Error(w,"unauthorized",401);return};ok,reason:=guard(s);if !ok{js(w,map[string]any{"ok":false,"state":"GUARDED","reason":reason});return};var q struct{Items []struct{Title string `json:"title"`;Source string `json:"source"`;URL string `json:"url"`;Score float64 `json:"score"`} `json:"items"`};if e:=json.NewDecoder(io.LimitReader(r.Body,1<<20)).Decode(&q);e!=nil{http.Error(w,"invalid json",400);return};dir:=filepath.Join(s.Root,"data","database");os.MkdirAll(dir,0700);p:=filepath.Join(dir,"research.jsonl");seen:=map[string]bool{};if b,e:=os.ReadFile(p);e==nil{for _,l:=range strings.Split(string(b),"\n"){var z map[string]any;if json.Unmarshal([]byte(l),&z)==nil{if u,_:=z["url"].(string);u!=""{seen[u]=true}}}};f,e:=os.OpenFile(p,os.O_CREATE|os.O_APPEND|os.O_WRONLY,0600);if e!=nil{http.Error(w,e.Error(),500);return};defer f.Close();added,dup:=0,0;enc:=json.NewEncoder(f);for _,it:=range q.Items{if it.URL!=""&&seen[it.URL]{dup++;continue};cat:=classify(it.Title);score:=it.Score;if score==0{score=50};enc.Encode(map[string]any{"ts":time.Now().Format(time.RFC3339),"title":it.Title,"source":it.Source,"url":it.URL,"category":cat,"score":score});if it.URL!=""{seen[it.URL]=true};added++};os.WriteFile(filepath.Join(s.Root,"state","last_research"),[]byte(time.Now().Format(time.RFC3339)),0600);js(w,map[string]any{"ok":true,"state":"COLLECTED","received":len(q.Items),"added":added,"duplicates":dup})}
