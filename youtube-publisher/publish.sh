@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ "${LEGACY_YOUTUBE_PUBLISHER_ENABLE:-0}" != "1" ]; then
+  echo "LEGACY_YOUTUBE_PUBLISHER_DISABLED: device Scheduler V2 is authoritative."
+  exit 0
+fi
+
 REPO="${GITHUB_REPOSITORY:-Djaeger1/DJAEGER-WORK}"
 PRIVACY="${YT_PRIVACY_STATUS:-private}"
 CHANNEL_LABEL="${YT_CHANNEL_LABEL:-YouTube}"
