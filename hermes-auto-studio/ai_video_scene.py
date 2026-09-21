@@ -7,7 +7,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-DEFAULT_SPACE = os.getenv("AI_VIDEO_SPACE", "multimodalart/wan2-1-fast")
+DEFAULT_SPACE = os.getenv("AI_VIDEO_SPACE", "zerogpu-aoti/wan2-2-fp8da-aoti-faster")
 NEGATIVE = (
     "static image, still frame, frozen motion, flicker, jitter, warped face, extra limbs, "
     "deformed hands, changing clothes, changing character identity, duplicate character, "
@@ -44,34 +44,54 @@ def generate(image, prompt, output, seed, duration, space):
         for name in named:
             if name not in endpoint_candidates and "generate" in name.lower():
                 endpoint_candidates.append(name)
-    except Exception:
-        pass
+    except Exception as exc:
+        print("AI_VIDEO_API_DISCOVERY_WARN " + repr(exc), file=sys.stderr)
 
-    last = None
-    for endpoint in endpoint_candidates:
-        try:
-            result = client.predict(
+    def call(endpoint):
+        if "wan2-2-fp8da-aoti-faster" in space:
+            # Wan2.2 AoTI: image, prompt, steps, negative, duration,
+            # high-noise CFG, low-noise CFG, seed, randomize.
+            return client.predict(
                 handle_file(image),
                 prompt,
-                512,
-                896,
+                4,
                 NEGATIVE,
                 float(duration),
                 1.0,
-                4,
+                1.0,
                 int(seed),
                 False,
                 api_name=endpoint,
             )
+        # Legacy Wan2.1 fast fallback signature.
+        return client.predict(
+            handle_file(image),
+            prompt,
+            512,
+            896,
+            NEGATIVE,
+            float(duration),
+            1.0,
+            4,
+            int(seed),
+            False,
+            api_name=endpoint,
+        )
+
+    last = None
+    for endpoint in endpoint_candidates:
+        try:
+            result = call(endpoint)
             src = extract_path(result)
             if not src:
-                raise RuntimeError(f"provider returned no local video file: {type(result).__name__}")
+                raise RuntimeError(f"provider returned no local video file: {type(result).__name__} {result!r}")
             Path(output).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(src, output)
             return {"ok": True, "space": space, "endpoint": endpoint, "output": output}
         except Exception as exc:
             last = exc
-    raise RuntimeError(f"AI video provider failed ({space}): {last}")
+            print(f"AI_VIDEO_PROVIDER_ATTEMPT_FAILED space={space} endpoint={endpoint} error={exc!r}", file=sys.stderr)
+    raise RuntimeError(f"AI video provider failed ({space}): {last!r}")
 
 def smoke_keyframe(path):
     # A deterministic, original preschool character card used only to validate that
