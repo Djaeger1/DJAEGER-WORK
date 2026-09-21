@@ -402,7 +402,7 @@ async function latestSnapshot() {
   // because the legacy ntfy cache has no recent message.
   if (deviceFresh()) {
     try {
-      const live = decodeDeviceJson(await queueDeviceRead("/api/work/status",12000));
+      const live = decodeDeviceJson(await queueDeviceRead("/api/work/snapshot",12000));
       if (live && typeof live === "object") return live;
     } catch (e) {
       console.log("HERMES_SNAPSHOT_REMOTE_FALLBACK_ERROR "+String(e?.message||e));
