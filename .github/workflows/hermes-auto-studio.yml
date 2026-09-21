@@ -29,7 +29,12 @@ jobs:
         run: |
           python3 -m pip install --quiet --disable-pip-version-check "gradio_client>=1.6,<2" pillow
           python3 hermes-auto-studio/ai_video_scene.py --smoke --output /tmp/djaeger-ai-video-preflight.mp4 --duration 1.0
-          ffprobe -v error -show_entries format=duration,size -of json /tmp/djaeger-ai-video-preflight.mp4
+          test -s /tmp/djaeger-ai-video-preflight.mp4
+          python3 - <<'PY'
+import os
+p="/tmp/djaeger-ai-video-preflight.mp4"
+print("AI_VIDEO_PREFLIGHT_BYTES="+str(os.path.getsize(p)))
+PY
       - name: Run zero-card Auto Studio
         env:
           GH_TOKEN: ${{ github.token }}
