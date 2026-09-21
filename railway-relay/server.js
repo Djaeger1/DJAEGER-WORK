@@ -441,6 +441,7 @@ const server = http.createServer(async (req,res)=>{
       setTimeout(autonomousMaintenanceTick,750);
       setTimeout(tryDirectSelfUpdateAuthProbe,1750);
       setTimeout(logYouTubeVideoManager,2750);
+      setTimeout(repairPendingYouTubeThumbnail,4750);
     }
     deviceMeta={
       release:String(meta.release||"").slice(0,80),
