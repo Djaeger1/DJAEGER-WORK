@@ -396,6 +396,19 @@ function parseNtfy(text) {
 }
 async function latestSnapshot() {
   if (directSnapshot && Date.now()-directReceivedAt < 20*60*1000) return directSnapshot;
+
+  // The outbound remote tunnel is the primary live path after the remote-link
+  // cutover. A connected Redmi must not be reported as snapshot-offline only
+  // because the legacy ntfy cache has no recent message.
+  if (deviceFresh()) {
+    try {
+      const live = decodeDeviceJson(await queueDeviceRead("/api/work/status",12000));
+      if (live && typeof live === "object") return live;
+    } catch (e) {
+      console.log("HERMES_SNAPSHOT_REMOTE_FALLBACK_ERROR "+String(e?.message||e));
+    }
+  }
+
   if (!TOPIC) throw new Error("NTFY_TOPIC_NOT_CONFIGURED");
   const url = `${NTFY}/${encodeURIComponent(TOPIC)}/json?poll=1&since=30m`;
   let firstErr = null;
