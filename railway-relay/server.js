@@ -581,13 +581,7 @@ const server = http.createServer(async (req,res)=>{
   }
 
   if (u.pathname === "/publish-feed" && req.method === "GET") {
-    try{
-      const job=await publicationCandidate();
-      if(!job)return send(res,200,{ok:true,state:"WAITING_UPLOAD_READY",job:null,source:"live-device"});
-      return send(res,200,{ok:true,state:"READY_TO_PUBLISH",job,source:"live-device"});
-    }catch(e){
-      return send(res,503,{ok:false,state:"PUBLICATION_FEED_UNAVAILABLE",error:String(e?.message||e)});
-    }
+    return send(res,200,{ok:true,state:"LEGACY_PUBLISHER_DISABLED",job:null,source:"device-scheduler-v2"});
   }
 
   if (u.pathname === "/ingest" && req.method === "POST") {
