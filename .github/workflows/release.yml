@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -Fq 'UPDATE_CHANNEL_URL=https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json' runtime/config/work.env
-          grep -Fq '"version": "v2.5.36-autonomous-cycle-feedback"' runtime/manifest.json
+          grep -Fq '"version": "v2.5.37-publication-invariant-scheduler-v2"' runtime/manifest.json
           sh -n runtime/worker/tick.sh
           sh -n runtime/worker/handoff.sh
           sh -n runtime/worker/autoupdate.sh
@@ -122,6 +122,12 @@ jobs:
           grep -Fq 'researchCompletedToday' runtime/workd.go
           grep -Fq 'YOUTUBE_UPLOAD_DELAY_MINUTES=5' runtime/config/work.env
           grep -Fq 'YOUTUBE_AUTO_PRIVACY=unlisted' runtime/config/work.env
+          grep -Fq 'YOUTUBE_PUBLISH_DELAY_MINUTES=10' runtime/config/work.env
+          grep -Fq 'YOUTUBE_ALLOW_PUBLIC=0' runtime/config/work.env
+          grep -Fq 'PUBLICATION_BLOCKED: AI-video provenance invariant failed' runtime/workd.go
+          grep -Fq 'UPLOADED_PRIVATE' runtime/workd.go
+          grep -Fq '/api/work/youtube/oauth/capabilities' runtime/workd.go
+          grep -Fq 'finalizeScheduledYouTube' runtime/workd.go
 
       - name: Build ARMv7 runtime
         shell: bash
@@ -144,7 +150,7 @@ jobs:
           zip -Xqr ../HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip manifest.json payload
           cd ..
           sha256sum HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip.sha256
-          printf '{"channel":"stable","version":"v2.5.36-autonomous-cycle-feedback","bundle":"HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip","sha256":"%s"}\n' "$(cat HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip.sha256)" > channel.json
+          printf '{"channel":"stable","version":"v2.5.37-publication-invariant-scheduler-v2","bundle":"HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip","sha256":"%s"}\n' "$(cat HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip.sha256)" > channel.json
 
       - name: Upload installable package
         uses: actions/upload-artifact@v4
