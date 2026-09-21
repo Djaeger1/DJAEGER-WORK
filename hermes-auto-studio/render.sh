@@ -29,7 +29,11 @@ if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
   old_quality="$(jq -r '.quality_gate // "LEGACY_UNVERIFIED"' "$oldmeta" 2>/dev/null || echo LEGACY_UNVERIFIED)"
   old_bible="$(jq -r '.character_bible // ""' "$oldmeta" 2>/dev/null || true)"
   old_generation="$(jq -r '.render_generation // ""' "$oldmeta" 2>/dev/null || true)"
-  if [ "$old_quality" = "PASS" ] && [ "$old_bible" = "DJAEGER_WORK_KIDS_V1" ] && [ "$old_generation" = "DJAEGER_STUDIO_V3_AI_VIDEO" ]; then
+  old_invariant="$(jq -r '.publication_invariant // ""' "$oldmeta" 2>/dev/null || true)"
+  old_required="$(jq -r '.required_ai_video_scenes // 0' "$oldmeta" 2>/dev/null || echo 0)"
+  old_success="$(jq -r '.successful_ai_video_scenes // 0' "$oldmeta" 2>/dev/null || echo 0)"
+  old_final_vector="$(jq -r '.final_vector_video_scenes // -1' "$oldmeta" 2>/dev/null || echo -1)"
+  if [ "$old_quality" = "PASS" ] && [ "$old_bible" = "DJAEGER_WORK_KIDS_V1" ] && [ "$old_generation" = "DJAEGER_STUDIO_V3_AI_VIDEO" ] && [ "$old_invariant" = "PASS" ] && [ "$old_required" -gt 0 ] && [ "$old_success" -eq "$old_required" ] && [ "$old_final_vector" -eq 0 ]; then
     echo "Current Character Bible AI-video release already exists for $tag."
     exit 0
   fi
@@ -199,7 +203,7 @@ jq '{
 }' studio/feed.json > studio/metadata.json
 jq --arg actual "$ACTUAL_DURATION" --arg quality "$QUALITY_GATE" --arg space "$AI_VIDEO_SPACE" \
    --argjson ai_video "$AI_VIDEO_SCENES" --argjson vector_keys "$VECTOR_KEYFRAMES" --argjson basic_keys "$BASIC_KEYFRAMES" \
-   '. + {actual_duration_sec:($actual|tonumber),quality_gate:$quality,ai_video_space:$space,visual_stats:{ai_video_scenes:$ai_video,character_bible_vector_keyframes:$vector_keys,basic_keyframes:$basic_keys}}' \
+   '. + {actual_duration_sec:($actual|tonumber),quality_gate:$quality,ai_video_space:$space,required_ai_video_scenes:$ai_video,successful_ai_video_scenes:$ai_video,final_vector_video_scenes:0,publication_invariant:(if ($quality=="PASS" and $ai_video>0) then "PASS" else "BLOCKED" end),visual_stats:{ai_video_scenes:$ai_video,character_bible_vector_keyframes:$vector_keys,basic_keyframes:$basic_keys}}' \
    studio/metadata.json > studio/metadata.json.tmp
 mv studio/metadata.json.tmp studio/metadata.json
 
