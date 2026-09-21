@@ -1349,31 +1349,56 @@ func (s *S)writeYouTubePublishState(v map[string]any){
 func (s *S)youtubeUploadDelay()time.Duration{
  n,_:=strconv.Atoi(strings.TrimSpace(readenv(filepath.Join(s.Rel,"config","work.env"),"YOUTUBE_UPLOAD_DELAY_MINUTES")));if n<0{n=0};if n>180{n=180};if n==0{n=5};return time.Duration(n)*time.Minute
 }
+func (s *S)youtubePublishDelay()time.Duration{
+ n,_:=strconv.Atoi(strings.TrimSpace(readenv(filepath.Join(s.Rel,"config","work.env"),"YOUTUBE_PUBLISH_DELAY_MINUTES")));if n<0{n=0};if n>1440{n=1440};if n==0{n=10};return time.Duration(n)*time.Minute
+}
+func (s *S)youtubeForceUnlisted()bool{return strings.TrimSpace(readenv(filepath.Join(s.Rel,"config","work.env"),"YOUTUBE_FORCE_UNLISTED"))!="0"}
+func (s *S)youtubeAllowPublic()bool{return strings.TrimSpace(readenv(filepath.Join(s.Rel,"config","work.env"),"YOUTUBE_ALLOW_PUBLIC"))=="1"&&!s.youtubeForceUnlisted()}
 func (s *S)youtubeTargetPrivacy()string{
+ if s.youtubeForceUnlisted(){return"unlisted"}
  p:=strings.ToLower(strings.TrimSpace(readenv(filepath.Join(s.Rel,"config","work.env"),"YOUTUBE_AUTO_PRIVACY")));if p!="private"&&p!="unlisted"{p="unlisted"};return p
 }
 func (s *S)youtubePublishStatus()map[string]any{
- v:=map[string]any{"state":"IDLE","privacy":"private","engine":"YOUTUBE_DEVICE_PUBLISHER_V4_SCHEDULED","ai_used":false,"neurons_used":0}
+ v:=map[string]any{"state":"IDLE","privacy":"private","engine":"YOUTUBE_DEVICE_PUBLISHER_V5_SCHEDULER_V2","ai_used":false,"neurons_used":0}
  if b,e:=os.ReadFile(s.youtubePublishStatePath());e==nil{_ = json.Unmarshal(b,&v)}
- nextID:="";nextTopic:="";scheduled:="";due:=false
+ nextID:="";nextTopic:="";uploadAt:="";publishAt:="";uploadDue:=false;publishDue:=false
  for _,p:=range s.loadPlan(){
   if p.Stage!="UPLOAD_READY"{continue}
   nextID=p.ID;nextTopic=p.Title
   if sr,ok:=s.loadStudioResult(p.ID);ok{
-   if t,e:=time.Parse(time.RFC3339,sr.CompletedAt);e==nil{at:=t.Add(s.youtubeUploadDelay());scheduled=at.Format(time.RFC3339);due=!time.Now().Before(at)}else{due=true}
-  }else{due=true}
+   if t,e:=time.Parse(time.RFC3339,sr.CompletedAt);e==nil{
+    ua:=t.Add(s.youtubeUploadDelay());pa:=ua.Add(s.youtubePublishDelay())
+    uploadAt=ua.Format(time.RFC3339);publishAt=pa.Format(time.RFC3339)
+    uploadDue=!time.Now().Before(ua);publishDue=!time.Now().Before(pa)
+   }
+  }
   break
  }
  _,oauth:=s.loadYouTubeOAuth();v["oauth_configured"]=oauth;v["next_planner_id"]=nextID;v["next_topic"]=nextTopic
- v["scheduled_upload_at"]=scheduled;v["upload_due"]=due;v["target_privacy"]=s.youtubeTargetPrivacy();v["upload_delay_minutes"]=int(s.youtubeUploadDelay()/time.Minute)
+ v["scheduled_upload_at"]=uploadAt;v["upload_not_before_at"]=uploadAt;v["publish_not_before_at"]=publishAt;v["scheduled_publish_at"]=publishAt
+ v["upload_due"]=uploadDue;v["publish_due"]=publishDue;v["target_privacy"]=s.youtubeTargetPrivacy()
+ v["upload_delay_minutes"]=int(s.youtubeUploadDelay()/time.Minute);v["publish_delay_minutes"]=int(s.youtubePublishDelay()/time.Minute)
+ v["force_unlisted"]=s.youtubeForceUnlisted();v["public_enabled"]=s.youtubeAllowPublic()
  youtubePublishMu.Lock();v["busy"]=youtubePublishBusy;youtubePublishMu.Unlock()
  return v
+}
+func (s *S)studioPublicationInvariant(sr StudioResult)error{
+ if exists(filepath.Join(s.Root,"state","safe_mode")){return fmt.Errorf("publication blocked: safe_mode")}
+ if sr.State!="RENDERED_VALIDATED"{return fmt.Errorf("publication blocked: render not validated")}
+ if sr.QualityGate!="PASS"{return fmt.Errorf("publication blocked: quality gate")}
+ if sr.RenderGeneration!="DJAEGER_STUDIO_V3_AI_VIDEO"{return fmt.Errorf("publication blocked: render generation")}
+ if sr.CharacterBible!="DJAEGER_WORK_KIDS_V1"{return fmt.Errorf("publication blocked: character bible")}
+ if sr.ProvenanceState!="PASS"{return fmt.Errorf("publication blocked: provenance")}
+ if sr.RequiredAIVideoScenes<=0||sr.SuccessfulAIVideoScenes!=sr.RequiredAIVideoScenes{return fmt.Errorf("publication blocked: incomplete AI scenes")}
+ if sr.FinalVectorVideoScenes!=0{return fmt.Errorf("publication blocked: vector final scenes")}
+ return nil
 }
 func (s *S)youtubeCandidate(id string)(PlanItem,StudioResult,ScriptPackage,error){
  plans:=s.syncPlanner();var p PlanItem;found:=false
  for _,x:=range plans{if (id==""&&x.Stage=="UPLOAD_READY")||(id!=""&&x.ID==id&&x.Stage=="UPLOAD_READY"){p=x;found=true;break}}
  if !found{return p,StudioResult{},ScriptPackage{},fmt.Errorf("no upload-ready video")}
  sr,ok:=s.loadStudioResult(p.ID);if !ok||strings.TrimSpace(sr.VideoURL)==""{return p,sr,ScriptPackage{},fmt.Errorf("rendered video not found")}
+ if e:=s.studioPublicationInvariant(sr);e!=nil{return p,sr,ScriptPackage{},e}
  if !youtubeAssetAllowed(sr.VideoURL){return p,sr,ScriptPackage{},fmt.Errorf("rendered video url rejected")}
  var sp ScriptPackage
  if b,e:=os.ReadFile(filepath.Join(s.scriptDir(),p.ID+".json"));e!=nil||json.Unmarshal(b,&sp)!=nil{return p,sr,sp,fmt.Errorf("script metadata not found")}
@@ -1449,8 +1474,9 @@ func (s *S)runYouTubePrivateUpload(p PlanItem,sr StudioResult,sp ScriptPackage){
  if e=s.appendPublication(rec);e!=nil{fail("video uploaded but local publication record failed");return}
  yrec:=YouTubeVideoRecord{PublicationID:p.ID,PlannerID:p.ID,VideoID:vid,Topic:p.Title,URL:"https://youtu.be/"+vid,Privacy:"private",Status:"UPLOADED_PRIVATE",ThumbnailState:thumbState,ThumbnailError:thumbErr,CreatedAt:at,UpdatedAt:at}
  if e=s.upsertYouTubeVideoRecord(yrec);e!=nil{fail("video uploaded but video registry failed");return}
- plans:=s.syncPlanner();for i:=range plans{if plans[i].ID==p.ID{plans[i].Stage="PUBLISHED";plans[i].UpdatedAt=at;break}};_ = s.savePlan(plans)
- s.writeYouTubePublishState(map[string]any{"state":"SUCCESS","privacy":"private","planner_id":p.ID,"topic":p.Title,"video_id":vid,"url":"https://youtu.be/"+vid,"status":"UPLOADED_PRIVATE","thumbnail_state":thumbState,"thumbnail_error":thumbErr,"engine":"YOUTUBE_DEVICE_PUBLISHER_V2"})
+ // A PRIVATE upload is not publication completion. Keep the planner in UPLOAD_READY
+ // until thumbnail + provenance + publication schedule gates pass.
+ s.writeYouTubePublishState(map[string]any{"state":"SUCCESS","privacy":"private","planner_id":p.ID,"topic":p.Title,"video_id":vid,"url":"https://youtu.be/"+vid,"status":"UPLOADED_PRIVATE","thumbnail_state":thumbState,"thumbnail_error":thumbErr,"engine":"YOUTUBE_DEVICE_PUBLISHER_V5_SCHEDULER_V2"})
 }
 func (s *S)youtubePublish(w http.ResponseWriter,r *http.Request){
  if r.Method=="GET"{js(w,s.youtubePublishStatus());return}
@@ -1477,18 +1503,32 @@ func (s *S)youtubePrivacy(w http.ResponseWriter,r *http.Request){
  if r.Method!="POST"{http.Error(w,"method not allowed",405);return}
  if !s.auth(r)&&!trustedRemoteTunnel(r){http.Error(w,"unauthorized",401);return}
  if !localOrTrustedRemote(r){http.Error(w,"local_or_trusted_remote_only",403);return}
+ if ok,reason:=guard(s);!ok{http.Error(w,"publication blocked by worker guard: "+reason,409);return}
  var q struct{PublicationID string `json:"publication_id"`;Privacy string `json:"privacy"`}
  if json.NewDecoder(io.LimitReader(r.Body,65536)).Decode(&q)!=nil{http.Error(w,"invalid json",400);return}
  q.PublicationID=strings.TrimSpace(q.PublicationID);q.Privacy=strings.ToLower(strings.TrimSpace(q.Privacy))
  if q.PublicationID==""{http.Error(w,"publication_id required",400);return}
  if q.Privacy!="private"&&q.Privacy!="unlisted"&&q.Privacy!="public"{http.Error(w,"invalid privacy",400);return}
+ if q.Privacy=="public"&&!s.youtubeAllowPublic(){http.Error(w,"public publishing disabled by policy gate",403);return}
  rec,ok:=s.findYouTubeVideoRecord(q.PublicationID);if !ok||rec.VideoID==""{http.Error(w,"publication not found",404);return}
+ if q.Privacy!="private"{
+  sr,ok:=s.loadStudioResult(rec.PlannerID);if !ok{http.Error(w,"publication blocked: studio result missing",409);return}
+  if e:=s.studioPublicationInvariant(sr);e!=nil{http.Error(w,e.Error(),409);return}
+  if strings.ToUpper(strings.TrimSpace(rec.ThumbnailState))!="SUCCESS"{http.Error(w,"publication blocked: thumbnail not successful",409);return}
+  st:=s.youtubePublishStatus()
+  if strings.TrimSpace(fmt.Sprint(st["next_planner_id"]))!=rec.PlannerID||st["publish_due"]!=true{
+   http.Error(w,"publication schedule not due; scheduled_publish_at="+strings.TrimSpace(fmt.Sprint(st["scheduled_publish_at"])),409);return
+  }
+ }
  c,ok:=s.loadYouTubeOAuth();if !ok{http.Error(w,"youtube oauth not configured",409);return}
  token,_,e:=youtubeAccessToken(c);if e!=nil{http.Error(w,"oauth refresh failed: "+e.Error(),401);return}
  p,e:=updateYouTubePrivacy(token,rec.VideoID,q.Privacy);if e!=nil{http.Error(w,"youtube privacy update failed: "+e.Error(),502);return}
  rec.Privacy=p;rec.Status="PRIVACY_"+strings.ToUpper(p);if e=s.upsertYouTubeVideoRecord(rec);e!=nil{http.Error(w,"privacy changed but registry update failed",500);return}
- s.writeYouTubePublishState(map[string]any{"state":"SUCCESS","privacy":p,"planner_id":rec.PlannerID,"topic":rec.Topic,"video_id":rec.VideoID,"url":rec.URL,"status":rec.Status,"thumbnail_state":rec.ThumbnailState,"engine":"YOUTUBE_DEVICE_PUBLISHER_V3"})
- js(w,map[string]any{"ok":true,"publication_id":rec.PublicationID,"video_id":rec.VideoID,"privacy":p,"state":"SUCCESS"})
+ if p=="unlisted"||p=="public"{
+  plans:=s.syncPlanner();for i:=range plans{if plans[i].ID==rec.PlannerID{plans[i].Stage="PUBLISHED";plans[i].UpdatedAt=time.Now().Format(time.RFC3339);break}};_ = s.savePlan(plans)
+ }
+ s.writeYouTubePublishState(map[string]any{"state":"SUCCESS","privacy":p,"planner_id":rec.PlannerID,"topic":rec.Topic,"video_id":rec.VideoID,"url":rec.URL,"status":rec.Status,"thumbnail_state":rec.ThumbnailState,"engine":"YOUTUBE_DEVICE_PUBLISHER_V5_SCHEDULER_V2"})
+ js(w,map[string]any{"ok":true,"publication_id":rec.PublicationID,"video_id":rec.VideoID,"privacy":p,"state":"SUCCESS","scheduler":"V2"})
 }
 
 func (s *S)youtubeThumbnail(w http.ResponseWriter,r *http.Request){
