@@ -846,20 +846,7 @@ async function autoPublishNextRenderedVideo() {
       }
 
       if(thumb==="SUCCESS"){
-        const target=String(st?.target_privacy||"unlisted").toLowerCase()==="private"?"private":"unlisted";
-        if(target==="private"){
-          console.log("HERMES_AUTO_PUBLISH "+JSON.stringify({state:"SUCCESS",planner_id:plannerId,video_id:videoId,topic:String(rec?.topic||""),privacy:"private",thumbnail_state:thumb}));
-          return;
-        }
-        const pr=await queueDevicePost("/api/work/youtube/privacy",{publication_id:publicationId,privacy:target},60000);
-        const code=Number(pr?.status||502);
-        let body="";try{body=Buffer.from(String(pr?.body_b64||""),"base64").toString("utf8").slice(0,1000)}catch{}
-        console.log("HERMES_AUTO_PUBLISH "+JSON.stringify({
-          state:code>=200&&code<300?"SUCCESS":"PRIVACY_UPDATE_FAILED",
-          planner_id:plannerId,video_id:videoId,topic:String(rec?.topic||""),
-          privacy:code>=200&&code<300?"unlisted":"private",
-          thumbnail_state:thumb,http:code,response:body
-        }));
+        console.log("HERMES_AUTO_PUBLISH "+JSON.stringify({state:"WAITING_DEVICE_SCHEDULER",planner_id:plannerId,video_id:videoId,topic:String(rec?.topic||""),privacy:"private",thumbnail_state:thumb,scheduled_publish_at:String(rec?.scheduled_publish_at||"")}));
         return;
       }
     }
