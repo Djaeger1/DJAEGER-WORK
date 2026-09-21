@@ -1,5 +1,5 @@
 {
-  "version": "v2.5.36-autonomous-cycle-feedback",
-  "description": "Autonomous contract cycle: YouTube real-data feedback runs before daily research, Studio refuses to choose/render before today's research completes, uploads use a scheduled not-before window, and real views/likes/comments feed back into topic scoring. Auto visibility remains unlisted; public publishing is not enabled.",
+  "version": "v2.5.37-publication-invariants-scheduler-v2",
+  "description": "Contract hardening: validated Wan AI-video provenance is mandatory, vector-final publication is blocked, PRIVATE upload no longer marks work published, thumbnail and worker guards must pass, upload/publish not-before times are separated by Scheduler V2, FORCE_UNLISTED remains active, and PUBLIC stays disabled until the final canary and OAuth/Analytics capability gates pass.",
   "restart": false
 }
