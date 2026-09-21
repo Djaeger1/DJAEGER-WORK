@@ -376,8 +376,13 @@ func (s *S)maintenance(w http.ResponseWriter,r *http.Request){
    os.WriteFile(filepath.Join(st,"maintenance.update"),[]byte(mode+"\n"),0600)
    js(w,map[string]any{"ok":true,"action":"update","mode":mode,"state":"QUEUED"})
  case"remote_update":
-   if !loopbackRemote(r){http.Error(w,"loopback remote required",http.StatusForbidden);return}
-   out,code,e:=s.performSignedUpdate("PRIVATE_REMOTE")
+   mode:=strings.ToUpper(strings.TrimSpace(q.Mode))
+   source:="PRIVATE_REMOTE"
+   if mode=="NORMAL"{
+    if !trustedRemoteTunnel(r)&&!s.auth(r){http.Error(w,"trusted remote or admin required",http.StatusForbidden);return}
+    source="TRUSTED_REMOTE_NORMAL"
+   }else if !loopbackRemote(r){http.Error(w,"loopback remote required",http.StatusForbidden);return}
+   out,code,e:=s.performSignedUpdate(source)
    if e!=nil{http.Error(w,e.Error(),code);return}
    js(w,out)
  case"recover":
@@ -442,6 +447,13 @@ func (s *S)performSignedUpdate(source string)(UpdateResult,int,error){
   if mem()<220{return out,http.StatusConflict,fmt.Errorf("low ram")}
   th:=thermalSummary()
   if v,ok:=th["cpu_soc_max_c"].(float64);ok&&v>=85{return out,http.StatusConflict,fmt.Errorf("cpu soc thermal guard %.1fC",v)}
+ }
+ if source=="TRUSTED_REMOTE_NORMAL"{
+  if out.QuarantinePreserved{return out,http.StatusConflict,fmt.Errorf("normal remote update blocked while quarantined")}
+  ts,_:=iface("rndis0");if ts!="UP"{return out,http.StatusConflict,fmt.Errorf("tether down")}
+  if mem()<256{return out,http.StatusConflict,fmt.Errorf("low ram")}
+  th:=thermalSummary()
+  if v,ok:=th["cpu_soc_max_c"].(float64);ok&&v>=75{return out,http.StatusConflict,fmt.Errorf("cpu soc thermal guard %.1fC",v)}
  }
  cl:=androidHTTPClient()
  resp,e:=cl.Get(ch);if e!=nil{return out,http.StatusBadGateway,e}
