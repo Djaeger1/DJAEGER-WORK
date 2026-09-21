@@ -53,7 +53,7 @@ LANG_CODE="$(jq -r '.job.language // "id"' studio/feed.json)"
 TITLE="$(jq -r '.job.video_title // .job.topic // "HERMES WORK"' studio/feed.json)"
 CHARACTER_BIBLE="${CHARACTER_BIBLE:-hermes-auto-studio/character-bible.json}"
 CHANNEL_SEED="${CHANNEL_SEED:-314159}"
-AI_VIDEO_SPACE="${AI_VIDEO_SPACE:-multimodalart/wan2-1-fast}"
+AI_VIDEO_SPACE="${AI_VIDEO_SPACE:-zerogpu-aoti/wan2-2-fp8da-aoti-faster}"
 if [ ! -s "$CHARACTER_BIBLE" ]; then
   echo "Character Bible missing: $CHARACTER_BIBLE"
   exit 1
@@ -189,7 +189,7 @@ jq '{
   card_required:false,
   hermes_ai_used:false,
   external_ai_video_used:true,
-  ai_video_provider:"HUGGINGFACE_ZERO_GPU_WAN2_1_FAST",
+  ai_video_provider:"HUGGINGFACE_ZERO_GPU_WAN2_2_AOTI_FAST",
   neurons_used:0,
   character_bible:"DJAEGER_WORK_KIDS_V1",
   recurring_cast:["Nara","Bimo","Sasa","Pip"],
