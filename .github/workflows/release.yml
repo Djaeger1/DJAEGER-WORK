@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -Fq 'UPDATE_CHANNEL_URL=https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json' runtime/config/work.env
-          grep -Fq '"version": "v2.5.35-manual-studio-autopublish"' runtime/manifest.json
+          grep -Fq '"version": "v2.5.36-autonomous-cycle-feedback"' runtime/manifest.json
           sh -n runtime/worker/tick.sh
           sh -n runtime/worker/handoff.sh
           sh -n runtime/worker/autoupdate.sh
@@ -117,6 +117,11 @@ jobs:
           grep -Fq 'youtubeVideoRegistryPath' runtime/workd.go
           grep -Fq 'PublicationID string' runtime/workd.go
           grep -Fq 'publication_id required' runtime/workd.go
+          grep -Fq '/api/work/youtube/feedback' runtime/workd.go
+          grep -Fq 'feedbackDueBeforeResearch' runtime/workd.go
+          grep -Fq 'researchCompletedToday' runtime/workd.go
+          grep -Fq 'YOUTUBE_UPLOAD_DELAY_MINUTES=5' runtime/config/work.env
+          grep -Fq 'YOUTUBE_AUTO_PRIVACY=unlisted' runtime/config/work.env
 
       - name: Build ARMv7 runtime
         shell: bash
@@ -136,16 +141,16 @@ jobs:
           cp config/work.env out/payload/config/work.env
           chmod 755 out/payload/bin/workd out/payload/worker/*.sh
           cd out
-          zip -Xqr ../HERMES_WORK_RUNTIME_v2.5.35_MANUAL_STUDIO_AUTOPUBLISH.zip manifest.json payload
+          zip -Xqr ../HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip manifest.json payload
           cd ..
-          sha256sum HERMES_WORK_RUNTIME_v2.5.35_MANUAL_STUDIO_AUTOPUBLISH.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v2.5.35_MANUAL_STUDIO_AUTOPUBLISH.zip.sha256
-          printf '{"channel":"stable","version":"v2.5.35-manual-studio-autopublish","bundle":"HERMES_WORK_RUNTIME_v2.5.35_MANUAL_STUDIO_AUTOPUBLISH.zip","sha256":"%s"}\n' "$(cat HERMES_WORK_RUNTIME_v2.5.35_MANUAL_STUDIO_AUTOPUBLISH.zip.sha256)" > channel.json
+          sha256sum HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip.sha256
+          printf '{"channel":"stable","version":"v2.5.36-autonomous-cycle-feedback","bundle":"HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip","sha256":"%s"}\n' "$(cat HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip.sha256)" > channel.json
 
       - name: Upload installable package
         uses: actions/upload-artifact@v4
         with:
-          name: HERMES_WORK_RUNTIME_v2.5.35_MANUAL_STUDIO_AUTOPUBLISH
-          path: runtime/HERMES_WORK_RUNTIME_v2.5.35_MANUAL_STUDIO_AUTOPUBLISH.zip
+          name: HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK
+          path: runtime/HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip
           retention-days: 30
 
       - name: Publish isolated stable channel
@@ -153,8 +158,8 @@ jobs:
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"
-          cp runtime/HERMES_WORK_RUNTIME_v2.5.35_MANUAL_STUDIO_AUTOPUBLISH.zip "$tmp/"
-          cp runtime/HERMES_WORK_RUNTIME_v2.5.35_MANUAL_STUDIO_AUTOPUBLISH.zip.sha256 "$tmp/"
+          cp runtime/HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip "$tmp/"
+          cp runtime/HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip.sha256 "$tmp/"
           cp runtime/channel.json "$tmp/"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -163,15 +168,15 @@ jobs:
             git fetch origin main
             git checkout -B main origin/main
             mkdir -p release
-            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.35_MANUAL_STUDIO_AUTOPUBLISH.zip" release/
-            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.35_MANUAL_STUDIO_AUTOPUBLISH.zip.sha256" release/
+            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip" release/
+            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip.sha256" release/
             cp "$tmp/channel.json" release/
             git add release/
             if git diff --cached --quiet; then
               echo "Release channel already current."
               exit 0
             fi
-            git commit -m "Publish DJAEGER WORK v2.5.35 manual Studio autopublish"
+            git commit -m "Publish DJAEGER WORK v2.5.36 autonomous cycle feedback"
             if git push origin HEAD:main; then
               exit 0
             fi

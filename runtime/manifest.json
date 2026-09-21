@@ -1,5 +1,5 @@
 {
-  "version": "v2.5.35-manual-studio-autopublish",
-  "description": "Manual continuation + hands-off publishing: trusted Railway may explicitly queue a named production-ready Studio job even after the normal one-per-day target is met. Automatic daily target remains unchanged. Device-side YouTube auto-publisher finalizes newly rendered uploads as unlisted only after thumbnail success.",
+  "version": "v2.5.36-autonomous-cycle-feedback",
+  "description": "Autonomous contract cycle: YouTube real-data feedback runs before daily research, Studio refuses to choose/render before today's research completes, uploads use a scheduled not-before window, and real views/likes/comments feed back into topic scoring. Auto visibility remains unlisted; public publishing is not enabled.",
   "restart": false
 }
