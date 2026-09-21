@@ -80,9 +80,9 @@ func (s *S)bridgeSnapshot()map[string]any{
   "production_pack_state":"READY","production_ready":prodN,"production_topic":prodTopic,"production_engine":"PRODUCTION_PACK_V1",
   "handoff_state":ho["state"],"handoff_queue":ho["queue_total"],"next_handoff_job":ho["next_job"],"handoff_engine":"HANDOFF_V1",
   "production_desk_state":"READY","production_desk_engine":"PRODUCTION_DESK_V1",
-  "studio_state":studio["state"],"studio_engine":"AUTO_STUDIO_V1","studio_job":studio["job"],
-  "publication_state":pub["state"],"publications_total":pub["records"],"publication_engine":"PUBLICATION_V1",
-  "feedback_state":fb["state"],"performance_records":fb["records"],"strong_signal":fb["strong_signal"],"weak_signal":fb["weak_signal"],"feedback_engine":"FEEDBACK_V2_YOUTUBE_DATA","youtube_feedback_last_sync":strings.TrimSpace(readfile(s.youtubeFeedbackLastSyncPath())),
+  "studio_state":studio["state"],"studio_engine":"AUTO_STUDIO_V3_AI_VIDEO","studio_job":studio["job"],
+  "publication_state":pub["state"],"publications_total":pub["records"],"publication_engine":"YOUTUBE_SCHEDULER_V2",
+  "feedback_state":fb["state"],"performance_records":fb["records"],"strong_signal":fb["strong_signal"],"weak_signal":fb["weak_signal"],"feedback_engine":"FEEDBACK_V3_CONFIDENCE","youtube_feedback_last_sync":strings.TrimSpace(readfile(s.youtubeFeedbackLastSyncPath())),
   "auto_update_state":au["state"],"auto_update_last_check":au["last_check"],"github_control_state":gc["state"],"github_control_reason":gc["reason"],"github_control_generation":gc["generation"],"github_control_writes_allowed":false,"process_convergence":s.processConvergenceInfo(),"bridge_agent":"HERMES_WORK_DATA_BRIDGE_v3","bridge_state":s.bridgeInfo()["state"],"bridge_reason":s.bridgeInfo()["reason"],"bridge_last_sync":s.bridgeInfo()["last_sync"],"ai_used":false,"neurons_used":0,
  }
 }
@@ -1455,7 +1455,7 @@ func updateYouTubePrivacy(token,videoID,privacy string)(string,error){
 
 func (s *S)runYouTubePrivateUpload(p PlanItem,sr StudioResult,sp ScriptPackage){
  defer func(){youtubePublishMu.Lock();youtubePublishBusy=false;youtubePublishMu.Unlock()}()
- fail:=func(msg string){s.writeYouTubePublishState(map[string]any{"state":"FAILED","privacy":"private","planner_id":p.ID,"topic":p.Title,"error":youtubeClip(msg,500),"engine":"YOUTUBE_DEVICE_PUBLISHER_V2"})}
+ fail:=func(msg string){s.writeYouTubePublishState(map[string]any{"state":"FAILED","privacy":"private","planner_id":p.ID,"topic":p.Title,"error":youtubeClip(msg,500),"engine":"YOUTUBE_SCHEDULER_V2"})}
  c,ok:=s.loadYouTubeOAuth();if !ok{fail("youtube oauth not configured");return}
  token,_,e:=youtubeAccessToken(c);if e!=nil{fail("oauth refresh failed: "+e.Error());return}
  os.MkdirAll(filepath.Join(s.Root,"updates"),0700);f,e:=os.CreateTemp(filepath.Join(s.Root,"updates"),"youtube-*.mp4");if e!=nil{fail("temporary video create failed");return};tmp:=f.Name();f.Close();defer os.Remove(tmp)
@@ -1510,7 +1510,7 @@ func (s *S)youtubePublish(w http.ResponseWriter,r *http.Request){
  if q.PlannerID!=""{if existing,ok:=s.findYouTubeVideoRecord(q.PlannerID);ok&&existing.VideoID!=""{js(w,map[string]any{"ok":true,"state":"EXISTS","idempotent":true,"publication":existing});return}}
  p,sr,sp,e:=s.youtubeCandidate(q.PlannerID);if e!=nil{http.Error(w,e.Error(),409);return}
  youtubePublishMu.Lock();if youtubePublishBusy{youtubePublishMu.Unlock();http.Error(w,"youtube upload already in progress",409);return};youtubePublishBusy=true;youtubePublishMu.Unlock()
- s.writeYouTubePublishState(map[string]any{"state":"UPLOADING","privacy":"private","planner_id":p.ID,"topic":p.Title,"engine":"YOUTUBE_DEVICE_PUBLISHER_V2"})
+ s.writeYouTubePublishState(map[string]any{"state":"UPLOADING","privacy":"private","planner_id":p.ID,"topic":p.Title,"engine":"YOUTUBE_SCHEDULER_V2"})
  go s.runYouTubePrivateUpload(p,sr,sp)
  w.WriteHeader(http.StatusAccepted);js(w,map[string]any{"ok":true,"state":"UPLOADING","privacy":"private","planner_id":p.ID,"topic":p.Title})
 }
@@ -1767,7 +1767,7 @@ func (s *S)publicationSummary()map[string]any{
  a:=s.loadPublications();plats:=map[string]int{};latestTopic:="";latestURL:="";latestAt:=""
  for _,p:=range a{plats[p.Platform]++;if p.RecordedAt>=latestAt{latestAt=p.RecordedAt;latestTopic=p.Topic;latestURL=p.URL}}
  state:="READY_WAITING_PUBLICATION";if len(a)>0{state="CONNECTED"}
- return map[string]any{"state":state,"engine":"PUBLICATION_V1","records":len(a),"platforms":plats,"latest_topic":latestTopic,"latest_url":latestURL,"latest_at":latestAt,"ai_used":false,"neurons_used":0}
+ return map[string]any{"state":state,"engine":"YOUTUBE_SCHEDULER_V2","records":len(a),"platforms":plats,"latest_topic":latestTopic,"latest_url":latestURL,"latest_at":latestAt,"ai_used":false,"neurons_used":0}
 }
 
 func publicationAckTag(id string)string{return "hermes-published-"+strings.ToLower(strings.TrimSpace(id))}
@@ -1958,7 +1958,7 @@ func (s *S)knowledge(w http.ResponseWriter,r *http.Request){
  b,_:=os.ReadFile(filepath.Join(s.Root,"data","database","research.jsonl"));seen:=map[string]bool{};cats:=map[string]int{};total:=0
  for _,l:=range strings.Split(strings.TrimSpace(string(b)),"\n"){if l==""{continue};var z map[string]any;if json.Unmarshal([]byte(l),&z)!=nil{continue};total++;if u,_:=z["url"].(string);u!=""{seen[u]=true};if x,_:=z["category"].(string);x!=""{cats[x]++}}
  ps:=s.performanceSummary();plans:=s.syncPlanner();notProduced:=0;for _,p:=range plans{if p.Stage!="PUBLISHED"{notProduced++}}
- js(w,map[string]any{"research_items":total,"unique_keys":len(seen),"categories":cats,"produced":ps["records"],"published":s.publicationSummary()["records"],"successful":ps["strong_signal"],"underperforming":ps["weak_signal"],"ideas_not_produced":notProduced,"feedback_state":ps["state"],"feedback_engine":"FEEDBACK_V1","publication_engine":"PUBLICATION_V1"})
+ js(w,map[string]any{"research_items":total,"unique_keys":len(seen),"categories":cats,"produced":ps["records"],"published":s.publicationSummary()["records"],"successful":ps["strong_signal"],"underperforming":ps["weak_signal"],"ideas_not_produced":notProduced,"feedback_state":ps["state"],"feedback_engine":"FEEDBACK_V3_CONFIDENCE","publication_engine":"YOUTUBE_SCHEDULER_V2"})
 }
 func (s *S)recovery(w http.ResponseWriter,r *http.Request){js(w,map[string]any{"current":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"previous":strings.TrimSpace(readfile(filepath.Join(s.Root,"previous_release"))),"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"worker_paused":exists(filepath.Join(s.Root,"state","worker_paused")),"handoff_log":tail(filepath.Join(s.Root,"logs","handoff.log"),20)})}
 func (s *S)index(w http.ResponseWriter,r *http.Request){w.Header().Set("Content-Type","text/html; charset=utf-8");io.WriteString(w,page)}
