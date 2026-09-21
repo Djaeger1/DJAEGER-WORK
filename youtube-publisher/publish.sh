@@ -44,6 +44,13 @@ gh release download "$tag" --repo "$REPO" --dir "$work" --pattern 'final.mp4' --
 test -s "$work/final.mp4"
 test -s "$work/metadata.json"
 
+quality_gate="$(jq -r '.quality_gate // "LEGACY_UNVERIFIED"' "$work/metadata.json")"
+character_bible="$(jq -r '.character_bible // ""' "$work/metadata.json")"
+if [ "$quality_gate" != "PASS" ] || [ "$character_bible" != "DJAEGER_WORK_KIDS_V1" ]; then
+  echo "WAITING_RENDER_QUALITY: planner_id=$id quality_gate=$quality_gate character_bible=$character_bible"
+  exit 0
+fi
+
 title="$(jq -r '.title // .topic // "HERMES WORK"' "$work/metadata.json" | head -c 100)"
 description="$(jq -r '.description // ""' "$work/metadata.json")"
 hashtags="$(jq -r '(.hashtags // []) | join(" ")' "$work/metadata.json")"

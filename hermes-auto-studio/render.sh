@@ -18,9 +18,22 @@ if [ -z "$id" ] || [ -z "$tag" ]; then
   exit 0
 fi
 
+REBUILD_EXISTING=0
 if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-  echo "Release already exists for $tag."
-  exit 0
+  oldmeta="/tmp/hermes-studio/existing-metadata.json"
+  rm -f "$oldmeta"
+  gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir /tmp/hermes-studio --pattern 'metadata.json' --clobber >/dev/null 2>&1 || true
+  if [ -s /tmp/hermes-studio/metadata.json ]; then
+    mv /tmp/hermes-studio/metadata.json "$oldmeta"
+  fi
+  old_quality="$(jq -r '.quality_gate // "LEGACY_UNVERIFIED"' "$oldmeta" 2>/dev/null || echo LEGACY_UNVERIFIED)"
+  old_bible="$(jq -r '.character_bible // ""' "$oldmeta" 2>/dev/null || true)"
+  if [ "$old_quality" = "PASS" ] && [ "$old_bible" = "DJAEGER_WORK_KIDS_V1" ]; then
+    echo "Quality-gated Character Bible release already exists for $tag."
+    exit 0
+  fi
+  REBUILD_EXISTING=1
+  echo "Rebuilding legacy/low-quality release for $tag."
 fi
 
 echo "Installing zero-card render tools..."
@@ -60,6 +73,9 @@ if command -v edge-tts >/dev/null 2>&1; then
 fi
 
 : > studio/concat.txt
+AI_SCENES=0
+VECTOR_SCENES=0
+BASIC_SCENES=0
 for idx in $(seq 0 $((COUNT-1))); do
   n=$((idx+1))
   scene="$(jq -c ".job.scenes[$idx]" studio/feed.json)"
@@ -77,15 +93,20 @@ print(urllib.parse.quote(sys.argv[1], safe=''))
 PY
 )"
   img="studio/scenes/scene_$(printf '%02d' "$n").jpg"
+  svg="studio/scenes/scene_$(printf '%02d' "$n").svg"
   img_url="https://image.pollinations.ai/prompt/$enc?width=1280&height=720&nologo=true&seed=$((CHANNEL_SEED+n))"
 
-  if ! curl -fL --max-time 25 "$img_url" -o "$img"; then
-    echo "AI image unavailable for scene $n; using deterministic fallback."
-    convert -size 1280x720 "gradient:#23395d-#101820"       -gravity center -fill white -font DejaVu-Sans-Bold -pointsize 58       -annotate +0-40 "HERMES WORK"       -pointsize 34 -annotate +0+55 "$onscreen" "$img"
-  fi
-
-  if ! identify "$img" >/dev/null 2>&1; then
-    convert -size 1280x720 "xc:#23395d" -gravity center -fill white       -font DejaVu-Sans-Bold -pointsize 52 -annotate +0+0 "$onscreen" "$img"
+  if curl -fsSL --retry 1 --retry-delay 1 --max-time 12 "$img_url" -o "$img" && identify "$img" >/dev/null 2>&1; then
+    AI_SCENES=$((AI_SCENES+1))
+  else
+    rm -f "$img"
+    echo "External AI image unavailable for scene $n; using Character Bible vector renderer."
+    if python3 hermes-auto-studio/vector_scene.py       --bible "$CHARACTER_BIBLE" --scene "$scene" --topic "$TITLE" --cast "$cast" --number "$n" --output "$svg"       && convert -background none "$svg" -quality 92 "$img"       && identify "$img" >/dev/null 2>&1; then
+      VECTOR_SCENES=$((VECTOR_SCENES+1))
+    else
+      BASIC_SCENES=$((BASIC_SCENES+1))
+      convert -size 1280x720 "gradient:#23395d-#101820" -gravity center -fill white -font DejaVu-Sans-Bold -pointsize 58         -annotate +0-40 "DJAEGER WORK KIDS" -pointsize 34 -annotate +0+55 "$onscreen" "$img"
+    fi
   fi
 
   audio="studio/scenes/scene_$(printf '%02d' "$n").mp3"
@@ -132,16 +153,18 @@ if [ "$bytes" -lt 200000 ]; then
   exit 1
 fi
 
+QUALITY_GATE="PASS"
+[ "$BASIC_SCENES" -eq 0 ] || QUALITY_GATE="FAIL_BASIC_FALLBACK"
 jq '{
   state:"RENDERED",
-  engine:"AUTO_STUDIO_V1",
+  engine:"AUTO_STUDIO_V2",
   planner_id:.job.planner_id,
   topic:.job.topic,
   title:.job.video_title,
   description:.job.description,
   hashtags:.job.hashtags,
   render_tag:.job.render_tag,
-  visual_provider:"POLLINATIONS_ANONYMOUS_OR_DETERMINISTIC_FALLBACK",
+  visual_provider:"POLLINATIONS_OR_CHARACTER_BIBLE_VECTOR_V1",
   voice_provider:"EDGE_TTS_OR_ESPEAK_FALLBACK",
   render_provider:"GITHUB_ACTIONS_FFMPEG",
   target_duration_sec:(.job.duration_sec // 0),
@@ -152,10 +175,16 @@ jq '{
   recurring_cast:["Nara","Bimo","Sasa","Pip"],
   repository:"Djaeger1/DJAEGER-WORK"
 }' studio/feed.json > studio/metadata.json
-jq --arg actual "$ACTUAL_DURATION" '. + {actual_duration_sec:($actual|tonumber)}' studio/metadata.json > studio/metadata.json.tmp
+jq --arg actual "$ACTUAL_DURATION" --arg quality "$QUALITY_GATE"    --argjson ai "$AI_SCENES" --argjson vector "$VECTOR_SCENES" --argjson basic "$BASIC_SCENES"    '. + {actual_duration_sec:($actual|tonumber),quality_gate:$quality,visual_stats:{ai_scenes:$ai,character_bible_vector_scenes:$vector,basic_fallback_scenes:$basic}}'    studio/metadata.json > studio/metadata.json.tmp
 mv studio/metadata.json.tmp studio/metadata.json
 
 echo "Rendered: $TITLE"
 cat studio/probe.json
 
-gh release create "$tag"   studio/final.mp4 studio/thumbnail.jpg studio/metadata.json studio/probe.json   --repo "$GITHUB_REPOSITORY"   --title "HERMES Auto Studio $id"   --notes "Auto-rendered by HERMES AUTO STUDIO V1. No paid API, no card-required render dependency, 0 HERMES Neurons."
+if [ "$REBUILD_EXISTING" = "1" ]; then
+  gh release upload "$tag" studio/final.mp4 studio/thumbnail.jpg studio/metadata.json studio/probe.json --repo "$GITHUB_REPOSITORY" --clobber
+  gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --title "HERMES Auto Studio $id"     --notes "Re-rendered by HERMES AUTO STUDIO V2 with Character Bible V1 and quality gate. No paid API; 0 HERMES Neurons."
+else
+  gh release create "$tag" studio/final.mp4 studio/thumbnail.jpg studio/metadata.json studio/probe.json     --repo "$GITHUB_REPOSITORY" --title "HERMES Auto Studio $id"     --notes "Auto-rendered by HERMES AUTO STUDIO V2 with Character Bible V1 and quality gate. No paid API; 0 HERMES Neurons."
+fi
+echo "QUALITY_GATE=$QUALITY_GATE AI_SCENES=$AI_SCENES VECTOR_SCENES=$VECTOR_SCENES BASIC_SCENES=$BASIC_SCENES"
