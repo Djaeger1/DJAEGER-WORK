@@ -1,5 +1,5 @@
 {
-  "version": "v2.5.38-youtube-analytics-learning",
-  "description": "Production feedback V3: nullable metrics, confidence-weighted learning, YouTube Analytics retention/watch metrics, YouTube Reporting reach CTR support, strict AI-video publication invariant, and Scheduler V2 with PUBLIC disabled by default.",
+  "version": "v2.5.39-production-loop-hardening",
+  "description": "Hardens the autonomous contract loop: migrates placeholder analytics zeros to unavailable, confidence-weighted feedback snapshots, official Analytics/Reporting readiness, strict AI-video provenance, Scheduler V2, legacy GitHub uploader retired, and accurate observability labels.",
   "restart": false
 }
