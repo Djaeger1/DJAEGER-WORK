@@ -546,6 +546,15 @@ const server = http.createServer(async (req,res)=>{
     }
     let job=safeStudioJob(snap?.studio_job);
     const release=String(snap?.release||"");
+    if((!job||!job.planner_id) && deviceFresh()){
+      try{
+        const live=decodeDeviceJson(await queueDeviceRead("/api/work/studio",12000));
+        const liveJob=safeStudioJob(live?.job);
+        if(liveJob?.planner_id){job=liveJob;source="live-device-studio";}
+      }catch(e){
+        console.log("HERMES_STUDIO_ENSURE_ERROR "+String(e?.message||e));
+      }
+    }
     if((!job||!job.planner_id) && deviceFresh() && !releaseAtLeast(release,2,5,4)){
       try{
         const candidate=await migrationStudioCandidate();
