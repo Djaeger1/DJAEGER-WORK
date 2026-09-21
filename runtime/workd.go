@@ -709,14 +709,14 @@ func (s *S)syncPlanner()[]PlanItem{
  if len(a)>100{a=a[:100]}
  _=s.savePlan(a);return a
 }
-func planCounts(a []PlanItem)map[string]int{m:=map[string]int{"IDEA_READY":0,"SCRIPT_PREP_READY":0,"SCRIPT_READY":0,"PRODUCTION_READY":0,"PRODUCTION":0,"UPLOAD_READY":0,"PUBLISHED":0,"HOLD":0};for _,x:=range a{m[x.Stage]++};return m}
+func planCounts(a []PlanItem)map[string]int{m:=map[string]int{"IDEA_READY":0,"SCRIPT_PREP_READY":0,"SCRIPT_READY":0,"PRODUCTION_READY":0,"PRODUCTION":0,"UPLOAD_READY":0,"UPLOADED_PRIVATE":0,"PUBLISHED":0,"HOLD":0};for _,x:=range a{m[x.Stage]++};return m}
 func (s *S)plannerInfo()map[string]any{
  a:=s.syncPlanner();counts:=planCounts(a);active:=[]PlanItem{}
  for _,x:=range a{if x.Stage!="PUBLISHED"{active=append(active,x)};if len(active)>=20{break}}
  next:="";nextID:="";for _,x:=range a{if x.Stage=="SCRIPT_PREP_READY"{next=x.Title;nextID=x.ID;break}};if next==""{for _,x:=range a{if x.Stage=="IDEA_READY"{next=x.Title;nextID=x.ID;break}}}
  prod:="";prodID:="";for _,x:=range a{if x.Stage=="PRODUCTION_READY"{prod=x.Title;prodID=x.ID;break}};return map[string]any{"state":"READY","engine":"PLANNER_V1","updated_at":time.Now().Format(time.RFC3339),"queue_total":len(a),"active":len(active),"counts":counts,"next_for_script":next,"next_for_script_id":nextID,"next_for_production":prod,"next_for_production_id":prodID,"items":active,"ai_used":false,"neurons_used":0}
 }
-func validStage(x string)bool{switch x{case"IDEA_READY","SCRIPT_PREP_READY","SCRIPT_READY","PRODUCTION_READY","PRODUCTION","UPLOAD_READY","PUBLISHED","HOLD":return true};return false}
+func validStage(x string)bool{switch x{case"IDEA_READY","SCRIPT_PREP_READY","SCRIPT_READY","PRODUCTION_READY","PRODUCTION","UPLOAD_READY","UPLOADED_PRIVATE","PUBLISHED","HOLD":return true};return false}
 
 type ScriptPrepScene struct{
  Number int `json:"number"`
@@ -1077,6 +1077,7 @@ func handoffState(stage string)string{
  case"PRODUCTION_READY":return"READY_TO_PRODUCE"
  case"PRODUCTION":return"PRODUCING"
  case"UPLOAD_READY":return"READY_TO_UPLOAD"
+ case"UPLOADED_PRIVATE":return"UPLOADED_PRIVATE"
  case"PUBLISHED":return"PUBLISHED"
  case"HOLD":return"HOLD"
  default:return"WAITING"
@@ -1094,7 +1095,7 @@ func handoffStage(state string)string{
 }
 func (s *S)handoffInfo()map[string]any{
  packs:=s.ensureProductionPacks();plans:=s.syncPlanner();pm:=map[string]ProductionPack{};for _,p:=range packs{pm[p.PlannerID]=p}
- jobs:=[]HandoffJob{};counts:=map[string]int{"READY_TO_PRODUCE":0,"PRODUCING":0,"READY_TO_UPLOAD":0,"PUBLISHED":0,"HOLD":0}
+ jobs:=[]HandoffJob{};counts:=map[string]int{"READY_TO_PRODUCE":0,"PRODUCING":0,"READY_TO_UPLOAD":0,"UPLOADED_PRIVATE":0,"PUBLISHED":0,"HOLD":0}
  for _,p:=range plans{
   pp,ok:=pm[p.ID];if !ok{continue};hs:=handoffState(p.Stage);if hs=="WAITING"{continue}
   counts[hs]++
@@ -1169,6 +1170,13 @@ type StudioResult struct{
  MetadataURL string `json:"metadata_url"`
  CompletedAt string `json:"completed_at"`
  Engine string `json:"engine"`
+ QualityGate string `json:"quality_gate"`
+ RenderGeneration string `json:"render_generation"`
+ CharacterBible string `json:"character_bible"`
+ RequiredAIVideoScenes int `json:"required_ai_video_scenes"`
+ SuccessfulAIVideoScenes int `json:"successful_ai_video_scenes"`
+ FinalVectorVideoScenes int `json:"final_vector_video_scenes"`
+ ProvenanceState string `json:"provenance_state"`
  AIUsed bool `json:"ai_used"`
  NeuronsUsed int `json:"neurons_used"`
 }
@@ -1242,16 +1250,30 @@ func (s *S)studio(w http.ResponseWriter,r *http.Request){
 func (s *S)pollStudioResult(){
  j,ok:=s.loadStudioPending();if !ok{return}
  u:="https://api.github.com/repos/Djaeger1/DJAEGER-WORK/releases/tags/"+url.PathEscape(j.RenderTag)
- req,e:=http.NewRequest("GET",u,nil);if e!=nil{return};req.Header.Set("User-Agent","HERMES-WORK-Auto-Studio/1.0")
+ req,e:=http.NewRequest("GET",u,nil);if e!=nil{return};req.Header.Set("User-Agent","HERMES-WORK-Auto-Studio/3.0")
  cl:=androidHTTPClient();cl.Timeout=20*time.Second;resp,e:=cl.Do(req);if e!=nil{return};defer resp.Body.Close();if resp.StatusCode!=200{return}
  var gh struct{Assets []struct{Name string `json:"name"`;URL string `json:"browser_download_url"`} `json:"assets"`;PublishedAt string `json:"published_at"`}
  if json.NewDecoder(io.LimitReader(resp.Body,2<<20)).Decode(&gh)!=nil{return}
  video:="";thumb:="";meta:=""
- for _,a:=range gh.Assets{switch{case strings.HasSuffix(strings.ToLower(a.Name),".mp4"):video=a.URL;case strings.Contains(strings.ToLower(a.Name),"thumbnail")&&(strings.HasSuffix(strings.ToLower(a.Name),".jpg")||strings.HasSuffix(strings.ToLower(a.Name),".png")):thumb=a.URL;case strings.HasSuffix(strings.ToLower(a.Name),".json"):meta=a.URL}}
- if video==""{return}
+ for _,a:=range gh.Assets{n:=strings.ToLower(strings.TrimSpace(a.Name));switch{case n=="final.mp4":video=a.URL;case n=="thumbnail.jpg"||n=="thumbnail.png":thumb=a.URL;case n=="metadata.json":meta=a.URL}}
+ if video==""||thumb==""||meta==""{return}
+ mb,e:=downloadYouTubeAsset(meta,2<<20);if e!=nil{return}
+ var md struct{
+  QualityGate string `json:"quality_gate"`
+  RenderGeneration string `json:"render_generation"`
+  CharacterBible string `json:"character_bible"`
+  RequiredAIVideoScenes int `json:"required_ai_video_scenes"`
+  SuccessfulAIVideoScenes int `json:"successful_ai_video_scenes"`
+  FinalVectorVideoScenes int `json:"final_vector_video_scenes"`
+  PublicationInvariant string `json:"publication_invariant"`
+ }
+ if json.Unmarshal(mb,&md)!=nil{return}
+ valid:=md.QualityGate=="PASS"&&md.RenderGeneration=="DJAEGER_STUDIO_V3_AI_VIDEO"&&md.CharacterBible=="DJAEGER_WORK_KIDS_V1"&&md.PublicationInvariant=="PASS"&&md.RequiredAIVideoScenes>0&&md.SuccessfulAIVideoScenes==md.RequiredAIVideoScenes&&md.FinalVectorVideoScenes==0
+ if !valid{_ = os.WriteFile(filepath.Join(s.Root,"state","studio_provenance_error"),[]byte("PUBLICATION_BLOCKED "+j.PlannerID+"\n"),0600);return}
  done:=gh.PublishedAt;if done==""{done=time.Now().Format(time.RFC3339)}
- r:=StudioResult{State:"RENDERED",PlannerID:j.PlannerID,RenderTag:j.RenderTag,VideoURL:video,ThumbnailURL:thumb,MetadataURL:meta,CompletedAt:done,Engine:"AUTO_STUDIO_V1",AIUsed:false,NeuronsUsed:0}
+ r:=StudioResult{State:"RENDERED_VALIDATED",PlannerID:j.PlannerID,RenderTag:j.RenderTag,VideoURL:video,ThumbnailURL:thumb,MetadataURL:meta,CompletedAt:done,Engine:"AUTO_STUDIO_V3_AI_VIDEO",QualityGate:md.QualityGate,RenderGeneration:md.RenderGeneration,CharacterBible:md.CharacterBible,RequiredAIVideoScenes:md.RequiredAIVideoScenes,SuccessfulAIVideoScenes:md.SuccessfulAIVideoScenes,FinalVectorVideoScenes:md.FinalVectorVideoScenes,ProvenanceState:"PASS",AIUsed:false,NeuronsUsed:0}
  b,_:=json.MarshalIndent(r,"","  ");os.MkdirAll(filepath.Dir(s.studioResultPath(j.PlannerID)),0700);if writeSimple(s.studioResultPath(j.PlannerID),string(b)+"\n")!=nil{return}
+ _ = os.Remove(filepath.Join(s.Root,"state","studio_provenance_error"))
  plans:=s.syncPlanner();changed:=false;now:=time.Now().Format(time.RFC3339)
  for i:=range plans{if plans[i].ID==j.PlannerID{plans[i].Stage="UPLOAD_READY";plans[i].UpdatedAt=now;changed=true;break}}
  if changed{_ = s.savePlan(plans)}
