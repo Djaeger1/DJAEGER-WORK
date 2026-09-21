@@ -132,7 +132,7 @@ PY
   echo "Sending scene $n prompt to AI video provider: $AI_VIDEO_SPACE"
   if python3 hermes-auto-studio/ai_video_scene.py \
       --image "$img" --prompt "$motion_prompt" --output "$ai_clip" \
-      --seed "$((CHANNEL_SEED+n))" --duration 2.8 --space "$AI_VIDEO_SPACE" \
+      --seed "$((CHANNEL_SEED+n))" --duration 1.0 --space "$AI_VIDEO_SPACE" \
       && ffprobe -v error -show_entries stream=codec_type -of csv=p=0 "$ai_clip" | grep -q video; then
     AI_VIDEO_SCENES=$((AI_VIDEO_SCENES+1))
   else
@@ -190,6 +190,8 @@ jq '{
   hermes_ai_used:false,
   external_ai_video_used:true,
   ai_video_provider:"HUGGINGFACE_ZERO_GPU_WAN2_2_AOTI_FAST",
+  ai_video_clip_duration_sec:1.0,
+  zerogpu_quota_mode:"ANONYMOUS_ZERO_COST_TARGET_UNDER_2_MIN_PER_DAILY_VIDEO",
   neurons_used:0,
   character_bible:"DJAEGER_WORK_KIDS_V1",
   recurring_cast:["Nara","Bimo","Sasa","Pip"],
