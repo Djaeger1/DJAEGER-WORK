@@ -1187,17 +1187,20 @@ func (s *S)loadStudioResult(id string)(StudioResult,bool){
 }
 const studioRendererRepo="Djaeger1/DJAEGER-WORK"
 func (s *S)studioRenderedToday()bool{return strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_studio_render_date")))==time.Now().Format("2006-01-02")&&strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_studio_renderer_repo")))==studioRendererRepo}
-func (s *S)buildStudioJob()(StudioJob,bool){
+func (s *S)buildStudioJobForTopic(target string)(StudioJob,bool){
+ target=strings.TrimSpace(strings.ToLower(target))
  plans:=s.syncPlanner()
  scripts:=s.ensureScripts();sm:=map[string]ScriptPackage{};for _,x:=range scripts{sm[x.PlannerID]=x}
  for _,p:=range plans{
   if p.Stage!="PRODUCTION_READY"{continue}
+  if target!=""&&strings.ToLower(strings.TrimSpace(p.Title))!=target{continue}
   sp,ok:=sm[p.ID];if !ok{continue}
   j:=StudioJob{State:"WAITING_RENDER",Engine:"AUTO_STUDIO_V1",PlannerID:p.ID,Topic:p.Title,Category:p.Category,Language:sp.Language,VideoTitle:sp.VideoTitle,Description:sp.Description,DurationSec:sp.DurationSec,Scenes:sp.Scenes,Hashtags:sp.Hashtags,RenderTag:studioTag(p.ID),VisualProvider:"FREE_FIRST_AI_WITH_DETERMINISTIC_FALLBACK",VoiceProvider:"NO_CARD_TTS_WITH_LOCAL_FALLBACK",RenderProvider:"GITHUB_ACTIONS_FFMPEG",CreatedAt:time.Now().Format(time.RFC3339),AIUsed:false,NeuronsUsed:0}
   return j,true
  }
  return StudioJob{},false
 }
+func (s *S)buildStudioJob()(StudioJob,bool){return s.buildStudioJobForTopic("")}
 func (s *S)ensureStudioPending()bool{
  if _,ok:=s.loadStudioPending();ok{return true}
  if s.studioRenderedToday(){return false}
@@ -1215,7 +1218,23 @@ func (s *S)studioInfo()map[string]any{
  os.MkdirAll(filepath.Dir(s.studioPendingPath()),0700);_ = s.saveStudioPending(j)
  return map[string]any{"state":"WAITING_RENDER","engine":"AUTO_STUDIO_V1","job":j,"daily_target":1,"ai_used":false,"neurons_used":0}
 }
-func (s *S)studio(w http.ResponseWriter,r *http.Request){js(w,s.studioInfo())}
+func (s *S)studio(w http.ResponseWriter,r *http.Request){
+ if r.Method=="GET"{js(w,s.studioInfo());return}
+ if r.Method!="POST"{http.Error(w,"method not allowed",405);return}
+ if !s.auth(r)&&!trustedRemoteTunnel(r){http.Error(w,"unauthorized",401);return}
+ if !localOrTrustedRemote(r){http.Error(w,"local_or_trusted_remote_only",403);return}
+ if ok,reason:=guard(s);!ok{http.Error(w,"worker guard: "+reason,409);return}
+ var q struct{Action string `json:"action"`;Topic string `json:"topic"`}
+ if r.Body!=nil{_ = json.NewDecoder(io.LimitReader(r.Body,65536)).Decode(&q)}
+ if strings.ToLower(strings.TrimSpace(q.Action))!="next"{http.Error(w,"unsupported action",400);return}
+ if j,ok:=s.loadStudioPending();ok{
+  js(w,map[string]any{"ok":true,"state":"WAITING_RENDER","job":j,"manual":true,"existing":true});return
+ }
+ j,ok:=s.buildStudioJobForTopic(q.Topic);if !ok{http.Error(w,"requested production-ready job not found",409);return}
+ os.MkdirAll(filepath.Dir(s.studioPendingPath()),0700)
+ if e:=s.saveStudioPending(j);e!=nil{http.Error(w,"studio queue write failed",500);return}
+ js(w,map[string]any{"ok":true,"state":"WAITING_RENDER","job":j,"manual":true,"daily_override":true})
+}
 func (s *S)pollStudioResult(){
  j,ok:=s.loadStudioPending();if !ok{return}
  u:="https://api.github.com/repos/Djaeger1/DJAEGER-WORK/releases/tags/"+url.PathEscape(j.RenderTag)

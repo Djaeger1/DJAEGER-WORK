@@ -1,5 +1,5 @@
 {
-  "version": "v2.5.34-trusted-youtube-publish",
-  "description": "Trusted YouTube publish release: the authenticated outbound Railway tunnel may start an idempotent device-side YouTube upload and change privacy for a known publication without exposing the local admin token. Local callers still require the admin token; the private/local-or-trusted-remote gate remains enforced.",
+  "version": "v2.5.35-manual-studio-autopublish",
+  "description": "Manual continuation + hands-off publishing: trusted Railway may explicitly queue a named production-ready Studio job even after the normal one-per-day target is met. Automatic daily target remains unchanged. Device-side YouTube auto-publisher finalizes newly rendered uploads as unlisted only after thumbnail success.",
   "restart": false
 }
