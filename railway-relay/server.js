@@ -846,6 +846,16 @@ async function autoPublishNextRenderedVideo() {
       }
 
       if(thumb==="SUCCESS"){
+        if(st?.publish_due!==true){
+          console.log("HERMES_AUTO_PUBLISH "+JSON.stringify({
+            state:"WAITING_PUBLICATION_SCHEDULE",
+            planner_id:plannerId,video_id:videoId,
+            publish_not_before_at:String(st?.publish_not_before_at||""),
+            scheduled_publish_at:String(st?.scheduled_publish_at||""),
+            publish_delay_minutes:Number(st?.publish_delay_minutes||0)
+          }));
+          return;
+        }
         const target=String(st?.target_privacy||"unlisted").toLowerCase()==="private"?"private":"unlisted";
         if(target==="private"){
           console.log("HERMES_AUTO_PUBLISH "+JSON.stringify({state:"SUCCESS",planner_id:plannerId,video_id:videoId,topic:String(rec?.topic||""),privacy:"private",thumbnail_state:thumb}));
@@ -867,7 +877,7 @@ async function autoPublishNextRenderedVideo() {
     const plannerId=String(st?.next_planner_id||"").trim();
     if(!plannerId) return;
     if(st?.upload_due!==true){
-      console.log("HERMES_AUTO_PUBLISH "+JSON.stringify({state:"WAITING_SCHEDULE",planner_id:plannerId,scheduled_upload_at:String(st?.scheduled_upload_at||""),delay_minutes:Number(st?.upload_delay_minutes||0)}));
+      console.log("HERMES_AUTO_PUBLISH "+JSON.stringify({state:"WAITING_UPLOAD_SCHEDULE",planner_id:plannerId,upload_not_before_at:String(st?.upload_not_before_at||st?.scheduled_upload_at||""),delay_minutes:Number(st?.upload_delay_minutes||0)}));
       return;
     }
 
