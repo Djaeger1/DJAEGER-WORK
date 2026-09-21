@@ -1,5 +1,5 @@
 package main
-import("archive/zip";"bytes";"crypto/rand";"crypto/sha256";"crypto/tls";"crypto/x509";"encoding/base64";"encoding/hex";"encoding/json";"flag";"fmt";"io";"net";"net/http";"net/url";"os";"path/filepath";"sort";"strconv";"strings";"sync";"syscall";"time")
+import("archive/zip";"bytes";"crypto/rand";"crypto/sha256";"crypto/tls";"crypto/x509";"encoding/base64";"encoding/csv";"encoding/hex";"encoding/json";"flag";"fmt";"io";"net";"net/http";"net/url";"os";"path/filepath";"sort";"strconv";"strings";"sync";"syscall";"time")
 type S struct{Root,Rel string;Port int;Token string}
 func runtimeRelease(s *S)string{v:=filepath.Base(filepath.Clean(s.Rel));if v==""||v=="."||v=="/"{return"UNKNOWN"};return v}
 func readenv(p,k string)string{b,_:=os.ReadFile(p);for _,l:=range strings.Split(string(b),"\n"){x:=strings.SplitN(l,"=",2);if len(x)==2&&x[0]==k{return strings.TrimSpace(x[1])}};return ""}
@@ -1794,7 +1794,8 @@ func (s *S)channelImport(w http.ResponseWriter,r *http.Request){
  added:=0
  for _,x:=range q.Records{
   p,ok:=pm[x.PlannerID];if !ok||x.Views<0||x.RetentionPct<0||x.RetentionPct>100||x.CTRPct<0||x.CTRPct>100||x.WatchTimeMin<0{continue}
-  rec:=PerformanceRecord{PlannerID:x.PlannerID,Topic:p.Title,Category:p.Category,Views:x.Views,RetentionPct:x.RetentionPct,CTRPct:x.CTRPct,WatchTimeMin:x.WatchTimeMin,Likes:x.Likes,Comments:x.Comments,Source:"channel_import:"+strings.ToLower(strings.TrimSpace(q.Platform)),CapturedAt:x.CapturedAt}
+  ret:=x.RetentionPct;ctr:=x.CTRPct;watch:=x.WatchTimeMin
+  rec:=PerformanceRecord{PlannerID:x.PlannerID,Topic:p.Title,Category:p.Category,Views:x.Views,RetentionPct:&ret,CTRPct:&ctr,WatchTimeMin:&watch,Likes:x.Likes,Comments:x.Comments,Source:"channel_import:"+strings.ToLower(strings.TrimSpace(q.Platform)),CapturedAt:x.CapturedAt}
   if s.appendPerformance(rec)==nil{added++}
  }
  js(w,map[string]any{"ok":true,"platform":strings.ToLower(strings.TrimSpace(q.Platform)),"received":len(q.Records),"added":added,"summary":s.performanceSummary()})
@@ -1805,14 +1806,23 @@ type PerformanceRecord struct{
  Topic string `json:"topic"`
  Category string `json:"category"`
  Views int64 `json:"views"`
- RetentionPct float64 `json:"retention_pct"`
- CTRPct float64 `json:"ctr_pct"`
- WatchTimeMin float64 `json:"watch_time_min"`
+ RetentionPct *float64 `json:"retention_pct"`
+ CTRPct *float64 `json:"ctr_pct"`
+ WatchTimeMin *float64 `json:"watch_time_min"`
+ AverageViewDurationSec *float64 `json:"average_view_duration_sec"`
+ AverageViewPercentage *float64 `json:"average_view_percentage"`
+ AudienceWatchRatioAvg *float64 `json:"audience_watch_ratio_avg"`
+ RelativeRetentionAvg *float64 `json:"relative_retention_avg"`
+ ThumbnailImpressions *int64 `json:"thumbnail_impressions"`
+ AnalyticsState string `json:"analytics_state"`
  Likes int64 `json:"likes"`
  Comments int64 `json:"comments"`
  Source string `json:"source"`
  CapturedAt string `json:"captured_at"`
 }
+func floatPtr(v float64)*float64{return &v}
+func int64Ptr(v int64)*int64{return &v}
+func metricValue(p *float64)(float64,bool){if p==nil{return 0,false};return *p,true}
 func (s *S)performancePath()string{return filepath.Join(s.Root,"data","channel","performance.jsonl")}
 func (s *S)loadPerformance()[]PerformanceRecord{
  b,e:=os.ReadFile(s.performancePath());if e!=nil{return nil};out:=[]PerformanceRecord{}
@@ -1827,9 +1837,12 @@ func (s *S)appendPerformance(p PerformanceRecord)error{
  if p.CapturedAt==""{p.CapturedAt=time.Now().Format(time.RFC3339)};if p.Source==""{p.Source="manual_or_connector"}
  os.MkdirAll(filepath.Dir(s.performancePath()),0700);b,_:=json.Marshal(p);f,e:=os.OpenFile(s.performancePath(),os.O_CREATE|os.O_APPEND|os.O_WRONLY,0600);if e!=nil{return e};defer f.Close();_,e=f.Write(append(b,'\n'));return e
 }
+func perfConfidence(p PerformanceRecord)float64{
+ if p.Views<50{return 0};if p.Views<100{return .25};if p.Views<500{return .5};return 1
+}
 func perfSignal(p PerformanceRecord)string{
- if p.RetentionPct>=55{return"STRONG"}
- if p.RetentionPct>0&&p.RetentionPct<35{return"WEAK"}
+ if perfConfidence(p)==0{return"NEUTRAL"}
+ if v,ok:=metricValue(p.RetentionPct);ok{if v>=55{return"STRONG"};if v<35{return"WEAK"}}
  if p.Views>=100{
   er:=100*float64(p.Likes+p.Comments)/float64(p.Views)
   if er>=4{return"STRONG"}
@@ -1839,35 +1852,29 @@ func perfSignal(p PerformanceRecord)string{
 }
 func (s *S)performanceSummary()map[string]any{
  raw:=s.loadPerformance();latest:=latestPerformanceByPlannerFrom(raw);a:=[]PerformanceRecord{};for _,p:=range latest{a=append(a,p)}
- strong:=0;weak:=0;neutral:=0;views:=int64(0);watch:=0.0;retSum:=0.0;retN:=0;ctrSum:=0.0;ctrN:=0
+ strong:=0;weak:=0;neutral:=0;views:=int64(0);watch:=0.0;watchN:=0;retSum:=0.0;retN:=0;ctrSum:=0.0;ctrN:=0
  cats:=map[string]map[string]float64{}
  for _,p:=range a{
-  views+=p.Views;watch+=p.WatchTimeMin
-  if p.RetentionPct>0{retSum+=p.RetentionPct;retN++}
-  if p.CTRPct>0{ctrSum+=p.CTRPct;ctrN++}
+  views+=p.Views;if v,ok:=metricValue(p.WatchTimeMin);ok{watch+=v;watchN++};if v,ok:=metricValue(p.RetentionPct);ok{retSum+=v;retN++};if v,ok:=metricValue(p.CTRPct);ok{ctrSum+=v;ctrN++}
   switch perfSignal(p){case"STRONG":strong++;case"WEAK":weak++;default:neutral++}
-  if p.Category!=""{
-   z:=cats[p.Category];if z==nil{z=map[string]float64{"records":0,"retention_sum":0,"retention_n":0};cats[p.Category]=z}
-   z["records"]++
-   if p.RetentionPct>0{z["retention_sum"]+=p.RetentionPct;z["retention_n"]++}
-  }
+  if p.Category!=""{z:=cats[p.Category];if z==nil{z=map[string]float64{"records":0,"retention_sum":0,"retention_n":0};cats[p.Category]=z};z["records"]++;if v,ok:=metricValue(p.RetentionPct);ok{z["retention_sum"]+=v;z["retention_n"]++}}
  }
- avgRet:=0.0;if retN>0{avgRet=retSum/float64(retN)};avgCTR:=0.0;if ctrN>0{avgCTR=ctrSum/float64(ctrN)}
- catOut:=map[string]any{};for k,z:=range cats{ar:=0.0;if z["retention_n"]>0{ar=z["retention_sum"]/z["retention_n"]};catOut[k]=map[string]any{"records":int(z["records"]),"avg_retention_pct":ar}}
+ var avgRet any=nil;if retN>0{avgRet=retSum/float64(retN)};var avgCTR any=nil;if ctrN>0{avgCTR=ctrSum/float64(ctrN)};var watchOut any=nil;if watchN>0{watchOut=watch}
+ catOut:=map[string]any{};for k,z:=range cats{var ar any=nil;if z["retention_n"]>0{ar=z["retention_sum"]/z["retention_n"]};catOut[k]=map[string]any{"records":int(z["records"]),"avg_retention_pct":ar}}
  state:="WAITING_REAL_DATA";if len(a)>0{state="LEARNING"}
- return map[string]any{"state":state,"engine":"FEEDBACK_V1","records":len(a),"strong_signal":strong,"weak_signal":weak,"neutral_signal":neutral,"views":views,"watch_time_min":watch,"avg_retention_pct":avgRet,"avg_ctr_pct":avgCTR,"categories":catOut,"ai_used":false,"neurons_used":0}
+ return map[string]any{"state":state,"engine":"FEEDBACK_V3_CONFIDENCE","records":len(a),"strong_signal":strong,"weak_signal":weak,"neutral_signal":neutral,"views":views,"watch_time_min":watchOut,"avg_retention_pct":avgRet,"avg_ctr_pct":avgCTR,"categories":catOut,"ai_used":false,"neurons_used":0}
 }
 func (s *S)performanceAdjustment(cat string)float64{
- latest:=s.latestPerformanceByPlanner();sum:=0.0;n:=0
- for _,p:=range latest{if p.Category!=cat{continue};sig:=perfSignal(p);if sig=="NEUTRAL"{continue};n++;if sig=="STRONG"{sum+=4}else if sig=="WEAK"{sum-=3}}
- if n==0{return 0};adj:=sum/float64(n);if adj>8{adj=8};if adj < -8{adj=-8};return adj
+ latest:=s.latestPerformanceByPlanner();sum:=0.0;weights:=0.0
+ for _,p:=range latest{if p.Category!=cat{continue};sig:=perfSignal(p);if sig=="NEUTRAL"{continue};w:=perfConfidence(p);weights+=w;if sig=="STRONG"{sum+=4*w}else if sig=="WEAK"{sum-=3*w}}
+ if weights==0{return 0};adj:=sum/weights;if adj>8{adj=8};if adj < -8{adj=-8};return adj
 }
 func (s *S)performance(w http.ResponseWriter,r *http.Request){
  if r.Method=="GET"{js(w,s.performanceSummary());return}
  if r.Method!="POST"{http.Error(w,"method not allowed",405);return}
  if !s.auth(r){http.Error(w,"unauthorized",401);return}
  var p PerformanceRecord
- if json.NewDecoder(io.LimitReader(r.Body,131072)).Decode(&p)!=nil||!safePlanID(p.PlannerID)||p.Views<0||p.RetentionPct<0||p.RetentionPct>100||p.CTRPct<0||p.CTRPct>100||p.WatchTimeMin<0{http.Error(w,"invalid performance data",400);return}
+ if json.NewDecoder(io.LimitReader(r.Body,131072)).Decode(&p)!=nil||!safePlanID(p.PlannerID)||p.Views<0||(p.RetentionPct!=nil&&(*p.RetentionPct<0||*p.RetentionPct>100))||(p.CTRPct!=nil&&(*p.CTRPct<0||*p.CTRPct>100))||(p.WatchTimeMin!=nil&&*p.WatchTimeMin<0){http.Error(w,"invalid performance data",400);return}
  plans:=s.syncPlanner();found:=false
  for i:=range plans{if plans[i].ID==p.PlannerID{found=true;if p.Topic==""{p.Topic=plans[i].Title};if p.Category==""{p.Category=plans[i].Category};if plans[i].Stage!="PUBLISHED"{plans[i].Stage="PUBLISHED";plans[i].UpdatedAt=time.Now().Format(time.RFC3339)};break}}
  if !found{http.Error(w,"planner item not found",404);return}
@@ -1878,7 +1885,7 @@ func (s *S)channel(w http.ResponseWriter,r *http.Request){
  pub:=s.publicationSummary();ps:=s.performanceSummary();records,_:=ps["records"].(int)
  if records==0{js(w,map[string]any{"state":"READY_WAITING_ANALYTICS","views":"NOT_AVAILABLE","retention":"NOT_AVAILABLE","ctr":"NOT_AVAILABLE","watch_time":"NOT_AVAILABLE","best_topic":"NOT_AVAILABLE","weak_topic":"NOT_AVAILABLE","publication_state":pub["state"],"publications":pub["records"],"feedback":"READY_WAITING_REAL_DATA","connector":"CHANNEL_CONNECTOR_V1"});return}
  best:="";weak:="";bestR:=-1.0;weakR:=101.0
- for _,p:=range s.loadPerformance(){if p.RetentionPct>bestR{bestR=p.RetentionPct;best=p.Topic};if p.RetentionPct>0&&p.RetentionPct<weakR{weakR=p.RetentionPct;weak=p.Topic}}
+ for _,p:=range s.loadPerformance(){if v,ok:=metricValue(p.RetentionPct);ok{if v>bestR{bestR=v;best=p.Topic};if v<weakR{weakR=v;weak=p.Topic}}}
  js(w,map[string]any{"state":"FEEDBACK_CONNECTED","views":ps["views"],"retention":ps["avg_retention_pct"],"ctr":ps["avg_ctr_pct"],"watch_time":ps["watch_time_min"],"best_topic":best,"weak_topic":weak,"records":records,"publication_state":pub["state"],"publications":pub["records"],"engine":"CHANNEL_CONNECTOR_V1"})
 }
 func (s *S)knowledge(w http.ResponseWriter,r *http.Request){
