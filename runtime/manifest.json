@@ -1,5 +1,5 @@
 {
-  "version": "v2.5.36-autonomous-cycle-feedback",
-  "description": "Autonomous contract cycle: YouTube real-data feedback runs before daily research, Studio refuses to choose/render before today's research completes, uploads use a scheduled not-before window, and real views/likes/comments feed back into topic scoring. Auto visibility remains unlisted; public publishing is not enabled.",
+  "version": "v2.5.37-publication-invariant-scheduler-v2",
+  "description": "Strict AI-video publication provenance, separate render/upload/publish scheduling, private-upload intermediate state, device-owned UNLISTED finalization, public disabled by default, and OAuth capability probing.",
   "restart": false
 }
