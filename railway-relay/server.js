@@ -442,16 +442,13 @@ const server = http.createServer(async (req,res)=>{
       setTimeout(tryDirectSelfUpdateAuthProbe,1750);
       setTimeout(logYouTubeVideoManager,2750);
       setTimeout(repairPendingYouTubeThumbnail,4750);
-                  setTimeout(autoPublishNextRenderedVideo,8750);
+      setTimeout(autoPublishNextRenderedVideo,8750);
     }
     deviceMeta={
       release:String(meta.release||"").slice(0,80),
       device:String(meta.device||"REDMI_5A").slice(0,80),
       seen_at:new Date(deviceSeenAt).toISOString()
     };
-    if(releaseAtLeast(deviceMeta.release,2,5,34) && !thirdVideoFinalized && !thirdVideoTickBusy){
-      setTimeout(finalizeThirdYouTubeVideo,500);
-    }
     return send(res,200,{ok:true,state:"CONNECTED"});
   }
 
