@@ -915,7 +915,7 @@ async function queueNamedManualStudio() {
     let body="";
     try{body=Buffer.from(String(out?.body_b64||""),"base64").toString("utf8").slice(0,3000)}catch{}
     if(code>=200&&code<300){
-      let parsed={};try{parsed=JSON.parse(body)}catch{}
+      const parsed=decodeDeviceJson(out);
       manualStudioQueued=true;
       console.log("HERMES_MANUAL_STUDIO "+JSON.stringify({
         state:"QUEUED",
@@ -1006,6 +1006,30 @@ async function autoPublishNextRenderedVideo() {
   }
 }
 
+async function logStudioState() {
+  try {
+    if(!deviceFresh()) { console.log("HERMES_STUDIO DEVICE_LINK_STALE"); return; }
+    const r=decodeDeviceJson(await queueDeviceRead("/api/work/studio",12000));
+    console.log("HERMES_STUDIO "+JSON.stringify({
+      state:String(r?.state||""),
+      daily_target:Number(r?.daily_target||0),
+      job:r?.job?{
+        planner_id:String(r.job?.planner_id||""),
+        topic:String(r.job?.topic||""),
+        render_tag:String(r.job?.render_tag||""),
+        created_at:String(r.job?.created_at||"")
+      }:null,
+      result:r?.result?{
+        planner_id:String(r.result?.planner_id||""),
+        render_tag:String(r.result?.render_tag||""),
+        completed_at:String(r.result?.completed_at||"")
+      }:null
+    }));
+  } catch(e) {
+    console.log("HERMES_STUDIO_ERROR "+String(e?.message||e));
+  }
+}
+
 async function logLatestSnapshot() {
   try {
     const snap = safeSnapshot(await latestSnapshot());
@@ -1015,6 +1039,7 @@ async function logLatestSnapshot() {
   }
 }
 setTimeout(logLatestSnapshot, 3000);
+setTimeout(logStudioState, 15000);
 setTimeout(logDeviceRecovery, 12000);
 setTimeout(logDeviceAutoupdate, 18000);
 setTimeout(logYouTubeVideoManager, 14000);
@@ -1034,6 +1059,7 @@ setTimeout(autonomousMaintenanceTick, 3000);
 setTimeout(tryDirectSelfUpdateAuthProbe, 9000);
 setInterval(autonomousMaintenanceTick, 5*60*1000);
 setInterval(logLatestSnapshot, 60000);
+setInterval(logStudioState, 60000);
 setInterval(()=>{
   pruneQueue();
   for(const [rid,p] of pending){
