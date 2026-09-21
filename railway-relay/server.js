@@ -893,6 +893,14 @@ async function syncYouTubeFeedbackNow() {
   }
 }
 
+async function logYouTubeOAuthCapabilities() {
+  try{
+    if(!deviceFresh()){console.log("HERMES_YOUTUBE_OAUTH_CAPS DEVICE_LINK_STALE");return}
+    const r=decodeDeviceJson(await queueDeviceRead("/api/work/youtube/oauth/capabilities",12000));
+    console.log("HERMES_YOUTUBE_OAUTH_CAPS "+JSON.stringify(r));
+  }catch(e){console.log("HERMES_YOUTUBE_OAUTH_CAPS_ERROR "+String(e?.message||e))}
+}
+
 async function logYouTubeFeedback() {
   try{
     if(!deviceFresh()){console.log("HERMES_YOUTUBE_FEEDBACK DEVICE_LINK_STALE");return}
@@ -936,6 +944,7 @@ async function logLatestSnapshot() {
 setTimeout(logLatestSnapshot, 3000);
 setTimeout(logStudioState, 15000);
 setTimeout(logYouTubeFeedback, 18000);
+setTimeout(logYouTubeOAuthCapabilities, 22000);
 setTimeout(logDeviceRecovery, 12000);
 setTimeout(logDeviceAutoupdate, 18000);
 setTimeout(logYouTubeVideoManager, 14000);
@@ -953,6 +962,7 @@ setInterval(autonomousMaintenanceTick, 5*60*1000);
 setInterval(logLatestSnapshot, 60000);
 setInterval(logStudioState, 60000);
 setInterval(logYouTubeFeedback, 5*60*1000);
+setInterval(logYouTubeOAuthCapabilities, 15*60*1000);
 setInterval(()=>{
   pruneQueue();
   for(const [rid,p] of pending){
