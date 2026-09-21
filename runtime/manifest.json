@@ -1,5 +1,5 @@
 {
-  "version": "v2.5.37-publication-invariant-scheduler-v2",
-  "description": "Strict AI-video publication provenance, separate render/upload/publish scheduling, private-upload intermediate state, device-owned UNLISTED finalization, public disabled by default, and OAuth capability probing.",
+  "version": "v2.5.38-youtube-analytics-learning",
+  "description": "Production feedback V3: nullable metrics, confidence-weighted learning, YouTube Analytics retention/watch metrics, YouTube Reporting reach CTR support, strict AI-video publication invariant, and Scheduler V2 with PUBLIC disabled by default.",
   "restart": false
 }
