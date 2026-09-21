@@ -449,6 +449,9 @@ const server = http.createServer(async (req,res)=>{
       device:String(meta.device||"REDMI_5A").slice(0,80),
       seen_at:new Date(deviceSeenAt).toISOString()
     };
+    if(releaseAtLeast(deviceMeta.release,2,5,36) && !feedbackSyncAttempted){
+      setTimeout(syncYouTubeFeedbackNow,750);
+    }
     return send(res,200,{ok:true,state:"CONNECTED"});
   }
 
@@ -885,6 +888,21 @@ async function autoPublishNextRenderedVideo() {
     console.log("HERMES_AUTO_PUBLISH_ERROR "+String(e?.message||e));
   } finally {
     autoPublishBusy=false;
+  }
+}
+
+let feedbackSyncAttempted=false;
+async function syncYouTubeFeedbackNow() {
+  if(feedbackSyncAttempted||!deviceFresh()) return;
+  feedbackSyncAttempted=true;
+  try{
+    const out=await queueDevicePost("/api/work/youtube/feedback",{},45000);
+    const code=Number(out?.status||502);
+    let body="";try{body=Buffer.from(String(out?.body_b64||""),"base64").toString("utf8").slice(0,3000)}catch{}
+    console.log("HERMES_YOUTUBE_FEEDBACK_SYNC "+JSON.stringify({http:code,response:body}));
+    setTimeout(logYouTubeFeedback,1500);
+  }catch(e){
+    console.log("HERMES_YOUTUBE_FEEDBACK_SYNC_ERROR "+String(e?.message||e));
   }
 }
 
