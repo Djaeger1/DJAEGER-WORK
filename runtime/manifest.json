@@ -1,5 +1,5 @@
 {
-  "version": "v2.5.39-production-loop-hardening",
-  "description": "Hardens the autonomous contract loop: migrates placeholder analytics zeros to unavailable, confidence-weighted feedback snapshots, official Analytics/Reporting readiness, strict AI-video provenance, Scheduler V2, legacy GitHub uploader retired, and accurate observability labels.",
+  "version": "v2.5.40-snapshot-integrity",
+  "description": "Repairs DJAEGER WORK live snapshot integrity by exposing the full bridge snapshot over the trusted remote tunnel and making Railway consume that authoritative snapshot instead of the reduced status endpoint.",
   "restart": false
 }
