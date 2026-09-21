@@ -750,48 +750,36 @@ async function logYouTubeVideoManager() {
 async function repairPendingYouTubeThumbnail() {
   try {
     if(!deviceFresh()) { console.log("HERMES_YOUTUBE_THUMBNAIL_REPAIR DEVICE_LINK_STALE"); return; }
-    const r=decodeDeviceJson(await queueDeviceRead("/api/work/youtube/videos?page=1&limit=10",15000));
+    const r=decodeDeviceJson(await queueDeviceRead("/api/work/youtube/videos?page=1&limit=20",15000));
     const items=Array.isArray(r?.items)?r.items:[];
-    const target=items.find(v=>String(v?.publication_id||"")==="b5f0a42f262f");
-    if(!target){ console.log("HERMES_YOUTUBE_THUMBNAIL_REPAIR "+JSON.stringify({state:"TARGET_NOT_FOUND"})); return; }
-    if(String(target?.thumbnail_state||"").toUpperCase()==="SUCCESS"){
-      console.log("HERMES_YOUTUBE_THUMBNAIL_REPAIR "+JSON.stringify({state:"ALREADY_SUCCESS",publication_id:"b5f0a42f262f",video_id:String(target?.video_id||"")}));
+    const pendingItems=items.filter(v=>String(v?.video_id||"") && String(v?.thumbnail_state||"").toUpperCase()!=="SUCCESS");
+    if(!pendingItems.length){
+      console.log("HERMES_YOUTUBE_THUMBNAIL_REPAIR "+JSON.stringify({state:"ALL_SUCCESS",total:Number(r?.total||items.length)}));
       return;
     }
-
-    const sha256hex=v=>crypto.createHash("sha256").update(String(v||"")).digest("hex");
-    const candidates=[
-      ["LEGACY_ADMIN_TOKEN",String(process.env.HERMES_LEGACY_ADMIN_TOKEN||"")],
-      ["NTFY_TOPIC",TOPIC],
-      ["SHA256_NTFY_TOPIC",TOPIC?sha256hex(TOPIC):""],
-      ["ACCESS_PATH",ACCESS_PATH],
-      ["SHA256_ACCESS_PATH",ACCESS_PATH?sha256hex(ACCESS_PATH):""],
-      ["REMOTE_CLIENT_KEY",remoteClientKey()]
-    ];
-    const seen=new Set();
-    const attempts=[];
-    for(const [label,token] of candidates){
-      if(!token||seen.has(token)) continue;
-      seen.add(token);
-      const upstream=await queueDevicePostWithToken("/api/work/youtube/thumbnail",token,{publication_id:"b5f0a42f262f"},60000);
-      const code=Number(upstream?.status||502);
-      attempts.push({candidate:label,http:code});
-      if(code===401||code===403) continue;
-      let body="";
-      try{body=Buffer.from(String(upstream?.body_b64||""),"base64").toString("utf8").slice(0,1000)}catch{}
-      console.log("HERMES_YOUTUBE_THUMBNAIL_REPAIR "+JSON.stringify({
-        state:code>=200&&code<300?"SUCCESS":"AUTH_ACCEPTED_ACTION_FAILED",
-        publication_id:"b5f0a42f262f",
-        video_id:String(target?.video_id||""),
-        candidate:label,
-        http:code,
-        response:body,
-        attempts
-      }));
-      setTimeout(logYouTubeVideoManager,1500);
-      return;
+    const results=[];
+    for(const target of pendingItems.slice(0,5)){
+      const publicationId=String(target?.publication_id||"").slice(0,120);
+      const videoId=String(target?.video_id||"").slice(0,32);
+      if(!publicationId) continue;
+      try{
+        const upstream=await queueDevicePost("/api/work/youtube/thumbnail",{publication_id:publicationId},60000);
+        const code=Number(upstream?.status||502);
+        let body="";
+        try{body=Buffer.from(String(upstream?.body_b64||""),"base64").toString("utf8").slice(0,1000)}catch{}
+        results.push({publication_id:publicationId,video_id:videoId,http:code,response:body});
+      }catch(e){
+        results.push({publication_id:publicationId,video_id:videoId,error:String(e?.message||e)});
+      }
     }
-    console.log("HERMES_YOUTUBE_THUMBNAIL_REPAIR "+JSON.stringify({state:"ALL_BOUNDED_CANDIDATES_REJECTED",publication_id:"b5f0a42f262f",attempts}));
+    const success=results.filter(v=>v.http>=200&&v.http<300).length;
+    console.log("HERMES_YOUTUBE_THUMBNAIL_REPAIR "+JSON.stringify({
+      state:success===results.length?"SUCCESS":(success>0?"PARTIAL":"NO_CHANGE"),
+      attempted:results.length,
+      success,
+      results
+    }));
+    setTimeout(logYouTubeVideoManager,1500);
   } catch(e) {
     console.log("HERMES_YOUTUBE_THUMBNAIL_REPAIR_ERROR "+String(e?.message||e));
   }
