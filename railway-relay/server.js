@@ -449,6 +449,9 @@ const server = http.createServer(async (req,res)=>{
       device:String(meta.device||"REDMI_5A").slice(0,80),
       seen_at:new Date(deviceSeenAt).toISOString()
     };
+    if(releaseAtLeast(deviceMeta.release,2,5,34) && !thirdVideoFinalized && !thirdVideoPublishInFlight){
+      setTimeout(finalizeThirdYouTubeVideo,500);
+    }
     return send(res,200,{ok:true,state:"CONNECTED"});
   }
 
