@@ -29,8 +29,8 @@ if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
   old_quality="$(jq -r '.quality_gate // "LEGACY_UNVERIFIED"' "$oldmeta" 2>/dev/null || echo LEGACY_UNVERIFIED)"
   old_bible="$(jq -r '.character_bible // ""' "$oldmeta" 2>/dev/null || true)"
   old_generation="$(jq -r '.render_generation // ""' "$oldmeta" 2>/dev/null || true)"
-  if [ "$old_quality" = "PASS" ] && [ "$old_bible" = "DJAEGER_WORK_KIDS_V1" ] && [ "$old_generation" = "DJAEGER_STUDIO_V2_VECTOR" ]; then
-    echo "Current Character Bible vector release already exists for $tag."
+  if [ "$old_quality" = "PASS" ] && [ "$old_bible" = "DJAEGER_WORK_KIDS_V1" ] && [ "$old_generation" = "DJAEGER_STUDIO_V3_AI_VIDEO" ]; then
+    echo "Current Character Bible AI-video release already exists for $tag."
     exit 0
   fi
   REBUILD_EXISTING=1
@@ -40,7 +40,10 @@ fi
 echo "Installing zero-card render tools..."
 sudo apt-get update -qq
 sudo apt-get install -y -qq ffmpeg jq imagemagick espeak-ng fonts-dejavu-core
-python3 -m pip install --quiet --disable-pip-version-check --break-system-packages edge-tts || echo "edge-tts unavailable; espeak-ng fallback will be used"
+python3 -m pip install --quiet --disable-pip-version-check --break-system-packages edge-tts "gradio_client>=1.6,<2" pillow || {
+  echo "Required AI-video client dependencies unavailable."
+  exit 1
+}
 
 rm -rf studio
 mkdir -p studio/scenes
@@ -50,7 +53,7 @@ LANG_CODE="$(jq -r '.job.language // "id"' studio/feed.json)"
 TITLE="$(jq -r '.job.video_title // .job.topic // "HERMES WORK"' studio/feed.json)"
 CHARACTER_BIBLE="${CHARACTER_BIBLE:-hermes-auto-studio/character-bible.json}"
 CHANNEL_SEED="${CHANNEL_SEED:-314159}"
-USE_EXTERNAL_AI="${USE_EXTERNAL_AI:-0}"
+AI_VIDEO_SPACE="${AI_VIDEO_SPACE:-multimodalart/wan2-1-fast}"
 if [ ! -s "$CHARACTER_BIBLE" ]; then
   echo "Character Bible missing: $CHARACTER_BIBLE"
   exit 1
@@ -75,9 +78,9 @@ if command -v edge-tts >/dev/null 2>&1; then
 fi
 
 : > studio/concat.txt
-AI_SCENES=0
-VECTOR_SCENES=0
-BASIC_SCENES=0
+AI_VIDEO_SCENES=0
+VECTOR_KEYFRAMES=0
+BASIC_KEYFRAMES=0
 for idx in $(seq 0 $((COUNT-1))); do
   n=$((idx+1))
   scene="$(jq -c ".job.scenes[$idx]" studio/feed.json)"
@@ -89,34 +92,20 @@ for idx in $(seq 0 $((COUNT-1))); do
   scene_dur="$(printf '%s' "$scene" | jq -r '.duration_sec // 7')"
   [ "$scene_dur" -ge 3 ] 2>/dev/null || scene_dur=7
 
-  enc="$(python3 - "$prompt" <<'PY'
-import sys, urllib.parse
-print(urllib.parse.quote(sys.argv[1], safe=''))
-PY
-)"
   img="studio/scenes/scene_$(printf '%02d' "$n").jpg"
   svg="studio/scenes/scene_$(printf '%02d' "$n").svg"
-  img_url="https://image.pollinations.ai/prompt/$enc?width=1280&height=720&nologo=true&seed=$((CHANNEL_SEED+n))"
 
-  GOT_AI=0
-  if [ "$USE_EXTERNAL_AI" = "1" ]; then
-    if curl -fsSL --retry 1 --retry-delay 1 --max-time 12 "$img_url" -o "$img" && identify "$img" >/dev/null 2>&1; then
-      GOT_AI=1
-      AI_SCENES=$((AI_SCENES+1))
-    fi
-  fi
-  if [ "$GOT_AI" != "1" ]; then
-    rm -f "$img"
-    echo "Rendering Character Bible vector scene $n."
-    if python3 hermes-auto-studio/vector_scene.py --bible "$CHARACTER_BIBLE" --scene "$scene" --topic "$TITLE" --cast "$cast" --number "$n" --output "$svg" \
-      && convert -background none "$svg" -quality 92 "$img" \
-      && identify "$img" >/dev/null 2>&1; then
-      VECTOR_SCENES=$((VECTOR_SCENES+1))
-    else
-      BASIC_SCENES=$((BASIC_SCENES+1))
-      convert -size 1280x720 "gradient:#23395d-#101820" -gravity center -fill white -font DejaVu-Sans-Bold -pointsize 58 \
-        -annotate +0-40 "DJAEGER WORK KIDS" -pointsize 34 -annotate +0+55 "$onscreen" "$img"
-    fi
+  # Character Bible is the identity anchor. We deliberately render the keyframe
+  # deterministically first, then the external AI video model animates that exact cast.
+  echo "Preparing Character Bible keyframe $n."
+  if python3 hermes-auto-studio/vector_scene.py --bible "$CHARACTER_BIBLE" --scene "$scene" --topic "$TITLE" --cast "$cast" --number "$n" --output "$svg" \
+    && convert -background none "$svg" -quality 92 "$img" \
+    && identify "$img" >/dev/null 2>&1; then
+    VECTOR_KEYFRAMES=$((VECTOR_KEYFRAMES+1))
+  else
+    BASIC_KEYFRAMES=$((BASIC_KEYFRAMES+1))
+    convert -size 1280x720 "gradient:#23395d-#101820" -gravity center -fill white -font DejaVu-Sans-Bold -pointsize 58 \
+      -annotate +0-40 "DJAEGER WORK KIDS" -pointsize 34 -annotate +0+55 "$onscreen" "$img"
   fi
 
   audio="studio/scenes/scene_$(printf '%02d' "$n").mp3"
@@ -138,8 +127,23 @@ print(f"{max(a,b,3.0):.2f}")
 PY
 )"
 
+  ai_clip="studio/scenes/ai_$(printf '%02d' "$n").mp4"
+  motion_prompt="$prompt. Animate this exact Character Bible keyframe with natural preschool-friendly motion. Keep every character's face, hair, clothing, colors, proportions and accessories unchanged. Smooth gentle motion, stable camera, no morphing, no added characters, no text generation."
+  echo "Sending scene $n prompt to AI video provider: $AI_VIDEO_SPACE"
+  if python3 hermes-auto-studio/ai_video_scene.py \
+      --image "$img" --prompt "$motion_prompt" --output "$ai_clip" \
+      --seed "$((CHANNEL_SEED+n))" --duration 2.8 --space "$AI_VIDEO_SPACE" \
+      && ffprobe -v error -show_entries stream=codec_type -of csv=p=0 "$ai_clip" | grep -q video; then
+    AI_VIDEO_SCENES=$((AI_VIDEO_SCENES+1))
+  else
+    echo "AI_VIDEO_REQUIRED: scene $n failed. Vector-only publication is forbidden."
+    exit 1
+  fi
+
   seg="studio/scenes/seg_$(printf '%02d' "$n").mp4"
-  ffmpeg -y -loglevel error -loop 1 -i "$img" -i "$audio" -t "$dur"     -vf "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,zoompan=z='min(zoom+0.0007,1.08)':d=1:s=1280x720:fps=30,format=yuv420p"     -c:v libx264 -preset veryfast -crf 22 -c:a aac -b:a 128k -af "apad" "$seg"
+  ffmpeg -y -loglevel error -stream_loop -1 -i "$ai_clip" -i "$audio" -t "$dur" \
+    -vf "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,fps=30,format=yuv420p" \
+    -c:v libx264 -preset veryfast -crf 22 -c:a aac -b:a 128k -af "apad" "$seg"
   echo "file 'scenes/$(basename "$seg")'" >> studio/concat.txt
 done
 
@@ -164,7 +168,10 @@ if [ "$bytes" -lt 200000 ]; then
 fi
 
 QUALITY_GATE="PASS"
-[ "$BASIC_SCENES" -eq 0 ] || QUALITY_GATE="FAIL_BASIC_FALLBACK"
+if [ "$AI_VIDEO_SCENES" -ne "$COUNT" ]; then
+  echo "AI video quality gate failed: $AI_VIDEO_SCENES/$COUNT scenes"
+  exit 1
+fi
 jq '{
   state:"RENDERED",
   engine:"AUTO_STUDIO_V2",
@@ -174,19 +181,24 @@ jq '{
   description:.job.description,
   hashtags:.job.hashtags,
   render_tag:.job.render_tag,
-  visual_provider:"CHARACTER_BIBLE_VECTOR_V1",
-  render_generation:"DJAEGER_STUDIO_V2_VECTOR",
+  visual_provider:"CHARACTER_BIBLE_KEYFRAME_TO_WAN_I2V",
+  render_generation:"DJAEGER_STUDIO_V3_AI_VIDEO",
   voice_provider:"EDGE_TTS_OR_ESPEAK_FALLBACK",
   render_provider:"GITHUB_ACTIONS_FFMPEG",
   target_duration_sec:(.job.duration_sec // 0),
   card_required:false,
   hermes_ai_used:false,
+  external_ai_video_used:true,
+  ai_video_provider:"HUGGINGFACE_ZERO_GPU_WAN2_1_FAST",
   neurons_used:0,
   character_bible:"DJAEGER_WORK_KIDS_V1",
   recurring_cast:["Nara","Bimo","Sasa","Pip"],
   repository:"Djaeger1/DJAEGER-WORK"
 }' studio/feed.json > studio/metadata.json
-jq --arg actual "$ACTUAL_DURATION" --arg quality "$QUALITY_GATE"    --argjson ai "$AI_SCENES" --argjson vector "$VECTOR_SCENES" --argjson basic "$BASIC_SCENES"    '. + {actual_duration_sec:($actual|tonumber),quality_gate:$quality,visual_stats:{ai_scenes:$ai,character_bible_vector_scenes:$vector,basic_fallback_scenes:$basic}}'    studio/metadata.json > studio/metadata.json.tmp
+jq --arg actual "$ACTUAL_DURATION" --arg quality "$QUALITY_GATE" --arg space "$AI_VIDEO_SPACE" \
+   --argjson ai_video "$AI_VIDEO_SCENES" --argjson vector_keys "$VECTOR_KEYFRAMES" --argjson basic_keys "$BASIC_KEYFRAMES" \
+   '. + {actual_duration_sec:($actual|tonumber),quality_gate:$quality,ai_video_space:$space,visual_stats:{ai_video_scenes:$ai_video,character_bible_vector_keyframes:$vector_keys,basic_keyframes:$basic_keys}}' \
+   studio/metadata.json > studio/metadata.json.tmp
 mv studio/metadata.json.tmp studio/metadata.json
 
 echo "Rendered: $TITLE"
@@ -194,8 +206,8 @@ cat studio/probe.json
 
 if [ "$REBUILD_EXISTING" = "1" ]; then
   gh release upload "$tag" studio/final.mp4 studio/thumbnail.jpg studio/metadata.json studio/probe.json --repo "$GITHUB_REPOSITORY" --clobber
-  gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --title "HERMES Auto Studio $id"     --notes "Re-rendered by HERMES AUTO STUDIO V2 with Character Bible V1 and quality gate. No paid API; 0 HERMES Neurons."
+  gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --title "HERMES Auto Studio $id"     --notes "Re-rendered by HERMES AUTO STUDIO V3 AI VIDEO with Character Bible V1 and AI-video-required quality gate. Public ZeroGPU provider, no paid API, 0 HERMES Neurons."
 else
-  gh release create "$tag" studio/final.mp4 studio/thumbnail.jpg studio/metadata.json studio/probe.json     --repo "$GITHUB_REPOSITORY" --title "HERMES Auto Studio $id"     --notes "Auto-rendered by HERMES AUTO STUDIO V2 with Character Bible V1 and quality gate. No paid API; 0 HERMES Neurons."
+  gh release create "$tag" studio/final.mp4 studio/thumbnail.jpg studio/metadata.json studio/probe.json     --repo "$GITHUB_REPOSITORY" --title "HERMES Auto Studio $id"     --notes "Auto-rendered by HERMES AUTO STUDIO V3 AI VIDEO with Character Bible V1 and AI-video-required quality gate. Public ZeroGPU provider, no paid API, 0 HERMES Neurons."
 fi
-echo "QUALITY_GATE=$QUALITY_GATE AI_SCENES=$AI_SCENES VECTOR_SCENES=$VECTOR_SCENES BASIC_SCENES=$BASIC_SCENES"
+echo "QUALITY_GATE=$QUALITY_GATE AI_VIDEO_SCENES=$AI_VIDEO_SCENES VECTOR_KEYFRAMES=$VECTOR_KEYFRAMES BASIC_KEYFRAMES=$BASIC_KEYFRAMES"
