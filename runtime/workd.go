@@ -1371,32 +1371,38 @@ func (s *S)writeYouTubePublishState(v map[string]any){
 func (s *S)youtubeUploadDelay()time.Duration{
  n,_:=strconv.Atoi(strings.TrimSpace(readenv(filepath.Join(s.Rel,"config","work.env"),"YOUTUBE_UPLOAD_DELAY_MINUTES")));if n<0{n=0};if n>180{n=180};if n==0{n=5};return time.Duration(n)*time.Minute
 }
+func (s *S)youtubePublishDelay()time.Duration{
+ n,_:=strconv.Atoi(strings.TrimSpace(readenv(filepath.Join(s.Rel,"config","work.env"),"YOUTUBE_PUBLISH_DELAY_MINUTES")));if n<1{n=10};if n>1440{n=1440};return time.Duration(n)*time.Minute
+}
+func (s *S)youtubePublicAllowed()bool{return strings.TrimSpace(readenv(filepath.Join(s.Rel,"config","work.env"),"YOUTUBE_ALLOW_PUBLIC"))=="1"}
+func (s *S)youtubeSchedule(sr StudioResult)(renderAt,uploadAt,publishAt time.Time){
+ renderAt,e:=time.Parse(time.RFC3339,sr.CompletedAt);if e!=nil{renderAt=time.Now()};uploadAt=renderAt.Add(s.youtubeUploadDelay());publishAt=uploadAt.Add(s.youtubePublishDelay());return
+}
 func (s *S)youtubeTargetPrivacy()string{
  p:=strings.ToLower(strings.TrimSpace(readenv(filepath.Join(s.Rel,"config","work.env"),"YOUTUBE_AUTO_PRIVACY")));if p!="private"&&p!="unlisted"{p="unlisted"};return p
 }
 func (s *S)youtubePublishStatus()map[string]any{
- v:=map[string]any{"state":"IDLE","privacy":"private","engine":"YOUTUBE_DEVICE_PUBLISHER_V4_SCHEDULED","ai_used":false,"neurons_used":0}
+ v:=map[string]any{"state":"IDLE","privacy":"private","engine":"YOUTUBE_SCHEDULER_V2","ai_used":false,"neurons_used":0}
  if b,e:=os.ReadFile(s.youtubePublishStatePath());e==nil{_ = json.Unmarshal(b,&v)}
- nextID:="";nextTopic:="";scheduled:="";due:=false
+ nextID:="";nextTopic:="";renderReady:="";uploadAt:="";publishAt:="";uploadDue:=false
  for _,p:=range s.loadPlan(){
-  if p.Stage!="UPLOAD_READY"{continue}
-  nextID=p.ID;nextTopic=p.Title
-  if sr,ok:=s.loadStudioResult(p.ID);ok{
-   if t,e:=time.Parse(time.RFC3339,sr.CompletedAt);e==nil{at:=t.Add(s.youtubeUploadDelay());scheduled=at.Format(time.RFC3339);due=!time.Now().Before(at)}else{due=true}
-  }else{due=true}
+  if p.Stage!="UPLOAD_READY"{continue};nextID=p.ID;nextTopic=p.Title
+  if sr,ok:=s.loadStudioResult(p.ID);ok{rAt,uAt,pAt:=s.youtubeSchedule(sr);renderReady=rAt.Format(time.RFC3339);uploadAt=uAt.Format(time.RFC3339);publishAt=pAt.Format(time.RFC3339);uploadDue=!time.Now().Before(uAt)}
   break
  }
  _,oauth:=s.loadYouTubeOAuth();v["oauth_configured"]=oauth;v["next_planner_id"]=nextID;v["next_topic"]=nextTopic
- v["scheduled_upload_at"]=scheduled;v["upload_due"]=due;v["target_privacy"]=s.youtubeTargetPrivacy();v["upload_delay_minutes"]=int(s.youtubeUploadDelay()/time.Minute)
- youtubePublishMu.Lock();v["busy"]=youtubePublishBusy;youtubePublishMu.Unlock()
- return v
+ v["render_ready_at"]=renderReady;v["upload_not_before_at"]=uploadAt;v["scheduled_upload_at"]=uploadAt;v["upload_due"]=uploadDue
+ v["publish_not_before_at"]=publishAt;v["scheduled_publish_at"]=publishAt;v["target_privacy"]=s.youtubeTargetPrivacy()
+ v["upload_delay_minutes"]=int(s.youtubeUploadDelay()/time.Minute);v["publish_delay_minutes"]=int(s.youtubePublishDelay()/time.Minute);v["public_allowed"]=s.youtubePublicAllowed()
+ youtubePublishMu.Lock();v["busy"]=youtubePublishBusy;youtubePublishMu.Unlock();return v
 }
 func (s *S)youtubeCandidate(id string)(PlanItem,StudioResult,ScriptPackage,error){
  plans:=s.syncPlanner();var p PlanItem;found:=false
  for _,x:=range plans{if (id==""&&x.Stage=="UPLOAD_READY")||(id!=""&&x.ID==id&&x.Stage=="UPLOAD_READY"){p=x;found=true;break}}
  if !found{return p,StudioResult{},ScriptPackage{},fmt.Errorf("no upload-ready video")}
  sr,ok:=s.loadStudioResult(p.ID);if !ok||strings.TrimSpace(sr.VideoURL)==""{return p,sr,ScriptPackage{},fmt.Errorf("rendered video not found")}
- if !youtubeAssetAllowed(sr.VideoURL){return p,sr,ScriptPackage{},fmt.Errorf("rendered video url rejected")}
+ if sr.State!="RENDERED_VALIDATED"||sr.ProvenanceState!="PASS"||sr.QualityGate!="PASS"||sr.RenderGeneration!="DJAEGER_STUDIO_V3_AI_VIDEO"||sr.CharacterBible!="DJAEGER_WORK_KIDS_V1"||sr.RequiredAIVideoScenes<=0||sr.SuccessfulAIVideoScenes!=sr.RequiredAIVideoScenes||sr.FinalVectorVideoScenes!=0{return p,sr,ScriptPackage{},fmt.Errorf("PUBLICATION_BLOCKED: AI-video provenance invariant failed")}
+ if !youtubeAssetAllowed(sr.VideoURL)||!youtubeAssetAllowed(sr.ThumbnailURL){return p,sr,ScriptPackage{},fmt.Errorf("PUBLICATION_BLOCKED: validated assets missing or rejected")}
  var sp ScriptPackage
  if b,e:=os.ReadFile(filepath.Join(s.scriptDir(),p.ID+".json"));e!=nil||json.Unmarshal(b,&sp)!=nil{return p,sr,sp,fmt.Errorf("script metadata not found")}
  return p,sr,sp,nil
@@ -1542,6 +1548,12 @@ type YouTubeVideoRecord struct {
  Status string `json:"status"`
  ThumbnailState string `json:"thumbnail_state"`
  ThumbnailError string `json:"thumbnail_error,omitempty"`
+ RenderReadyAt string `json:"render_ready_at,omitempty"`
+ UploadNotBeforeAt string `json:"upload_not_before_at,omitempty"`
+ UploadedAt string `json:"uploaded_at,omitempty"`
+ PublishNotBeforeAt string `json:"publish_not_before_at,omitempty"`
+ ScheduledPublishAt string `json:"scheduled_publish_at,omitempty"`
+ PublishedAt string `json:"published_at,omitempty"`
  CreatedAt string `json:"created_at"`
  UpdatedAt string `json:"updated_at"`
 }
