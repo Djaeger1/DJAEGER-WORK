@@ -28,8 +28,9 @@ if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
   fi
   old_quality="$(jq -r '.quality_gate // "LEGACY_UNVERIFIED"' "$oldmeta" 2>/dev/null || echo LEGACY_UNVERIFIED)"
   old_bible="$(jq -r '.character_bible // ""' "$oldmeta" 2>/dev/null || true)"
-  if [ "$old_quality" = "PASS" ] && [ "$old_bible" = "DJAEGER_WORK_KIDS_V1" ]; then
-    echo "Quality-gated Character Bible release already exists for $tag."
+  old_generation="$(jq -r '.render_generation // ""' "$oldmeta" 2>/dev/null || true)"
+  if [ "$old_quality" = "PASS" ] && [ "$old_bible" = "DJAEGER_WORK_KIDS_V1" ] && [ "$old_generation" = "DJAEGER_STUDIO_V2_VECTOR" ]; then
+    echo "Current Character Bible vector release already exists for $tag."
     exit 0
   fi
   REBUILD_EXISTING=1
@@ -49,6 +50,7 @@ LANG_CODE="$(jq -r '.job.language // "id"' studio/feed.json)"
 TITLE="$(jq -r '.job.video_title // .job.topic // "HERMES WORK"' studio/feed.json)"
 CHARACTER_BIBLE="${CHARACTER_BIBLE:-hermes-auto-studio/character-bible.json}"
 CHANNEL_SEED="${CHANNEL_SEED:-314159}"
+USE_EXTERNAL_AI="${USE_EXTERNAL_AI:-0}"
 if [ ! -s "$CHARACTER_BIBLE" ]; then
   echo "Character Bible missing: $CHARACTER_BIBLE"
   exit 1
@@ -96,16 +98,24 @@ PY
   svg="studio/scenes/scene_$(printf '%02d' "$n").svg"
   img_url="https://image.pollinations.ai/prompt/$enc?width=1280&height=720&nologo=true&seed=$((CHANNEL_SEED+n))"
 
-  if curl -fsSL --retry 1 --retry-delay 1 --max-time 12 "$img_url" -o "$img" && identify "$img" >/dev/null 2>&1; then
-    AI_SCENES=$((AI_SCENES+1))
-  else
+  GOT_AI=0
+  if [ "$USE_EXTERNAL_AI" = "1" ]; then
+    if curl -fsSL --retry 1 --retry-delay 1 --max-time 12 "$img_url" -o "$img" && identify "$img" >/dev/null 2>&1; then
+      GOT_AI=1
+      AI_SCENES=$((AI_SCENES+1))
+    fi
+  fi
+  if [ "$GOT_AI" != "1" ]; then
     rm -f "$img"
-    echo "External AI image unavailable for scene $n; using Character Bible vector renderer."
-    if python3 hermes-auto-studio/vector_scene.py       --bible "$CHARACTER_BIBLE" --scene "$scene" --topic "$TITLE" --cast "$cast" --number "$n" --output "$svg"       && convert -background none "$svg" -quality 92 "$img"       && identify "$img" >/dev/null 2>&1; then
+    echo "Rendering Character Bible vector scene $n."
+    if python3 hermes-auto-studio/vector_scene.py --bible "$CHARACTER_BIBLE" --scene "$scene" --topic "$TITLE" --cast "$cast" --number "$n" --output "$svg" \
+      && convert -background none "$svg" -quality 92 "$img" \
+      && identify "$img" >/dev/null 2>&1; then
       VECTOR_SCENES=$((VECTOR_SCENES+1))
     else
       BASIC_SCENES=$((BASIC_SCENES+1))
-      convert -size 1280x720 "gradient:#23395d-#101820" -gravity center -fill white -font DejaVu-Sans-Bold -pointsize 58         -annotate +0-40 "DJAEGER WORK KIDS" -pointsize 34 -annotate +0+55 "$onscreen" "$img"
+      convert -size 1280x720 "gradient:#23395d-#101820" -gravity center -fill white -font DejaVu-Sans-Bold -pointsize 58 \
+        -annotate +0-40 "DJAEGER WORK KIDS" -pointsize 34 -annotate +0+55 "$onscreen" "$img"
     fi
   fi
 
@@ -164,7 +174,8 @@ jq '{
   description:.job.description,
   hashtags:.job.hashtags,
   render_tag:.job.render_tag,
-  visual_provider:"POLLINATIONS_OR_CHARACTER_BIBLE_VECTOR_V1",
+  visual_provider:"CHARACTER_BIBLE_VECTOR_V1",
+  render_generation:"DJAEGER_STUDIO_V2_VECTOR",
   voice_provider:"EDGE_TTS_OR_ESPEAK_FALLBACK",
   render_provider:"GITHUB_ACTIONS_FFMPEG",
   target_duration_sec:(.job.duration_sec // 0),
