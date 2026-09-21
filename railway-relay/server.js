@@ -746,6 +746,56 @@ async function logYouTubeVideoManager() {
   }
 }
 
+async function repairPendingYouTubeThumbnail() {
+  try {
+    if(!deviceFresh()) { console.log("HERMES_YOUTUBE_THUMBNAIL_REPAIR DEVICE_LINK_STALE"); return; }
+    const r=decodeDeviceJson(await queueDeviceRead("/api/work/youtube/videos?page=1&limit=10",15000));
+    const items=Array.isArray(r?.items)?r.items:[];
+    const target=items.find(v=>String(v?.publication_id||"")==="b5f0a42f262f");
+    if(!target){ console.log("HERMES_YOUTUBE_THUMBNAIL_REPAIR "+JSON.stringify({state:"TARGET_NOT_FOUND"})); return; }
+    if(String(target?.thumbnail_state||"").toUpperCase()==="SUCCESS"){
+      console.log("HERMES_YOUTUBE_THUMBNAIL_REPAIR "+JSON.stringify({state:"ALREADY_SUCCESS",publication_id:"b5f0a42f262f",video_id:String(target?.video_id||"")}));
+      return;
+    }
+
+    const sha256hex=v=>crypto.createHash("sha256").update(String(v||"")).digest("hex");
+    const candidates=[
+      ["LEGACY_ADMIN_TOKEN",String(process.env.HERMES_LEGACY_ADMIN_TOKEN||"")],
+      ["NTFY_TOPIC",TOPIC],
+      ["SHA256_NTFY_TOPIC",TOPIC?sha256hex(TOPIC):""],
+      ["ACCESS_PATH",ACCESS_PATH],
+      ["SHA256_ACCESS_PATH",ACCESS_PATH?sha256hex(ACCESS_PATH):""],
+      ["REMOTE_CLIENT_KEY",remoteClientKey()]
+    ];
+    const seen=new Set();
+    const attempts=[];
+    for(const [label,token] of candidates){
+      if(!token||seen.has(token)) continue;
+      seen.add(token);
+      const upstream=await queueDevicePostWithToken("/api/work/youtube/thumbnail",token,{publication_id:"b5f0a42f262f"},60000);
+      const code=Number(upstream?.status||502);
+      attempts.push({candidate:label,http:code});
+      if(code===401||code===403) continue;
+      let body="";
+      try{body=Buffer.from(String(upstream?.body_b64||""),"base64").toString("utf8").slice(0,1000)}catch{}
+      console.log("HERMES_YOUTUBE_THUMBNAIL_REPAIR "+JSON.stringify({
+        state:code>=200&&code<300?"SUCCESS":"AUTH_ACCEPTED_ACTION_FAILED",
+        publication_id:"b5f0a42f262f",
+        video_id:String(target?.video_id||""),
+        candidate:label,
+        http:code,
+        response:body,
+        attempts
+      }));
+      setTimeout(logYouTubeVideoManager,1500);
+      return;
+    }
+    console.log("HERMES_YOUTUBE_THUMBNAIL_REPAIR "+JSON.stringify({state:"ALL_BOUNDED_CANDIDATES_REJECTED",publication_id:"b5f0a42f262f",attempts}));
+  } catch(e) {
+    console.log("HERMES_YOUTUBE_THUMBNAIL_REPAIR_ERROR "+String(e?.message||e));
+  }
+}
+
 async function logLatestSnapshot() {
   try {
     const snap = safeSnapshot(await latestSnapshot());
@@ -758,6 +808,7 @@ setTimeout(logLatestSnapshot, 3000);
 setTimeout(logDeviceRecovery, 12000);
 setTimeout(logDeviceAutoupdate, 18000);
 setTimeout(logYouTubeVideoManager, 14000);
+setTimeout(repairPendingYouTubeThumbnail, 20000);
 setTimeout(logDeviceAutoupdate, 45000);
 setTimeout(logDeviceMemoryAudit, 5000);
 setInterval(logDeviceRecovery, 5*60*1000);
