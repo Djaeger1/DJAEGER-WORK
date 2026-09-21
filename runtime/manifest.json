@@ -1,5 +1,5 @@
 {
-  "version": "v2.5.31-youtube-trusted-remote-auth",
-  "description": "YouTube thumbnail remote-auth repair: trusted outbound Railway tunnel may retry per-video thumbnails without exposing the local admin token; direct local/API callers still require the admin token and the existing local-or-trusted-remote gate remains enforced.",
+  "version": "v2.5.32-character-bible-auto-studio",
+  "description": "Auto Studio continuity release: scheduler autonomously queues the next production-ready job and the renderer enforces DJAEGER Work Kids Character Bible V1 with deterministic channel styling and recurring cast consistency.",
   "restart": false
 }

@@ -34,6 +34,15 @@ cp "$FEED" studio/feed.json
 
 LANG_CODE="$(jq -r '.job.language // "id"' studio/feed.json)"
 TITLE="$(jq -r '.job.video_title // .job.topic // "HERMES WORK"' studio/feed.json)"
+CHARACTER_BIBLE="${CHARACTER_BIBLE:-hermes-auto-studio/character-bible.json}"
+CHANNEL_SEED="${CHANNEL_SEED:-314159}"
+if [ ! -s "$CHARACTER_BIBLE" ]; then
+  echo "Character Bible missing: $CHARACTER_BIBLE"
+  exit 1
+fi
+STYLE_PROMPT="$(jq -r '.style.prompt' "$CHARACTER_BIBLE")"
+CHARACTER_ANCHORS="$(jq -r '[.characters[] | (.name + ": " + .visual_anchor)] | join(". ")' "$CHARACTER_BIBLE")"
+
 COUNT="$(jq '.job.scenes | length' studio/feed.json)"
 if [ "$COUNT" -lt 1 ]; then
   echo "No scenes in job"
@@ -55,6 +64,8 @@ for idx in $(seq 0 $((COUNT-1))); do
   n=$((idx+1))
   scene="$(jq -c ".job.scenes[$idx]" studio/feed.json)"
   prompt="$(printf '%s' "$scene" | jq -r '.visual_prompt // .purpose // "friendly preschool educational illustration"')"
+  cast="$(jq -r --arg n "$n" '.scene_cast[$n] // ["Nara","Pip"] | join(", ")' "$CHARACTER_BIBLE")"
+  prompt="$STYLE_PROMPT. Character Bible: $CHARACTER_ANCHORS. Scene cast: $cast. Only use the named recurring cast for this scene; preserve their exact face, hair, clothes, colors, proportions, and accessories. $prompt"
   voice="$(printf '%s' "$scene" | jq -r '.voice_over // ""')"
   onscreen="$(printf '%s' "$scene" | jq -r '.on_screen_text // ""')"
   scene_dur="$(printf '%s' "$scene" | jq -r '.duration_sec // 7')"
@@ -66,7 +77,7 @@ print(urllib.parse.quote(sys.argv[1], safe=''))
 PY
 )"
   img="studio/scenes/scene_$(printf '%02d' "$n").jpg"
-  img_url="https://image.pollinations.ai/prompt/$enc?width=1280&height=720&nologo=true&seed=$((1000+n))"
+  img_url="https://image.pollinations.ai/prompt/$enc?width=1280&height=720&nologo=true&seed=$((CHANNEL_SEED+n))"
 
   if ! curl -fL --max-time 25 "$img_url" -o "$img"; then
     echo "AI image unavailable for scene $n; using deterministic fallback."
@@ -137,6 +148,8 @@ jq '{
   card_required:false,
   hermes_ai_used:false,
   neurons_used:0,
+  character_bible:"DJAEGER_WORK_KIDS_V1",
+  recurring_cast:["Nara","Bimo","Sasa","Pip"],
   repository:"Djaeger1/DJAEGER-WORK"
 }' studio/feed.json > studio/metadata.json
 jq --arg actual "$ACTUAL_DURATION" '. + {actual_duration_sec:($actual|tonumber)}' studio/metadata.json > studio/metadata.json.tmp

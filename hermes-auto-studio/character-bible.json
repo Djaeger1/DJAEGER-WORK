@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "channel_identity": "DJAEGER Work Kids",
+  "style": {
+    "prompt": "premium clean 2D preschool animation, soft cinematic lighting, rounded shapes, expressive friendly faces, polished educational cartoon, consistent proportions, warm cheerful palette, uncluttered background, no logos, no watermarks",
+    "rules": [
+      "Keep the same face, hairstyle, clothing colors, body proportions, and accessories for every recurring character.",
+      "Never redesign a recurring character between scenes or episodes.",
+      "Use large readable learning objects and simple child-safe compositions.",
+      "Do not imitate copyrighted characters."
+    ]
+  },
+  "characters": [
+    {
+      "name": "Nara",
+      "role": "main",
+      "visual_anchor": "7-year-old child with warm tan skin, short wavy black hair with one small curl over the left forehead, large dark-brown eyes, teal zip hoodie over a cream shirt, mustard-yellow shorts, red sneakers, small star hair clip"
+    },
+    {
+      "name": "Bimo",
+      "role": "support",
+      "visual_anchor": "7-year-old child with medium tan skin, straight black bowl-cut hair, round dark-brown glasses, orange overshirt over a sky-blue T-shirt, navy shorts, white sneakers"
+    },
+    {
+      "name": "Sasa",
+      "role": "support",
+      "visual_anchor": "7-year-old child with warm brown skin, black hair in two low pigtails tied with purple bands, violet overalls over a pale-yellow shirt, mint-green shoes, tiny crescent hair pin"
+    },
+    {
+      "name": "Pip",
+      "role": "mascot",
+      "visual_anchor": "small round turquoise bird mascot with a yellow belly, tiny orange beak, two feather tufts on top, oversized friendly dark eyes, short wings, simple rounded silhouette"
+    }
+  ],
+  "scene_cast": {
+    "1": ["Nara", "Pip"],
+    "2": ["Nara", "Pip"],
+    "3": ["Nara", "Bimo", "Pip"],
+    "4": ["Nara", "Sasa", "Pip"],
+    "5": ["Nara", "Bimo", "Sasa", "Pip"],
+    "6": ["Nara", "Bimo", "Sasa", "Pip"]
+  }
+}

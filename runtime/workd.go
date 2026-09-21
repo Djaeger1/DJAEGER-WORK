@@ -561,6 +561,7 @@ func (s *S)schedulerLoop(){
  for{
    ok,reason:=guard(s)
    if ok{
+     s.ensureStudioPending()
      studioTick++;if studioTick>=5{s.pollStudioResult();s.pollPublicationResult();studioTick=0}
    }else{
      studioTick=0
@@ -1184,6 +1185,13 @@ func (s *S)buildStudioJob()(StudioJob,bool){
   return j,true
  }
  return StudioJob{},false
+}
+func (s *S)ensureStudioPending()bool{
+ if _,ok:=s.loadStudioPending();ok{return true}
+ if s.studioRenderedToday(){return false}
+ j,ok:=s.buildStudioJob();if !ok{return false}
+ os.MkdirAll(filepath.Dir(s.studioPendingPath()),0700)
+ return s.saveStudioPending(j)==nil
 }
 func (s *S)studioInfo()map[string]any{
  if j,ok:=s.loadStudioPending();ok{
