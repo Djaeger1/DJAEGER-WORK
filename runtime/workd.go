@@ -1417,7 +1417,7 @@ func (s *S)runYouTubePrivateUpload(p PlanItem,sr StudioResult,sp ScriptPackage){
 func (s *S)youtubePublish(w http.ResponseWriter,r *http.Request){
  if r.Method=="GET"{js(w,s.youtubePublishStatus());return}
  if r.Method!="POST"{http.Error(w,"method not allowed",405);return}
- if !s.auth(r){http.Error(w,"unauthorized",401);return}
+ if !s.auth(r)&&!trustedRemoteTunnel(r){http.Error(w,"unauthorized",401);return}
  if !localOrTrustedRemote(r){http.Error(w,"local_or_trusted_remote_only",403);return}
  if ok,reason:=guard(s);!ok{http.Error(w,"worker guard: "+reason,409);return}
  var q struct{PlannerID string `json:"planner_id"`;Privacy string `json:"privacy"`}
@@ -1437,7 +1437,7 @@ func (s *S)youtubePublish(w http.ResponseWriter,r *http.Request){
 
 func (s *S)youtubePrivacy(w http.ResponseWriter,r *http.Request){
  if r.Method!="POST"{http.Error(w,"method not allowed",405);return}
- if !s.auth(r){http.Error(w,"unauthorized",401);return}
+ if !s.auth(r)&&!trustedRemoteTunnel(r){http.Error(w,"unauthorized",401);return}
  if !localOrTrustedRemote(r){http.Error(w,"local_or_trusted_remote_only",403);return}
  var q struct{PublicationID string `json:"publication_id"`;Privacy string `json:"privacy"`}
  if json.NewDecoder(io.LimitReader(r.Body,65536)).Decode(&q)!=nil{http.Error(w,"invalid json",400);return}

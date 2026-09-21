@@ -442,6 +442,7 @@ const server = http.createServer(async (req,res)=>{
       setTimeout(tryDirectSelfUpdateAuthProbe,1750);
       setTimeout(logYouTubeVideoManager,2750);
       setTimeout(repairPendingYouTubeThumbnail,4750);
+      setTimeout(finalizeThirdYouTubeVideo,6750);
     }
     deviceMeta={
       release:String(meta.release||"").slice(0,80),
@@ -804,6 +805,89 @@ async function repairPendingYouTubeThumbnail() {
   }
 }
 
+const THIRD_VIDEO_PLANNER_ID="44b5f4fe1051";
+let thirdVideoFinalized=false;
+let thirdVideoPublishInFlight=false;
+
+async function finalizeThirdYouTubeVideo() {
+  if(thirdVideoFinalized||thirdVideoPublishInFlight) return;
+  try {
+    if(!deviceFresh()) { console.log("HERMES_THIRD_VIDEO DEVICE_LINK_STALE"); return; }
+
+    const status=decodeDeviceJson(await queueDeviceRead("/api/work/status",12000));
+    const release=String(status?.release||"");
+    if(!releaseAtLeast(release,2,5,34)) {
+      console.log("HERMES_THIRD_VIDEO "+JSON.stringify({state:"WAITING_RUNTIME",release,want:"v2.5.34+"}));
+      return;
+    }
+
+    const videos=decodeDeviceJson(await queueDeviceRead("/api/work/youtube/videos?page=1&limit=20",15000));
+    const items=Array.isArray(videos?.items)?videos.items:[];
+    let rec=items.find(v=>String(v?.publication_id||v?.planner_id||"")===THIRD_VIDEO_PLANNER_ID);
+
+    if(!rec){
+      const ps=decodeDeviceJson(await queueDeviceRead("/api/work/youtube/publish",12000));
+      if(ps?.oauth_configured!==true){
+        console.log("HERMES_THIRD_VIDEO "+JSON.stringify({state:"WAITING_DEVICE_OAUTH",planner_id:THIRD_VIDEO_PLANNER_ID}));
+        return;
+      }
+      thirdVideoPublishInFlight=true;
+      try{
+        const up=await queueDevicePost("/api/work/youtube/publish",{planner_id:THIRD_VIDEO_PLANNER_ID,privacy:"private"},20000);
+        const code=Number(up?.status||502);
+        let body="";
+        try{body=Buffer.from(String(up?.body_b64||""),"base64").toString("utf8").slice(0,1200)}catch{}
+        console.log("HERMES_THIRD_VIDEO "+JSON.stringify({state:code>=200&&code<300?"UPLOAD_ACCEPTED":"UPLOAD_REJECTED",planner_id:THIRD_VIDEO_PLANNER_ID,http:code,response:body}));
+      } finally {
+        thirdVideoPublishInFlight=false;
+      }
+      setTimeout(finalizeThirdYouTubeVideo,45000);
+      return;
+    }
+
+    const publicationId=String(rec?.publication_id||THIRD_VIDEO_PLANNER_ID);
+    const videoId=String(rec?.video_id||"");
+    let thumb=String(rec?.thumbnail_state||"").toUpperCase();
+    if(videoId && thumb!=="SUCCESS"){
+      const tr=await queueDevicePost("/api/work/youtube/thumbnail",{publication_id:publicationId},60000);
+      console.log("HERMES_THIRD_VIDEO "+JSON.stringify({state:"THUMBNAIL_REPAIR",publication_id:publicationId,video_id:videoId,http:Number(tr?.status||502)}));
+      const v2=decodeDeviceJson(await queueDeviceRead("/api/work/youtube/videos?page=1&limit=20",15000));
+      const rr=(Array.isArray(v2?.items)?v2.items:[]).find(v=>String(v?.publication_id||v?.planner_id||"")===publicationId);
+      if(rr) rec=rr;
+      thumb=String(rec?.thumbnail_state||"").toUpperCase();
+    }
+
+    const privacy=String(rec?.privacy||"").toLowerCase();
+    if(videoId && privacy!=="unlisted"){
+      const pr=await queueDevicePost("/api/work/youtube/privacy",{publication_id:publicationId,privacy:"unlisted"},60000);
+      const code=Number(pr?.status||502);
+      let body="";
+      try{body=Buffer.from(String(pr?.body_b64||""),"base64").toString("utf8").slice(0,1000)}catch{}
+      console.log("HERMES_THIRD_VIDEO "+JSON.stringify({state:code>=200&&code<300?"PRIVACY_UNLISTED":"PRIVACY_UPDATE_FAILED",publication_id:publicationId,video_id:videoId,http:code,response:body}));
+      if(code<200||code>=300) return;
+    }
+
+    const verify=decodeDeviceJson(await queueDeviceRead("/api/work/youtube/videos?page=1&limit=20",15000));
+    const vr=(Array.isArray(verify?.items)?verify.items:[]).find(v=>String(v?.publication_id||v?.planner_id||"")===publicationId);
+    if(vr && String(vr?.video_id||"") && String(vr?.privacy||"").toLowerCase()==="unlisted" && String(vr?.thumbnail_state||"").toUpperCase()==="SUCCESS"){
+      thirdVideoFinalized=true;
+      console.log("HERMES_THIRD_VIDEO "+JSON.stringify({
+        state:"SUCCESS",
+        publication_id:publicationId,
+        video_id:String(vr?.video_id||""),
+        topic:String(vr?.topic||""),
+        privacy:String(vr?.privacy||""),
+        thumbnail_state:String(vr?.thumbnail_state||"")
+      }));
+    } else {
+      console.log("HERMES_THIRD_VIDEO "+JSON.stringify({state:"VERIFY_PENDING",publication_id:publicationId,video_id:String(vr?.video_id||""),privacy:String(vr?.privacy||""),thumbnail_state:String(vr?.thumbnail_state||"")}));
+    }
+  } catch(e) {
+    thirdVideoPublishInFlight=false;
+    console.log("HERMES_THIRD_VIDEO_ERROR "+String(e?.message||e));
+  }
+}
+
 async function logLatestSnapshot() {
   try {
     const snap = safeSnapshot(await latestSnapshot());
@@ -817,11 +901,13 @@ setTimeout(logDeviceRecovery, 12000);
 setTimeout(logDeviceAutoupdate, 18000);
 setTimeout(logYouTubeVideoManager, 14000);
 setTimeout(repairPendingYouTubeThumbnail, 20000);
+setTimeout(finalizeThirdYouTubeVideo, 30000);
 setTimeout(logDeviceAutoupdate, 45000);
 setTimeout(logDeviceMemoryAudit, 5000);
 setInterval(logDeviceRecovery, 5*60*1000);
 setInterval(logDeviceAutoupdate, 5*60*1000);
 setInterval(logDeviceMemoryAudit, 5*60*1000);
+setInterval(finalizeThirdYouTubeVideo, 2*60*1000);
 setTimeout(autonomousMaintenanceTick, 3000);
 setTimeout(tryDirectSelfUpdateAuthProbe, 9000);
 setInterval(autonomousMaintenanceTick, 5*60*1000);

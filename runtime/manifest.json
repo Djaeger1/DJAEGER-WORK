@@ -1,5 +1,5 @@
 {
-  "version": "v2.5.33-trusted-normal-update",
-  "description": "Trusted normal update release: authenticated outbound Railway tunnel may install pinned SHA256-verified normal releases immediately when the device is healthy, while emergency quarantine remains protected. Auto-update fallback interval reduced to five minutes. Includes Character Bible V1 and autonomous Studio queue from v2.5.32.",
+  "version": "v2.5.34-trusted-youtube-publish",
+  "description": "Trusted YouTube publish release: the authenticated outbound Railway tunnel may start an idempotent device-side YouTube upload and change privacy for a known publication without exposing the local admin token. Local callers still require the admin token; the private/local-or-trusted-remote gate remains enforced.",
   "restart": false
 }
