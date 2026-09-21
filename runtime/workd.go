@@ -1664,34 +1664,71 @@ func youtubeVideoStats(token,videoID string)(YouTubeDataStat,error){
  if json.Unmarshal(b,&x)!=nil||len(x.Items)==0{return out,fmt.Errorf("youtube statistics missing")}
  st:=x.Items[0].Statistics;out.Views=youtubeInt64(st.ViewCount);out.Likes=youtubeInt64(st.LikeCount);out.Comments=youtubeInt64(st.CommentCount);return out,nil
 }
+type YouTubeAnalyticsStat struct{
+ WatchTimeMin *float64
+ AverageViewDurationSec *float64
+ AverageViewPercentage *float64
+ AudienceWatchRatioAvg *float64
+ RelativeRetentionAvg *float64
+ State string
+}
+type YouTubeReachStat struct{CTRPct *float64;Impressions *int64}
+func analyticsFloat(v any)(float64,bool){switch x:=v.(type){case float64:return x,true;case json.Number:f,e:=x.Float64();return f,e==nil;case string:f,e:=strconv.ParseFloat(strings.TrimSpace(x),64);return f,e==nil};return 0,false}
+func youtubeAnalyticsRows(token string,q url.Values)([]string,[][]any,error){
+ req,e:=http.NewRequest("GET","https://youtubeanalytics.googleapis.com/v2/reports?"+q.Encode(),nil);if e!=nil{return nil,nil,e};req.Header.Set("Authorization","Bearer "+token)
+ cl:=androidHTTPClient();cl.Timeout=45*time.Second;resp,e:=cl.Do(req);if e!=nil{return nil,nil,e};defer resp.Body.Close()
+ b,_:=io.ReadAll(io.LimitReader(resp.Body,2<<20));if resp.StatusCode<200||resp.StatusCode>=300{return nil,nil,fmt.Errorf("youtube analytics: %s",youtubeAPIError(b,resp.StatusCode))}
+ var x struct{ColumnHeaders []struct{Name string `json:"name"`} `json:"columnHeaders"`;Rows [][]any `json:"rows"`};if json.Unmarshal(b,&x)!=nil{return nil,nil,fmt.Errorf("youtube analytics response invalid")}
+ names:=[]string{};for _,h:=range x.ColumnHeaders{names=append(names,h.Name)};return names,x.Rows,nil
+}
+func analyticsFirstRow(names []string,rows [][]any)map[string]float64{out:=map[string]float64{};if len(rows)==0{return out};for i,n:=range names{if i>=len(rows[0]){continue};if v,ok:=analyticsFloat(rows[0][i]);ok{out[n]=v}};return out}
+func analyticsColumnAverages(names []string,rows [][]any)map[string]float64{sum:=map[string]float64{};n:=map[string]int{};for _,row:=range rows{for i,name:=range names{if i>=len(row){continue};if v,ok:=analyticsFloat(row[i]);ok{sum[name]+=v;n[name]++}}};out:=map[string]float64{};for k,v:=range sum{if n[k]>0{out[k]=v/float64(n[k])}};return out}
+func youtubeAnalyticsDateRange(v YouTubeVideoRecord)(string,string,bool){
+ raw:=v.PublishedAt;if raw==""{raw=v.UploadedAt};if raw==""{raw=v.CreatedAt};t,e:=time.Parse(time.RFC3339,raw);if e!=nil{t=time.Now().AddDate(0,0,-30)}
+ end:=time.Now().AddDate(0,0,-1);start:=t;if start.Before(end.AddDate(0,0,-90)){start=end.AddDate(0,0,-90)};if start.After(end){return"","",false};return start.Format("2006-01-02"),end.Format("2006-01-02"),true
+}
+func youtubeAnalyticsForVideo(token string,v YouTubeVideoRecord)YouTubeAnalyticsStat{
+ out:=YouTubeAnalyticsStat{State:"DATA_PENDING"};start,end,ok:=youtubeAnalyticsDateRange(v);if !ok{return out}
+ q:=url.Values{};q.Set("ids","channel==MINE");q.Set("startDate",start);q.Set("endDate",end);q.Set("metrics","estimatedMinutesWatched,averageViewDuration,averageViewPercentage");q.Set("filters","video=="+v.VideoID)
+ names,rows,e:=youtubeAnalyticsRows(token,q);if e!=nil{out.State="ANALYTICS_ERROR";return out};m:=analyticsFirstRow(names,rows);if len(m)>0{if x,ok:=m["estimatedMinutesWatched"];ok{out.WatchTimeMin=floatPtr(x)};if x,ok:=m["averageViewDuration"];ok{out.AverageViewDurationSec=floatPtr(x)};if x,ok:=m["averageViewPercentage"];ok{out.AverageViewPercentage=floatPtr(x)}}
+ rq:=url.Values{};rq.Set("ids","channel==MINE");rq.Set("startDate",start);rq.Set("endDate",end);rq.Set("dimensions","elapsedVideoTimeRatio");rq.Set("metrics","audienceWatchRatio,relativeRetentionPerformance");rq.Set("filters","video=="+v.VideoID);rq.Set("sort","elapsedVideoTimeRatio");rq.Set("maxResults","200")
+ rn,rr,re:=youtubeAnalyticsRows(token,rq);if re==nil&&len(rr)>0{a:=analyticsColumnAverages(rn,rr);if x,ok:=a["audienceWatchRatio"];ok{out.AudienceWatchRatioAvg=floatPtr(x)};if x,ok:=a["relativeRetentionPerformance"];ok{out.RelativeRetentionAvg=floatPtr(x)}}
+ if out.AverageViewPercentage!=nil||out.AverageViewDurationSec!=nil||out.WatchTimeMin!=nil||out.AudienceWatchRatioAvg!=nil{out.State="READY"};return out
+}
+func (s *S)youtubeReachJobPath()string{return filepath.Join(s.Root,"state","youtube_reporting_reach_job")}
+func youtubeReportingJobs(token string)([]struct{ID,ReportTypeID,Name string},error){
+ req,e:=http.NewRequest("GET","https://youtubereporting.googleapis.com/v1/jobs?pageSize=100",nil);if e!=nil{return nil,e};req.Header.Set("Authorization","Bearer "+token);cl:=androidHTTPClient();cl.Timeout=30*time.Second;resp,e:=cl.Do(req);if e!=nil{return nil,e};defer resp.Body.Close();b,_:=io.ReadAll(io.LimitReader(resp.Body,1<<20));if resp.StatusCode<200||resp.StatusCode>=300{return nil,fmt.Errorf("reporting jobs: %s",youtubeAPIError(b,resp.StatusCode))}
+ var x struct{Jobs []struct{ID string `json:"id"`;ReportTypeID string `json:"reportTypeId"`;Name string `json:"name"`} `json:"jobs"`};if json.Unmarshal(b,&x)!=nil{return nil,fmt.Errorf("reporting jobs response invalid")};out:=make([]struct{ID,ReportTypeID,Name string},0,len(x.Jobs));for _,j:=range x.Jobs{out=append(out,struct{ID,ReportTypeID,Name string}{j.ID,j.ReportTypeID,j.Name})};return out,nil
+}
+func (s *S)ensureYouTubeReachJob(token string)(string,error){
+ if id:=strings.TrimSpace(readfile(s.youtubeReachJobPath()));id!=""{return id,nil};jobs,e:=youtubeReportingJobs(token);if e==nil{for _,j:=range jobs{if j.ReportTypeID=="channel_reach_basic_a1"&&j.ID!=""{_ = os.MkdirAll(filepath.Dir(s.youtubeReachJobPath()),0700);_ = os.WriteFile(s.youtubeReachJobPath(),[]byte(j.ID+"\n"),0600);return j.ID,nil}}}
+ body:=`{"reportTypeId":"channel_reach_basic_a1","name":"DJAEGER Work Reach CTR"}`;req,e:=http.NewRequest("POST","https://youtubereporting.googleapis.com/v1/jobs",strings.NewReader(body));if e!=nil{return"",e};req.Header.Set("Authorization","Bearer "+token);req.Header.Set("Content-Type","application/json")
+ cl:=androidHTTPClient();cl.Timeout=30*time.Second;resp,e:=cl.Do(req);if e!=nil{return"",e};defer resp.Body.Close();b,_:=io.ReadAll(io.LimitReader(resp.Body,524288));if resp.StatusCode<200||resp.StatusCode>=300{return"",fmt.Errorf("reporting job create: %s",youtubeAPIError(b,resp.StatusCode))};var x struct{ID string `json:"id"`};if json.Unmarshal(b,&x)!=nil||x.ID==""{return"",fmt.Errorf("reporting job id missing")};_ = os.MkdirAll(filepath.Dir(s.youtubeReachJobPath()),0700);_ = os.WriteFile(s.youtubeReachJobPath(),[]byte(x.ID+"\n"),0600);return x.ID,nil
+}
+func youtubeReachLatest(token,jobID string)(map[string]YouTubeReachStat,string,error){
+ u:="https://youtubereporting.googleapis.com/v1/jobs/"+url.PathEscape(jobID)+"/reports?pageSize=20";req,e:=http.NewRequest("GET",u,nil);if e!=nil{return nil,"",e};req.Header.Set("Authorization","Bearer "+token);cl:=androidHTTPClient();cl.Timeout=30*time.Second;resp,e:=cl.Do(req);if e!=nil{return nil,"",e};defer resp.Body.Close();b,_:=io.ReadAll(io.LimitReader(resp.Body,1<<20));if resp.StatusCode<200||resp.StatusCode>=300{return nil,"",fmt.Errorf("reporting reports: %s",youtubeAPIError(b,resp.StatusCode))}
+ var x struct{Reports []struct{ID string `json:"id"`;EndTime string `json:"endTime"`;CreateTime string `json:"createTime"`;DownloadURL string `json:"downloadUrl"`} `json:"reports"`};if json.Unmarshal(b,&x)!=nil{return nil,"",fmt.Errorf("report list invalid")};if len(x.Reports)==0{return map[string]YouTubeReachStat{},"REPORT_PENDING",nil};best:=x.Reports[0];for _,r:=range x.Reports[1:]{if r.EndTime>best.EndTime||(r.EndTime==best.EndTime&&r.CreateTime>best.CreateTime){best=r}};if best.DownloadURL==""{return map[string]YouTubeReachStat{},"REPORT_PENDING",nil}
+ dr,e:=http.NewRequest("GET",best.DownloadURL,nil);if e!=nil{return nil,"",e};dr.Header.Set("Authorization","Bearer "+token);dc:=androidHTTPClient();dc.Timeout=60*time.Second;rr,e:=dc.Do(dr);if e!=nil{return nil,"",e};defer rr.Body.Close();raw,e:=io.ReadAll(io.LimitReader(rr.Body,20<<20));if e!=nil{return nil,"",e};if rr.StatusCode<200||rr.StatusCode>=300{return nil,"",fmt.Errorf("reach report download http %d",rr.StatusCode)}
+ cr:=csv.NewReader(strings.NewReader(string(raw)));rows,e:=cr.ReadAll();if e!=nil||len(rows)<2{return map[string]YouTubeReachStat{},"REPORT_PENDING",nil};idx:=map[string]int{};for i,h:=range rows[0]{idx[strings.TrimSpace(h)]=i};vi,iok:=idx["video_id"];ii,imok:=idx["video_thumbnail_impressions"];ci,cok:=idx["video_thumbnail_impressions_ctr"];if !iok||!imok||!cok{return nil,"",fmt.Errorf("reach report columns missing")}
+ type agg struct{imp int64;weighted float64};am:=map[string]agg{};for _,row:=range rows[1:]{if vi>=len(row)||ii>=len(row)||ci>=len(row){continue};vid:=strings.TrimSpace(row[vi]);if vid==""{continue};imp,_:=strconv.ParseInt(strings.TrimSpace(row[ii]),10,64);ctr,_:=strconv.ParseFloat(strings.TrimSpace(row[ci]),64);a:=am[vid];a.imp+=imp;a.weighted+=float64(imp)*ctr;am[vid]=a};out:=map[string]YouTubeReachStat{};for vid,a:=range am{var ctr *float64;if a.imp>0{x:=a.weighted/float64(a.imp);ctr=&x};im:=a.imp;out[vid]=YouTubeReachStat{CTRPct:ctr,Impressions:&im}};return out,"READY",nil
+}
 func (s *S)youtubeFeedbackMarkerPath()string{return filepath.Join(s.Root,"state","last_youtube_feedback_date")}
 func (s *S)youtubeFeedbackLastSyncPath()string{return filepath.Join(s.Root,"state","last_youtube_feedback_sync")}
 func (s *S)youtubeFeedbackDoneToday()bool{return strings.TrimSpace(readfile(s.youtubeFeedbackMarkerPath()))==time.Now().Format("2006-01-02")}
 func (s *S)youtubeFeedbackInfo()map[string]any{
- ps:=s.performanceSummary();return map[string]any{
-  "state":ps["state"],"engine":"YOUTUBE_DATA_FEEDBACK_V2","last_sync":strings.TrimSpace(readfile(s.youtubeFeedbackLastSyncPath())),
-  "today_complete":s.youtubeFeedbackDoneToday(),"records":ps["records"],"fields":[]string{"views","likes","comments"},
-  "retention":"REQUIRES_YOUTUBE_ANALYTICS_SCOPE","ctr":"REQUIRES_YOUTUBE_ANALYTICS_SCOPE","ai_used":false,"neurons_used":0,
- }
-}
-func (s *S)syncYouTubePerformance()(map[string]any,error){
- c,ok:=s.loadYouTubeOAuth();if !ok{return nil,fmt.Errorf("youtube oauth not configured")}
- token,_,e:=youtubeAccessToken(c);if e!=nil{return nil,e}
- plans:=s.syncPlanner();pm:=map[string]PlanItem{};for _,p:=range plans{pm[p.ID]=p}
- latest:=s.latestPerformanceByPlanner()
- added:=0;checked:=0;errs:=0;now:=time.Now().Format(time.RFC3339)
+ ps:=s.performanceSummary();caps:=s.youtubeOAuthCapabilities();consent,_:=caps["analytics_consent_required"].(bool);ret:="DATA_PENDING";ctr:="DATA_PENDING";if consent{ret="CONSENT_REQUIRED";ctr="CONSENT_REQUIRED"}else{for _,p:=range s.latestPerformanceByPlanner(){if p.RetentionPct!=nil{ret="AVAILABLE"};if p.CTRPct!=nil{ctr="AVAILABLE"}}}
+ return map[string]any{"state":ps["state"],"engine":"YOUTUBE_FEEDBACK_V3_ANALYTICS_READY","func (s *S)syncYouTubePerformance()(map[string]any,error){
+ c,ok:=s.loadYouTubeOAuth();if !ok{return nil,fmt.Errorf("youtube oauth not configured")};token,_,e:=youtubeAccessToken(c);if e!=nil{return nil,e};caps,_:=youtubeOAuthCapabilitiesFromToken(token);hasAnalytics:=false;if x,ok:=caps["yt_analytics_readonly"].(bool);ok{hasAnalytics=x}
+ reach:=map[string]YouTubeReachStat{};reachState:="CONSENT_REQUIRED";if hasAnalytics{reachState="REPORT_PENDING";if job,e:=s.ensureYouTubeReachJob(token);e==nil{if rm,st,re:=youtubeReachLatest(token,job);re==nil{reach=rm;reachState=st}else{reachState="REPORTING_ERROR"}}else{reachState="REPORTING_ERROR"}}
+ plans:=s.syncPlanner();pm:=map[string]PlanItem{};for _,p:=range plans{pm[p.ID]=p};latest:=s.latestPerformanceByPlanner();added:=0;checked:=0;errs:=0;now:=time.Now().Format(time.RFC3339)
  for _,v:=range s.loadYouTubeVideoRegistry(){
-  if strings.TrimSpace(v.VideoID)==""{continue};p,ok:=pm[v.PlannerID];if !ok{continue};checked++
-  st,e:=youtubeVideoStats(token,v.VideoID);if e!=nil{errs++;continue}
-  if old,ok:=latest[v.PlannerID];ok&&strings.HasPrefix(old.CapturedAt,time.Now().Format("2006-01-02")){continue}
-  rec:=PerformanceRecord{PlannerID:v.PlannerID,Topic:p.Title,Category:p.Category,Views:st.Views,Likes:st.Likes,Comments:st.Comments,Source:"youtube_data_api_v2",CapturedAt:now}
+  if strings.TrimSpace(v.VideoID)==""{continue};p,ok:=pm[v.PlannerID];if !ok{continue};checked++;st,e:=youtubeVideoStats(token,v.VideoID);if e!=nil{errs++;continue};if old,ok:=latest[v.PlannerID];ok&&strings.HasPrefix(old.CapturedAt,time.Now().Format("2006-01-02")){continue}
+  rec:=PerformanceRecord{PlannerID:v.PlannerID,Topic:p.Title,Category:p.Category,Views:st.Views,Likes:st.Likes,Comments:st.Comments,Source:"youtube_data_api_v3",CapturedAt:now,AnalyticsState:"CONSENT_REQUIRED"}
+  if hasAnalytics{a:=youtubeAnalyticsForVideo(token,v);rec.AnalyticsState=a.State;rec.WatchTimeMin=a.WatchTimeMin;rec.AverageViewDurationSec=a.AverageViewDurationSec;rec.AverageViewPercentage=a.AverageViewPercentage;rec.RetentionPct=a.AverageViewPercentage;rec.AudienceWatchRatioAvg=a.AudienceWatchRatioAvg;rec.RelativeRetentionAvg=a.RelativeRetentionAvg;rec.Source="youtube_data_api_v3+analytics";if rs,ok:=reach[v.VideoID];ok{rec.CTRPct=rs.CTRPct;rec.ThumbnailImpressions=rs.Impressions;if rec.AnalyticsState=="READY"&&reachState=="READY"{rec.AnalyticsState="READY_WITH_REACH"}}}
   if s.appendPerformance(rec)==nil{added++}
  }
- if checked>0&&errs==checked{return nil,fmt.Errorf("youtube feedback failed for all videos")}
- _ = os.MkdirAll(filepath.Dir(s.youtubeFeedbackMarkerPath()),0700)
- _ = os.WriteFile(s.youtubeFeedbackMarkerPath(),[]byte(time.Now().Format("2006-01-02")+"\n"),0600)
- _ = os.WriteFile(s.youtubeFeedbackLastSyncPath(),[]byte(now+"\n"),0600)
- return map[string]any{"ok":true,"state":"SYNCED","checked":checked,"added":added,"errors":errs,"summary":s.performanceSummary()},nil
+ if checked>0&&errs==checked{return nil,fmt.Errorf("youtube feedback failed for all videos")};_ = os.MkdirAll(filepath.Dir(s.youtubeFeedbackMarkerPath()),0700);_ = os.WriteFile(s.youtubeFeedbackMarkerPath(),[]byte(time.Now().Format("2006-01-02")+"\n"),0600);_ = os.WriteFile(s.youtubeFeedbackLastSyncPath(),[]byte(now+"\n"),0600)
+ return map[string]any{"ok":true,"state":"SYNCED","checked":checked,"added":added,"errors":errs,"analytics_scope":hasAnalytics,"reach_state":reachState,"summary":s.performanceSummary()},nil
 }
 func (s *S)youtubeFeedback(w http.ResponseWriter,r *http.Request){
  if r.Method=="GET"{js(w,s.youtubeFeedbackInfo());return}
