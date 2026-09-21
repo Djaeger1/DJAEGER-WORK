@@ -1,5 +1,5 @@
 {
-  "version": "v2.5.30-youtube-trusted-remote-actions",
-  "description": "YouTube Video Manager V3 remote-action gate fix: authenticated relay tunnel can perform per-video privacy, thumbnail retry, publisher, and OAuth actions while preserving token checks and stable per-video identity.",
+  "version": "v2.5.31-youtube-trusted-remote-auth",
+  "description": "YouTube thumbnail remote-auth repair: trusted outbound Railway tunnel may retry per-video thumbnails without exposing the local admin token; direct local/API callers still require the admin token and the existing local-or-trusted-remote gate remains enforced.",
   "restart": false
 }

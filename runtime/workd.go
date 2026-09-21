@@ -1435,7 +1435,7 @@ func (s *S)youtubePrivacy(w http.ResponseWriter,r *http.Request){
 
 func (s *S)youtubeThumbnail(w http.ResponseWriter,r *http.Request){
  if r.Method!="POST"{http.Error(w,"method not allowed",405);return}
- if !s.auth(r){http.Error(w,"unauthorized",401);return}
+ if !s.auth(r)&&!trustedRemoteTunnel(r){http.Error(w,"unauthorized",401);return}
  if !localOrTrustedRemote(r){http.Error(w,"local_or_trusted_remote_only",403);return}
  var q struct{PublicationID string `json:"publication_id"`}
  if json.NewDecoder(io.LimitReader(r.Body,65536)).Decode(&q)!=nil{http.Error(w,"invalid json",400);return}
