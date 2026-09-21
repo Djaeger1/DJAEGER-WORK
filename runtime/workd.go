@@ -576,7 +576,7 @@ func (s *S)schedulerLoop(){
      if s.feedbackDueBeforeResearch(){_,_ = s.syncYouTubePerformance()}
      s.finalizeScheduledYouTube()
      s.ensureStudioPending()
-     studioTick++;if studioTick>=5{s.pollStudioResult();s.pollPublicationResult();studioTick=0}
+     studioTick++;if studioTick>=5{s.pollStudioResult();studioTick=0}
    }else{
      studioTick=0
      os.WriteFile(filepath.Join(s.Root,"state","last_guard_reason"),[]byte(reason),0600)
@@ -1734,7 +1734,10 @@ func (s *S)syncYouTubePerformance()(map[string]any,error){
  for _,v:=range s.loadYouTubeVideoRegistry(){
   if strings.TrimSpace(v.VideoID)==""{continue};p,ok:=pm[v.PlannerID];if !ok{continue};checked++
   st,e:=youtubeVideoStats(token,v.VideoID);if e!=nil{errs++;continue}
-  if old,ok:=latest[v.PlannerID];ok&&strings.HasPrefix(old.CapturedAt,time.Now().Format("2006-01-02")){continue}
+  if old,ok:=latest[v.PlannerID];ok&&strings.HasPrefix(old.CapturedAt,time.Now().Format("2006-01-02")){
+   if !hasAnalytics&&strings.HasPrefix(old.Source,"youtube_data_api_v3"){continue}
+   if hasAnalytics&&strings.Contains(old.Source,"+analytics")&&old.AnalyticsState!="CONSENT_REQUIRED"{continue}
+  }
   rec:=PerformanceRecord{PlannerID:v.PlannerID,Topic:p.Title,Category:p.Category,Views:st.Views,Likes:st.Likes,Comments:st.Comments,Source:"youtube_data_api_v3",CapturedAt:now,AnalyticsState:"CONSENT_REQUIRED"}
   if hasAnalytics{
    a:=youtubeAnalyticsForVideo(token,v);rec.AnalyticsState=a.State;rec.WatchTimeMin=a.WatchTimeMin;rec.AverageViewDurationSec=a.AverageViewDurationSec;rec.AverageViewPercentage=a.AverageViewPercentage;rec.RetentionPct=a.AverageViewPercentage;rec.AudienceWatchRatioAvg=a.AudienceWatchRatioAvg;rec.RelativeRetentionAvg=a.RelativeRetentionAvg;rec.Source="youtube_data_api_v3+analytics"
@@ -1879,7 +1882,17 @@ func metricValue(p *float64)(float64,bool){if p==nil{return 0,false};return *p,t
 func (s *S)performancePath()string{return filepath.Join(s.Root,"data","channel","performance.jsonl")}
 func (s *S)loadPerformance()[]PerformanceRecord{
  b,e:=os.ReadFile(s.performancePath());if e!=nil{return nil};out:=[]PerformanceRecord{}
- for _,l:=range strings.Split(strings.TrimSpace(string(b)),"\n"){if strings.TrimSpace(l)==""{continue};var p PerformanceRecord;if json.Unmarshal([]byte(l),&p)==nil&&p.PlannerID!=""{out=append(out,p)}}
+ for _,l:=range strings.Split(strings.TrimSpace(string(b)),"\n"){
+  if strings.TrimSpace(l)==""{continue};var p PerformanceRecord
+  if json.Unmarshal([]byte(l),&p)!=nil||p.PlannerID==""{continue}
+  if strings.HasPrefix(p.Source,"youtube_data_api_v2"){
+   if p.RetentionPct!=nil&&*p.RetentionPct==0{p.RetentionPct=nil}
+   if p.CTRPct!=nil&&*p.CTRPct==0{p.CTRPct=nil}
+   if p.WatchTimeMin!=nil&&*p.WatchTimeMin==0{p.WatchTimeMin=nil}
+   if p.AnalyticsState==""{p.AnalyticsState="CONSENT_REQUIRED"}
+  }
+  out=append(out,p)
+ }
  return out
 }
 func latestPerformanceByPlannerFrom(a []PerformanceRecord)map[string]PerformanceRecord{
