@@ -535,6 +535,24 @@ const server = http.createServer(async (req,res)=>{
   }
 
   if (u.pathname === "/studio-feed" && req.method === "GET") {
+    // Prefer the live outbound device tunnel. This both avoids ntfy freshness
+    // dependency after relay restarts and lets /api/work/studio create the
+    // pending Studio job on runtimes where the scheduler has not done so yet.
+    if(deviceFresh()){
+      try{
+        const live=decodeDeviceJson(await queueDeviceRead("/api/work/studio",12000));
+        const liveJob=safeStudioJob(live?.job);
+        if(liveJob?.planner_id){
+          return send(res,200,{ok:true,state:"WAITING_RENDER",job:liveJob,source:"live-device-studio"});
+        }
+        if(String(live?.state||"")==="DAILY_TARGET_MET"){
+          return send(res,200,{ok:true,state:"DAILY_TARGET_MET",job:null,source:"live-device-studio"});
+        }
+      }catch(e){
+        console.log("HERMES_STUDIO_ENSURE_ERROR "+String(e?.message||e));
+      }
+    }
+
     let snap=null; let source="direct";
     const fresh=!!(directSnapshot&&Date.now()-directReceivedAt<20*60*1000);
     if(fresh){
@@ -546,15 +564,6 @@ const server = http.createServer(async (req,res)=>{
     }
     let job=safeStudioJob(snap?.studio_job);
     const release=String(snap?.release||"");
-    if((!job||!job.planner_id) && deviceFresh()){
-      try{
-        const live=decodeDeviceJson(await queueDeviceRead("/api/work/studio",12000));
-        const liveJob=safeStudioJob(live?.job);
-        if(liveJob?.planner_id){job=liveJob;source="live-device-studio";}
-      }catch(e){
-        console.log("HERMES_STUDIO_ENSURE_ERROR "+String(e?.message||e));
-      }
-    }
     if((!job||!job.planner_id) && deviceFresh() && !releaseAtLeast(release,2,5,4)){
       try{
         const candidate=await migrationStudioCandidate();
