@@ -449,7 +449,7 @@ const server = http.createServer(async (req,res)=>{
       device:String(meta.device||"REDMI_5A").slice(0,80),
       seen_at:new Date(deviceSeenAt).toISOString()
     };
-    if(releaseAtLeast(deviceMeta.release,2,5,34) && !thirdVideoFinalized && !thirdVideoPublishInFlight){
+    if(releaseAtLeast(deviceMeta.release,2,5,34) && !thirdVideoFinalized && !thirdVideoTickBusy){
       setTimeout(finalizeThirdYouTubeVideo,500);
     }
     return send(res,200,{ok:true,state:"CONNECTED"});
@@ -811,9 +811,11 @@ async function repairPendingYouTubeThumbnail() {
 const THIRD_VIDEO_PLANNER_ID="44b5f4fe1051";
 let thirdVideoFinalized=false;
 let thirdVideoPublishInFlight=false;
+let thirdVideoTickBusy=false;
 
 async function finalizeThirdYouTubeVideo() {
-  if(thirdVideoFinalized||thirdVideoPublishInFlight) return;
+  if(thirdVideoFinalized||thirdVideoTickBusy) return;
+  thirdVideoTickBusy=true;
   try {
     if(!deviceFresh()) { console.log("HERMES_THIRD_VIDEO DEVICE_LINK_STALE"); return; }
 
@@ -888,6 +890,8 @@ async function finalizeThirdYouTubeVideo() {
   } catch(e) {
     thirdVideoPublishInFlight=false;
     console.log("HERMES_THIRD_VIDEO_ERROR "+String(e?.message||e));
+  } finally {
+    thirdVideoTickBusy=false;
   }
 }
 
