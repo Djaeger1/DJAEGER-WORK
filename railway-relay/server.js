@@ -682,9 +682,10 @@ async function autonomousMaintenanceTick() {
     const latest=String(ch?.version||"");
     if(!latest || latest===release) return;
     const repair=/memory|recovery|forensics|pressure-guard|autonomous-maintenance|emergency|coldstart|quarantine|process-convergence/i.test(latest);
-    if(repair && releaseAtLeast(release,2,5,21)){
-      const r=decodeDeviceJson(await queueDevicePost("/api/work/maintenance",{action:"remote_update",mode:"REPAIR"},90000));
-      console.log("HERMES_MAINTENANCE "+JSON.stringify({action:"remote_update",mode:"REPAIR",state:r?.state||null,from:release,to:latest,quarantine_preserved:r?.quarantine_preserved===true}));
+    if(releaseAtLeast(release,2,5,21)){
+      const mode=repair?"REPAIR":"NORMAL";
+      const r=decodeDeviceJson(await queueDevicePost("/api/work/maintenance",{action:"remote_update",mode},90000));
+      console.log("HERMES_MAINTENANCE "+JSON.stringify({action:"remote_update",mode,state:r?.state||null,from:release,to:latest,quarantine_preserved:r?.quarantine_preserved===true}));
       return;
     }
     const r=decodeDeviceJson(await queueDevicePost("/api/work/maintenance",{action:"update",mode:"NORMAL"},12000));
