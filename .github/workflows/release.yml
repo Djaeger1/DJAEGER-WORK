@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -Fq 'UPDATE_CHANNEL_URL=https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json' runtime/config/work.env
-          grep -Fq '"version": "v2.5.38-youtube-analytics-learning"' runtime/manifest.json
+          grep -Fq '"version": "v2.5.39-production-loop-hardening"' runtime/manifest.json
           sh -n runtime/worker/tick.sh
           sh -n runtime/worker/handoff.sh
           sh -n runtime/worker/autoupdate.sh
@@ -133,6 +133,11 @@ jobs:
           grep -Fq 'elapsedVideoTimeRatio' runtime/workd.go
           grep -Fq 'video_thumbnail_impressions_ctr' runtime/workd.go
           grep -Fq 'FEEDBACK_V3_CONFIDENCE' runtime/workd.go
+          grep -Fq 'strings.HasPrefix(p.Source,"youtube_data_api_v2")' runtime/workd.go
+          grep -Fq 'AUTO_STUDIO_V3_AI_VIDEO' runtime/workd.go
+          grep -Fq 'YOUTUBE_SCHEDULER_V2' runtime/workd.go
+          grep -Fq 'LEGACY_YOUTUBE_PUBLISHER_DISABLED' youtube-publisher/publish.sh
+          ! grep -Fq "cron: '17,47 * * * *'" .github/workflows/youtube-publisher.yml
 
       - name: Build ARMv7 runtime
         shell: bash
@@ -155,7 +160,7 @@ jobs:
           zip -Xqr ../HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip manifest.json payload
           cd ..
           sha256sum HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip.sha256
-          printf '{"channel":"stable","version":"v2.5.38-youtube-analytics-learning","bundle":"HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip","sha256":"%s"}\n' "$(cat HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip.sha256)" > channel.json
+          printf '{"channel":"stable","version":"v2.5.39-production-loop-hardening","bundle":"HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip","sha256":"%s"}\n' "$(cat HERMES_WORK_RUNTIME_v2.5.36_AUTONOMOUS_CYCLE_FEEDBACK.zip.sha256)" > channel.json
 
       - name: Upload installable package
         uses: actions/upload-artifact@v4
