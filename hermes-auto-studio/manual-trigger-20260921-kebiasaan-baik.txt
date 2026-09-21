@@ -1,0 +1,3 @@
+Manual continuation requested on 2026-09-21.
+Target topic: kebiasaan baik anak
+Purpose: trigger HERMES Auto Studio after trusted device queue creation.
