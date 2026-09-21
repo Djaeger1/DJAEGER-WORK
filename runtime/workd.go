@@ -574,6 +574,7 @@ func (s *S)schedulerLoop(){
    ok,reason:=guard(s)
    if ok{
      if s.feedbackDueBeforeResearch(){_,_ = s.syncYouTubePerformance()}
+     s.finalizeScheduledYouTube()
      s.ensureStudioPending()
      studioTick++;if studioTick>=5{s.pollStudioResult();s.pollPublicationResult();studioTick=0}
    }else{
@@ -1475,10 +1476,11 @@ func (s *S)runYouTubePrivateUpload(p PlanItem,sr StudioResult,sp ScriptPackage){
  if strings.TrimSpace(sr.ThumbnailURL)!=""{if te:=uploadYouTubeThumbnail(token,vid,sr.ThumbnailURL);te!=nil{thumbState="FAILED";thumbErr=youtubeClip(te.Error(),300)}else{thumbState="SUCCESS"}}
  rec:=PublicationRecord{PlannerID:p.ID,Topic:p.Title,Platform:"youtube",ExternalID:vid,URL:"https://youtu.be/"+vid,Channel:"YouTube",Status:"UPLOADED_PRIVATE",PublishedAt:at,RecordedAt:at}
  if e=s.appendPublication(rec);e!=nil{fail("video uploaded but local publication record failed");return}
- yrec:=YouTubeVideoRecord{PublicationID:p.ID,PlannerID:p.ID,VideoID:vid,Topic:p.Title,URL:"https://youtu.be/"+vid,Privacy:"private",Status:"UPLOADED_PRIVATE",ThumbnailState:thumbState,ThumbnailError:thumbErr,CreatedAt:at,UpdatedAt:at}
+ rAt,uAt,pAt:=s.youtubeSchedule(sr);nowT:=time.Now();if pAt.Before(nowT.Add(time.Minute)){pAt=nowT.Add(time.Minute)}
+ yrec:=YouTubeVideoRecord{PublicationID:p.ID,PlannerID:p.ID,VideoID:vid,Topic:p.Title,URL:"https://youtu.be/"+vid,Privacy:"private",Status:"UPLOADED_PRIVATE",ThumbnailState:thumbState,ThumbnailError:thumbErr,RenderReadyAt:rAt.Format(time.RFC3339),UploadNotBeforeAt:uAt.Format(time.RFC3339),UploadedAt:at,PublishNotBeforeAt:pAt.Format(time.RFC3339),ScheduledPublishAt:pAt.Format(time.RFC3339),CreatedAt:at,UpdatedAt:at}
  if e=s.upsertYouTubeVideoRecord(yrec);e!=nil{fail("video uploaded but video registry failed");return}
- plans:=s.syncPlanner();for i:=range plans{if plans[i].ID==p.ID{plans[i].Stage="PUBLISHED";plans[i].UpdatedAt=at;break}};_ = s.savePlan(plans)
- s.writeYouTubePublishState(map[string]any{"state":"SUCCESS","privacy":"private","planner_id":p.ID,"topic":p.Title,"video_id":vid,"url":"https://youtu.be/"+vid,"status":"UPLOADED_PRIVATE","thumbnail_state":thumbState,"thumbnail_error":thumbErr,"engine":"YOUTUBE_DEVICE_PUBLISHER_V2"})
+ plans:=s.syncPlanner();for i:=range plans{if plans[i].ID==p.ID{plans[i].Stage="UPLOADED_PRIVATE";plans[i].UpdatedAt=at;break}};_ = s.savePlan(plans)
+ s.writeYouTubePublishState(map[string]any{"state":"UPLOADED_PRIVATE","privacy":"private","planner_id":p.ID,"topic":p.Title,"video_id":vid,"url":"https://youtu.be/"+vid,"status":"UPLOADED_PRIVATE","thumbnail_state":thumbState,"thumbnail_error":thumbErr,"render_ready_at":rAt.Format(time.RFC3339),"upload_not_before_at":uAt.Format(time.RFC3339),"uploaded_at":at,"publish_not_before_at":pAt.Format(time.RFC3339),"scheduled_publish_at":pAt.Format(time.RFC3339),"engine":"YOUTUBE_SCHEDULER_V2"})
 }
 func (s *S)youtubePublish(w http.ResponseWriter,r *http.Request){
  if r.Method=="GET"{js(w,s.youtubePublishStatus());return}
@@ -1509,7 +1511,7 @@ func (s *S)youtubePrivacy(w http.ResponseWriter,r *http.Request){
  if json.NewDecoder(io.LimitReader(r.Body,65536)).Decode(&q)!=nil{http.Error(w,"invalid json",400);return}
  q.PublicationID=strings.TrimSpace(q.PublicationID);q.Privacy=strings.ToLower(strings.TrimSpace(q.Privacy))
  if q.PublicationID==""{http.Error(w,"publication_id required",400);return}
- if q.Privacy!="private"&&q.Privacy!="unlisted"&&q.Privacy!="public"{http.Error(w,"invalid privacy",400);return}
+ if q.Privacy!="private"&&q.Privacy!="unlisted"&&q.Privacy!="public"{http.Error(w,"invalid privacy",400);return};if q.Privacy=="public"&&!s.youtubePublicAllowed(){http.Error(w,"public publishing disabled; explicit enable required",403);return}
  rec,ok:=s.findYouTubeVideoRecord(q.PublicationID);if !ok||rec.VideoID==""{http.Error(w,"publication not found",404);return}
  c,ok:=s.loadYouTubeOAuth();if !ok{http.Error(w,"youtube oauth not configured",409);return}
  token,_,e:=youtubeAccessToken(c);if e!=nil{http.Error(w,"oauth refresh failed: "+e.Error(),401);return}
@@ -1519,6 +1521,22 @@ func (s *S)youtubePrivacy(w http.ResponseWriter,r *http.Request){
  js(w,map[string]any{"ok":true,"publication_id":rec.PublicationID,"video_id":rec.VideoID,"privacy":p,"state":"SUCCESS"})
 }
 
+func (s *S)finalizeScheduledYouTube(){
+ if s.youtubeTargetPrivacy()=="private"{return}
+ youtubePublishMu.Lock();if youtubePublishBusy{youtubePublishMu.Unlock();return};youtubePublishBusy=true;youtubePublishMu.Unlock()
+ defer func(){youtubePublishMu.Lock();youtubePublishBusy=false;youtubePublishMu.Unlock()}()
+ all:=s.loadYouTubeVideoRegistry();now:=time.Now()
+ for _,rec:=range all{
+  if rec.VideoID==""||strings.ToLower(rec.Privacy)!="private"||rec.Status!="UPLOADED_PRIVATE"||strings.ToUpper(rec.ThumbnailState)!="SUCCESS"||strings.TrimSpace(rec.ScheduledPublishAt)==""{continue}
+  due,e:=time.Parse(time.RFC3339,rec.ScheduledPublishAt);if e!=nil||now.Before(due){continue}
+  c,ok:=s.loadYouTubeOAuth();if !ok{return};token,_,e:=youtubeAccessToken(c);if e!=nil{return}
+  target:=s.youtubeTargetPrivacy();if target=="public"&&!s.youtubePublicAllowed(){target="unlisted"}
+  p,e:=updateYouTubePrivacy(token,rec.VideoID,target);if e!=nil{s.writeYouTubePublishState(map[string]any{"state":"PRIVACY_UPDATE_FAILED","planner_id":rec.PlannerID,"video_id":rec.VideoID,"error":youtubeClip(e.Error(),300),"engine":"YOUTUBE_SCHEDULER_V2"});return}
+  rec.Privacy=p;rec.Status="PRIVACY_"+strings.ToUpper(p);rec.PublishedAt=now.Format(time.RFC3339);if s.upsertYouTubeVideoRecord(rec)!=nil{return}
+  plans:=s.syncPlanner();for i:=range plans{if plans[i].ID==rec.PlannerID{plans[i].Stage="PUBLISHED";plans[i].UpdatedAt=rec.PublishedAt;break}};_ = s.savePlan(plans)
+  s.writeYouTubePublishState(map[string]any{"state":"SUCCESS","privacy":p,"planner_id":rec.PlannerID,"topic":rec.Topic,"video_id":rec.VideoID,"url":rec.URL,"status":rec.Status,"thumbnail_state":rec.ThumbnailState,"published_at":rec.PublishedAt,"scheduled_publish_at":rec.ScheduledPublishAt,"engine":"YOUTUBE_SCHEDULER_V2"});return
+ }
+}
 func (s *S)youtubeThumbnail(w http.ResponseWriter,r *http.Request){
  if r.Method!="POST"{http.Error(w,"method not allowed",405);return}
  if !s.auth(r)&&!trustedRemoteTunnel(r){http.Error(w,"unauthorized",401);return}
