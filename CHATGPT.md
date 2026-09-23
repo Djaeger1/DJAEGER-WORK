@@ -15,6 +15,7 @@ This file is ONLY for DJAEGER WORK / HERMES WORK. Do not mix it with DJAEGER Gam
 ## Dashboard
 - Android dashboard version: 1.4.0 (versionCode 140).
 - Signed GitHub Actions artifact: DJAEGER-WORK-Native-v1.4.0-SIGNED.
+- Runtime v2.5.41 is already live on Redmi 5A, but the Android dashboard APK is a separate client package and is not installed by the runtime auto-update channel. The UI fixes become visible only after v1.4.0 is installed on the phone that runs the dashboard.
 - Planner no longer uses hard-coded BELUM TERHUBUNG placeholders for scripts/production/upload.
 - Planner consumes /api/work/dashboard for scripts_ready, live Studio state, and YouTube uploaded_total.
 - Insights treats FEEDBACK_CONNECTED as a healthy connected state.
