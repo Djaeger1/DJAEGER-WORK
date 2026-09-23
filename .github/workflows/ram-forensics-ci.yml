@@ -41,9 +41,9 @@ jobs:
 
       - name: Verify periodic telemetry stays lightweight
         run: |
-          ! sed -n '/func (s \*S)bridgeSnapshot()/,/func (s \*S)ntfyTopic/p' runtime/workd.go | grep -q '"process_memory"'
-          sed -n '/func (s \*S)bridgeSnapshot()/,/func (s \*S)ntfyTopic/p' runtime/workd.go | grep -q '"top_anon"'
-          sed -n '/func (s \*S)bridgeSnapshot()/,/func (s \*S)ntfyTopic/p' runtime/workd.go | grep -q '"memory_pressure"'
+          ! sed -n '/bridgeSnapshot()/,/ntfyTopic/p' runtime/workd.go | grep -q '"process_memory"'
+          sed -n '/bridgeSnapshot()/,/ntfyTopic/p' runtime/workd.go | grep -q '"top_anon"'
+          sed -n '/bridgeSnapshot()/,/ntfyTopic/p' runtime/workd.go | grep -q '"memory_pressure"'
 
       - name: Verify no aggressive RAM mutation
         run: |
