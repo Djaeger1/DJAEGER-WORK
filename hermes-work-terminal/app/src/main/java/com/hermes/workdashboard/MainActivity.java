@@ -486,13 +486,13 @@ public class MainActivity extends Activity {
         state.addView(text("STATUS PRODUKSI", 11, MUTED, true));
         LinearLayout r1 = row();
         TextView ideas = metric(r1, "IDE SIAP", "—");
-        TextView scripts = metric(r1, "NASKAH SIAP", "BELUM TERHUBUNG");
+        TextView scripts = metric(r1, "NASKAH SIAP", "MEMERIKSA");
         state.addView(r1);
         LinearLayout r2 = row();
-        TextView produced = metric(r2, "SUDAH DIPRODUKSI", "BELUM TERHUBUNG");
-        TextView uploaded = metric(r2, "SUDAH DIUNGGAH", "BELUM TERHUBUNG");
+        TextView produced = metric(r2, "PRODUKSI", "MEMERIKSA");
+        TextView uploaded = metric(r2, "SUDAH DIUNGGAH", "MEMERIKSA");
         state.addView(r2);
-        scripts.setTextColor(WARN); produced.setTextColor(WARN); uploaded.setTextColor(WARN);
+        scripts.setTextColor(MUTED); produced.setTextColor(MUTED); uploaded.setTextColor(MUTED);
         body.addView(state);
 
         LinearLayout listCard = card();
@@ -520,6 +520,36 @@ public class MainActivity extends Activity {
                 list.setText(x.toString().trim());
             } catch (Exception ignored) {}
         });
+
+        apiAsync("GET", "/api/work/dashboard", null, false, (code, s) -> {
+            if (code < 200 || code >= 300) {
+                setMetric(scripts, "DATA BELUM SIAP", WARN);
+                setMetric(produced, "DATA BELUM SIAP", WARN);
+                setMetric(uploaded, "DATA BELUM SIAP", WARN);
+                return;
+            }
+            try {
+                JSONObject root = new JSONObject(s);
+                JSONObject planner = root.optJSONObject("planner");
+                JSONObject studio = root.optJSONObject("studio");
+                JSONObject youtube = root.optJSONObject("youtube");
+
+                int scriptReady = planner == null ? -1 : planner.optInt("scripts_ready", -1);
+                if (scriptReady >= 0) setMetric(scripts, String.valueOf(scriptReady), scriptReady > 0 ? OK : MUTED);
+
+                String studioState = studio == null ? "" : studio.optString("state", "");
+                int prodColor = ("RENDERED".equals(studioState) || "DAILY_TARGET_MET".equals(studioState)) ? OK
+                        : (studioState.startsWith("WAIT_") || studioState.startsWith("WAITING_")) ? WARN : MUTED;
+                setMetric(produced, studioState.isEmpty() ? "DATA BELUM SIAP" : studioState, prodColor);
+
+                int uploadedTotal = youtube == null ? -1 : youtube.optInt("uploaded_total", -1);
+                if (uploadedTotal >= 0) setMetric(uploaded, String.valueOf(uploadedTotal), uploadedTotal > 0 ? OK : MUTED);
+            } catch (Exception ignored) {
+                setMetric(scripts, "DATA BELUM SIAP", WARN);
+                setMetric(produced, "DATA BELUM SIAP", WARN);
+                setMetric(uploaded, "DATA BELUM SIAP", WARN);
+            }
+        });
     }
 
     private void buildInsights(LinearLayout body) {
@@ -539,6 +569,9 @@ public class MainActivity extends Activity {
         TextView watch = metric(r3, "WAKTU TONTON", "—");
         TextView best = metric(r3, "TOPIK TERBAIK", "—");
         channel.addView(r3);
+        TextView analyticsNote = text("Metrik YouTube Analytics sedang diperiksa.", 11, MUTED, false);
+        analyticsNote.setPadding(0, dp(8), 0, 0);
+        channel.addView(analyticsNote);
         body.addView(channel);
 
         LinearLayout memory = card();
@@ -552,7 +585,7 @@ public class MainActivity extends Activity {
         TextView under = metric(m2, "KINERJA RENDAH", "—");
         memory.addView(m2);
         LinearLayout m3 = row();
-        TextView pending = metric(m3, "BELUM DIPRODUKSI", "—");
+        TextView pending = metric(m3, "BELUM RENDER", "—");
         TextView cats = metric(m3, "KATEGORI", "—");
         memory.addView(m3);
         body.addView(memory);
@@ -560,14 +593,36 @@ public class MainActivity extends Activity {
         apiAsync("GET", "/api/work/channel", null, false, (code, s) -> {
             try {
                 JSONObject j = new JSONObject(s);
-                setMetric(conn, dash(j.optString("state")), "CONNECTED".equals(j.optString("state")) ? OK : WARN);
+                String stateName = j.optString("state", "");
+                boolean connected = "CONNECTED".equals(stateName) || "FEEDBACK_CONNECTED".equals(stateName);
+                boolean waitingAnalytics = "READY_WAITING_ANALYTICS".equals(stateName);
+                setMetric(conn, stateName, connected ? OK : (waitingAnalytics ? WARN : MUTED));
                 JSONObject m = j.optJSONObject("metrics");
                 if (m == null) m = j;
-                setMetric(views, value(m, "views"), TEXT);
-                setMetric(retention, value(m, "retention"), TEXT);
-                setMetric(ctr, value(m, "ctr"), TEXT);
-                setMetric(watch, value(m, "watch_time"), TEXT);
-                setMetric(best, value(m, "best_topic"), TEXT);
+                setMetric(views, metricOrWaiting(m, "views"), TEXT);
+                setMetric(retention, metricOrWaiting(m, "retention"), TEXT);
+                setMetric(ctr, metricOrWaiting(m, "ctr"), TEXT);
+                setMetric(watch, metricOrWaiting(m, "watch_time"), TEXT);
+                setMetric(best, metricOrWaiting(m, "best_topic"), TEXT);
+
+                JSONObject analytics = j.optJSONObject("analytics");
+                if (analytics != null && analytics.optBoolean("analytics_consent_required", false)) {
+                    analyticsNote.setText("YouTube Analytics memerlukan izin tambahan; statistik dasar tetap tersambung.");
+                    analyticsNote.setTextColor(WARN);
+                } else if (analytics != null) {
+                    String rState = analytics.optString("retention", "DATA_PENDING");
+                    String cState = analytics.optString("ctr", "DATA_PENDING");
+                    if ("AVAILABLE".equals(rState) || "AVAILABLE".equals(cState)) {
+                        analyticsNote.setText("YouTube Analytics tersambung; metrik terisi saat data tersedia.");
+                        analyticsNote.setTextColor(OK);
+                    } else {
+                        analyticsNote.setText("Statistik dasar tersambung; retensi/CTR menunggu data YouTube Analytics.");
+                        analyticsNote.setTextColor(MUTED);
+                    }
+                } else {
+                    analyticsNote.setText("Statistik dasar tersambung; detail Analytics belum tersedia dari runtime ini.");
+                    analyticsNote.setTextColor(MUTED);
+                }
             } catch (Exception ignored) {}
         });
         apiAsync("GET", "/api/work/knowledge", null, false, (code, s) -> {
@@ -575,9 +630,12 @@ public class MainActivity extends Activity {
                 JSONObject j = new JSONObject(s);
                 setMetric(items, value(j, "research_items"), TEXT);
                 setMetric(unique, value(j, "unique_keys"), TEXT);
-                setMetric(success, value(j, "successful"), WARN);
-                setMetric(under, value(j, "underperforming"), WARN);
-                setMetric(pending, value(j, "ideas_not_produced"), WARN);
+                int strong = j.optInt("successful", 0);
+                int weak = j.optInt("underperforming", 0);
+                int notRendered = j.has("not_rendered") ? j.optInt("not_rendered", 0) : j.optInt("ideas_not_produced", 0);
+                setMetric(success, String.valueOf(strong), strong > 0 ? OK : MUTED);
+                setMetric(under, String.valueOf(weak), weak > 0 ? WARN : MUTED);
+                setMetric(pending, String.valueOf(notRendered), notRendered > 0 ? WARN : OK);
                 JSONObject c = j.optJSONObject("categories");
                 setMetric(cats, c == null ? "0" : String.valueOf(c.length()), TEXT);
             } catch (Exception ignored) {}
@@ -1214,7 +1272,7 @@ public class MainActivity extends Activity {
         io.execute(() -> {
             StringBuilder report = new StringBuilder();
             report.append("===== HASIL PEMBARUAN DJAEGER WORK =====\n");
-            report.append("APP_VERSION=1.3.9\n");
+            report.append("APP_VERSION=1.4.0\n");
             report.append("RUNTIME_URL=").append(runtimeUrl()).append("\n");
             report.append("GENERATED_AT=").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new java.util.Date())).append("\n\n");
 
@@ -1705,6 +1763,18 @@ public class MainActivity extends Activity {
             case "SAFE MODE": return "MODE AMAN";
             case "PAUSED": return "DIJEDA";
             case "CONNECTED": return "TERHUBUNG";
+            case "FEEDBACK_CONNECTED": return "TERHUBUNG";
+            case "READY_WAITING_ANALYTICS": return "MENUNGGU ANALITIK";
+            case "WAIT_QUOTA": return "TUNGGU KUOTA";
+            case "WAIT_PROVIDER": return "TUNGGU PROVIDER";
+            case "WAITING_RENDER": return "MENUNGGU RENDER";
+            case "WAITING_PRODUCTION_JOB": return "MENUNGGU JOB";
+            case "WAITING_TODAY_RESEARCH": return "MENUNGGU RISET";
+            case "DAILY_TARGET_MET": return "TARGET TERCAPAI";
+            case "RENDERED": return "SELESAI";
+            case "DATA_PENDING": return "MENUNGGU DATA";
+            case "CONSENT_REQUIRED": return "PERLU IZIN";
+            case "NOT_AVAILABLE": return "BELUM ADA DATA";
             case "STARTING": return "MEMULAI";
             case "OFF": return "MATI";
             case "NOT CONNECTED": return "BELUM TERHUBUNG";
@@ -1727,6 +1797,13 @@ public class MainActivity extends Activity {
     private String value(JSONObject j, String k) {
         Object o = j.opt(k);
         return o == null || o == JSONObject.NULL ? "—" : String.valueOf(o);
+    }
+    private String metricOrWaiting(JSONObject j, String k) {
+        Object o = j.opt(k);
+        if (o == null || o == JSONObject.NULL) return "BELUM ADA DATA";
+        String s = String.valueOf(o).trim();
+        if (s.isEmpty() || "NOT_AVAILABLE".equalsIgnoreCase(s) || "null".equalsIgnoreCase(s)) return "BELUM ADA DATA";
+        return s;
     }
     private String val(JSONObject j, String k) { return value(j, k); }
 
