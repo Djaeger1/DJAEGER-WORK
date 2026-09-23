@@ -14,6 +14,67 @@ NEGATIVE = (
     "watermark, logo, subtitles, unreadable text, low quality, blur"
 )
 
+EXIT_WAIT_QUOTA = 75
+EXIT_WAIT_PROVIDER = 76
+
+def classify_provider_error(exc):
+    text = str(exc).lower()
+    quota_markers = (
+        "exceeded your zerogpu runs limit",
+        "zerogpu runs limit",
+        "zero gpu runs limit",
+        "quota exceeded",
+        "rate limit",
+        "too many requests",
+        "http 429",
+        "status 429",
+        " 429 ",
+        "more quota",
+    )
+    if any(marker in text for marker in quota_markers):
+        return "WAIT_QUOTA", EXIT_WAIT_QUOTA
+
+    provider_markers = (
+        "service unavailable",
+        "temporarily unavailable",
+        "space is sleeping",
+        "space unavailable",
+        "connection timed out",
+        "timed out",
+        "timeout",
+        "connection reset",
+        "connection refused",
+        "bad gateway",
+        "gateway timeout",
+        "http 502",
+        "http 503",
+        "http 504",
+        "status 502",
+        "status 503",
+        "status 504",
+    )
+    if any(marker in text for marker in provider_markers):
+        return "WAIT_PROVIDER", EXIT_WAIT_PROVIDER
+    return None, None
+
+def selftest():
+    cases = [
+        ("You have exceeded your ZeroGPU runs limit. Authenticate for more quota", "WAIT_QUOTA", EXIT_WAIT_QUOTA),
+        ("HTTP 429 Too Many Requests", "WAIT_QUOTA", EXIT_WAIT_QUOTA),
+        ("HTTP 503 Service Unavailable", "WAIT_PROVIDER", EXIT_WAIT_PROVIDER),
+        ("connection timed out while waiting for queue", "WAIT_PROVIDER", EXIT_WAIT_PROVIDER),
+        ("unexpected provider endpoint signature", None, None),
+    ]
+    for message, expected_state, expected_code in cases:
+        state, code = classify_provider_error(RuntimeError(message))
+        if state != expected_state or code != expected_code:
+            raise SystemExit(
+                f"SELFTEST_FAIL message={message!r} got=({state!r},{code!r}) "
+                f"expected=({expected_state!r},{expected_code!r})"
+            )
+    print("AI_VIDEO_PROVIDER_CLASSIFIER_SELFTEST=PASS")
+
+
 def extract_path(value):
     if isinstance(value, str) and os.path.exists(value):
         return value
@@ -111,12 +172,19 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--image")
     ap.add_argument("--prompt")
-    ap.add_argument("--output", required=True)
+    ap.add_argument("--output")
     ap.add_argument("--seed", type=int, default=314160)
     ap.add_argument("--duration", type=float, default=2.0)
     ap.add_argument("--space", default=DEFAULT_SPACE)
     ap.add_argument("--smoke", action="store_true")
+    ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args()
+
+    if args.selftest:
+        selftest()
+        return
+    if not args.output:
+        raise SystemExit("missing --output")
 
     tmp = None
     try:
@@ -138,7 +206,22 @@ def main():
             image = args.image
             prompt = args.prompt
 
-        info = generate(image, prompt, args.output, args.seed, args.duration, args.space)
+        try:
+            info = generate(image, prompt, args.output, args.seed, args.duration, args.space)
+        except Exception as exc:
+            state, exit_code = classify_provider_error(exc)
+            if state:
+                payload = {
+                    "state": state,
+                    "space": args.space,
+                    "reason": str(exc)[:500],
+                }
+                print(
+                    "AI_VIDEO_WAIT " + json.dumps(payload, separators=(",", ":")),
+                    file=sys.stderr,
+                )
+                raise SystemExit(exit_code)
+            raise
         print("AI_VIDEO_OK " + json.dumps(info, separators=(",", ":")))
     finally:
         if tmp:
