@@ -6,6 +6,9 @@ import android.content.SharedPreferences;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
+import android.util.Base64;
 import android.widget.Toast;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -27,12 +30,21 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.net.URL;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.util.Iterator;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -692,6 +704,8 @@ public class MainActivity extends Activity {
         yt.addView(ytRefresh);
         Button ytConnect = actionButton("HUBUNGKAN YOUTUBE", true);
         yt.addView(ytConnect);
+        Button ytAnalytics = actionButton("AKTIFKAN YOUTUBE ANALYTICS", false);
+        yt.addView(ytAnalytics);
         TextView ytOut = mono("Menunggu kredensial.");
         yt.addView(ytOut);
         Button ytPublish = actionButton("UJI UPLOAD PRIVATE", false);
@@ -727,6 +741,25 @@ public class MainActivity extends Activity {
                 ytState.setTextColor(WARN);
             }
         });
+
+        apiAsync("GET", "/api/work/youtube/oauth/capabilities", null, false, (code, response) -> {
+            if (code < 200 || code >= 300) return;
+            try {
+                JSONObject j = new JSONObject(response);
+                boolean analyticsReady = j.optBoolean("yt_analytics_readonly", false);
+                boolean consentRequired = j.optBoolean("analytics_consent_required", !analyticsReady);
+                if (analyticsReady) {
+                    ytAnalytics.setText("YOUTUBE ANALYTICS AKTIF");
+                    ytAnalytics.setEnabled(false);
+                } else if (consentRequired) {
+                    ytAnalytics.setText("AKTIFKAN YOUTUBE ANALYTICS");
+                    ytAnalytics.setEnabled(true);
+                }
+            } catch (Exception ignored) {}
+        });
+
+        ytAnalytics.setOnClickListener(v ->
+                startYouTubeAnalyticsConsent(ytClient, ytState, ytOut, ytAnalytics));
 
         apiAsync("GET", "/api/work/youtube/publish", null, false, (code, response) -> {
             if (code >= 200 && code < 300) {
@@ -1407,6 +1440,155 @@ public class MainActivity extends Activity {
                 });
             } catch (Exception e) {
                 ui(() -> out.setText("Pemulihan gagal: " + e.getMessage()));
+            }
+        });
+    }
+
+    private String base64Url(byte[] b) {
+        return Base64.encodeToString(b, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
+    }
+
+    private String oauthQueryParam(String target, String key) {
+        try {
+            int q = target.indexOf('?');
+            if (q < 0) return "";
+            String[] parts = target.substring(q + 1).split("&");
+            for (String part : parts) {
+                int eq = part.indexOf('=');
+                String k = eq >= 0 ? part.substring(0, eq) : part;
+                if (!key.equals(URLDecoder.decode(k, "UTF-8"))) continue;
+                String v = eq >= 0 ? part.substring(eq + 1) : "";
+                return URLDecoder.decode(v, "UTF-8");
+            }
+        } catch (Exception ignored) {}
+        return "";
+    }
+
+    private void writeOAuthBrowserResponse(Socket socket, boolean ok) {
+        try {
+            String body = ok
+                    ? "<html><body><h2>DJAEGER WORK</h2><p>Izin YouTube diterima. Kembali ke aplikasi DJAEGER WORK.</p></body></html>"
+                    : "<html><body><h2>DJAEGER WORK</h2><p>Izin YouTube tidak selesai. Kembali ke aplikasi dan coba lagi.</p></body></html>";
+            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+            BufferedWriter w = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
+            w.write("HTTP/1.1 200 OK\r\n");
+            w.write("Content-Type: text/html; charset=utf-8\r\n");
+            w.write("Cache-Control: no-store\r\n");
+            w.write("Content-Length: " + bytes.length + "\r\n");
+            w.write("Connection: close\r\n\r\n");
+            w.write(body);
+            w.flush();
+        } catch (Exception ignored) {}
+    }
+
+    private void startYouTubeAnalyticsConsent(EditText ytClient, TextView ytState, TextView ytOut, Button ytAnalytics) {
+        if (token().isEmpty()) {
+            ytOut.setText("TOKEN ADMIN belum tersimpan. Buka PEMBARUAN → KONEKSI.");
+            return;
+        }
+        String clientId = ytClient.getText().toString().trim();
+        if (clientId.isEmpty() || !clientId.endsWith(".apps.googleusercontent.com")) {
+            ytOut.setText("OAuth Client ID tidak valid.");
+            return;
+        }
+        ytAnalytics.setEnabled(false);
+        ytOut.setText("Menyiapkan izin YouTube Analytics…");
+
+        io.execute(() -> {
+            ServerSocket server = null;
+            try {
+                server = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"));
+                server.setSoTimeout(180000);
+                int port = server.getLocalPort();
+                String redirect = "http://127.0.0.1:" + port + "/oauth2callback";
+
+                SecureRandom random = new SecureRandom();
+                byte[] stateBytes = new byte[24];
+                byte[] verifierBytes = new byte[48];
+                random.nextBytes(stateBytes);
+                random.nextBytes(verifierBytes);
+                String state = base64Url(stateBytes);
+                String verifier = base64Url(verifierBytes);
+                String challenge = base64Url(MessageDigest.getInstance("SHA-256")
+                        .digest(verifier.getBytes(StandardCharsets.US_ASCII)));
+
+                String scope = "https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/yt-analytics.readonly";
+                String authUrl = "https://accounts.google.com/o/oauth2/v2/auth"
+                        + "?client_id=" + URLEncoder.encode(clientId, "UTF-8")
+                        + "&redirect_uri=" + URLEncoder.encode(redirect, "UTF-8")
+                        + "&response_type=code"
+                        + "&scope=" + URLEncoder.encode(scope, "UTF-8")
+                        + "&access_type=offline"
+                        + "&include_granted_scopes=true"
+                        + "&prompt=consent"
+                        + "&state=" + URLEncoder.encode(state, "UTF-8")
+                        + "&code_challenge=" + URLEncoder.encode(challenge, "UTF-8")
+                        + "&code_challenge_method=S256";
+
+                ui(() -> {
+                    try {
+                        ytOut.setText("Browser Google dibuka. Setujui izin YouTube Analytics sekali saja.");
+                        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(authUrl)));
+                    } catch (Exception e) {
+                        ytAnalytics.setEnabled(true);
+                        ytOut.setText("Browser tidak dapat dibuka: " + e.getMessage());
+                    }
+                });
+
+                try (Socket socket = server.accept();
+                     BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))) {
+                    String requestLine = reader.readLine();
+                    String target = "";
+                    if (requestLine != null) {
+                        String[] p = requestLine.split(" ");
+                        if (p.length >= 2) target = p[1];
+                    }
+                    String gotState = oauthQueryParam(target, "state");
+                    String code = oauthQueryParam(target, "code");
+                    String error = oauthQueryParam(target, "error");
+                    boolean ok = error.isEmpty() && !code.isEmpty() && state.equals(gotState);
+                    writeOAuthBrowserResponse(socket, ok);
+                    if (!ok) {
+                        throw new Exception(error.isEmpty() ? "state/callback tidak valid" : error);
+                    }
+
+                    JSONObject payload = new JSONObject();
+                    payload.put("code", code);
+                    payload.put("redirect_uri", redirect);
+                    payload.put("code_verifier", verifier);
+                    apiAsync("POST", "/api/work/youtube/oauth/upgrade-analytics", payload.toString(), true, (httpCode, response) -> {
+                        if (httpCode >= 200 && httpCode < 300) {
+                            ytState.setText("Status OAuth: TERVERIFIKASI + ANALYTICS");
+                            ytState.setTextColor(OK);
+                            ytAnalytics.setText("YOUTUBE ANALYTICS AKTIF");
+                            ytAnalytics.setEnabled(false);
+                            ytOut.setText("Izin Analytics tersimpan aman. Menyinkronkan Retensi, CTR, dan Waktu Tonton…");
+                            apiAsync("POST", "/api/work/youtube/feedback", null, true, (syncCode, syncBody) -> {
+                                if (syncCode >= 200 && syncCode < 300) {
+                                    ytOut.setText("YouTube Analytics aktif dan sinkronisasi selesai. Tekan ↻ untuk memperbarui Wawasan.");
+                                } else {
+                                    ytOut.setText("Izin Analytics aktif. Sinkronisasi data akan dicoba otomatis oleh DJAEGER WORK.");
+                                }
+                            });
+                        } else {
+                            ytAnalytics.setEnabled(true);
+                            ytOut.setText("Izin Google diterima, tetapi penyimpanan Analytics gagal. HTTP " + httpCode + "\n" + response.trim());
+                        }
+                    });
+                }
+            } catch (java.net.SocketTimeoutException e) {
+                ui(() -> {
+                    ytAnalytics.setEnabled(true);
+                    ytOut.setText("Waktu persetujuan habis. Tekan AKTIFKAN YOUTUBE ANALYTICS untuk mencoba lagi.");
+                });
+            } catch (Exception e) {
+                final String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                ui(() -> {
+                    ytAnalytics.setEnabled(true);
+                    ytOut.setText("Izin YouTube Analytics belum selesai: " + msg);
+                });
+            } finally {
+                if (server != null) try { server.close(); } catch (Exception ignored) {}
             }
         });
     }
