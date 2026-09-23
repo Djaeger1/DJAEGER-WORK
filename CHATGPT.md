@@ -55,7 +55,7 @@ This file is ONLY for DJAEGER WORK / HERMES WORK. Do not mix it with DJAEGER Gam
 
 ## Validation
 - v2.5.42 release workflow passed source validation and ARMv7 runtime build.
-- Runtime remote maintenance accepted installation from v2.5.41 to v2.5.42; post-handoff live confirmation should be checked after the temporary device-tunnel restart.
+- Runtime remote maintenance installed v2.5.42 from v2.5.41 and post-handoff live verification passed: auto updater reports UP_TO_DATE / HANDOFF_VERIFIED and live snapshot reports release v2.5.42.
 - Dashboard v1.4.1 signed build passed APK identity/signature verification.
 - ARMv7 runtime compiled successfully.
 - Dashboard v1.4.0 release APK compiled successfully.
