@@ -3863,7 +3863,7 @@ type YouTubeOAuthUpgradeRequest struct {
 
 func validLoopbackRedirect(raw string) bool {
 	u, e := url.Parse(strings.TrimSpace(raw))
-	if e != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.Port() == "" || u.Path != "/oauth2callback" {
+	if e != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.Port() == "" || (u.Path != "" && u.Path != "/") {
 		return false
 	}
 	p, e := strconv.Atoi(u.Port())
