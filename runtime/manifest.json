@@ -1,5 +1,5 @@
 {
-  "version": "v2.5.40-snapshot-integrity",
-  "description": "Repairs DJAEGER WORK live snapshot integrity by exposing the full bridge snapshot over the trusted remote tunnel and making Railway consume that authoritative snapshot instead of the reduced status endpoint.",
+  "version": "v2.5.41-dashboard-state-sync",
+  "description": "Synchronizes DJAEGER WORK planner, Auto Studio provider-wait/checkpoint state, YouTube upload state, channel analytics readiness, and knowledge counters so the dashboard shows truthful live production status instead of placeholder or misleading values.",
   "restart": false
 }
