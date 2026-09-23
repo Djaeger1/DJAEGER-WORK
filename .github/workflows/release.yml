@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -Fq 'UPDATE_CHANNEL_URL=https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json' runtime/config/work.env
-          grep -Fq '"version": "v2.5.41-dashboard-state-sync"' runtime/manifest.json
+          grep -Fq '"version": "v2.5.42-youtube-analytics-consent"' runtime/manifest.json
           sh -n runtime/worker/tick.sh
           sh -n runtime/worker/handoff.sh
           sh -n runtime/worker/autoupdate.sh
@@ -127,6 +127,11 @@ jobs:
           grep -Fq 'PUBLICATION_BLOCKED: AI-video provenance invariant failed' runtime/workd.go
           grep -Fq 'UPLOADED_PRIVATE' runtime/workd.go
           grep -Fq '/api/work/youtube/oauth/capabilities' runtime/workd.go
+          grep -Fq '/api/work/youtube/oauth/upgrade-analytics' runtime/workd.go
+          grep -Fq 'validLoopbackRedirect' runtime/workd.go
+          grep -Fq 'code_verifier' runtime/workd.go
+          grep -Fq 'yt-analytics.readonly' runtime/workd.go
+          grep -Fq 'refresh_token_missing_reconsent' runtime/workd.go
           grep -Fq 'finalizeScheduledYouTube' runtime/workd.go
           grep -Fq 'YOUTUBE_FEEDBACK_V3_ANALYTICS_READY' runtime/workd.go
           grep -Fq 'channel_reach_basic_a1' runtime/workd.go
@@ -165,16 +170,16 @@ jobs:
           cp config/work.env out/payload/config/work.env
           chmod 755 out/payload/bin/workd out/payload/worker/*.sh
           cd out
-          zip -Xqr ../HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC.zip manifest.json payload
+          zip -Xqr ../HERMES_WORK_RUNTIME_v2.5.42_YOUTUBE_ANALYTICS_CONSENT.zip manifest.json payload
           cd ..
-          sha256sum HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC.zip.sha256
-          printf '{"channel":"stable","version":"v2.5.41-dashboard-state-sync","bundle":"HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC.zip","sha256":"%s"}\n' "$(cat HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC.zip.sha256)" > channel.json
+          sha256sum HERMES_WORK_RUNTIME_v2.5.42_YOUTUBE_ANALYTICS_CONSENT.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v2.5.42_YOUTUBE_ANALYTICS_CONSENT.zip.sha256
+          printf '{"channel":"stable","version":"v2.5.42-youtube-analytics-consent","bundle":"HERMES_WORK_RUNTIME_v2.5.42_YOUTUBE_ANALYTICS_CONSENT.zip","sha256":"%s"}\n' "$(cat HERMES_WORK_RUNTIME_v2.5.42_YOUTUBE_ANALYTICS_CONSENT.zip.sha256)" > channel.json
 
       - name: Upload installable package
         uses: actions/upload-artifact@v4
         with:
-          name: HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC
-          path: runtime/HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC.zip
+          name: HERMES_WORK_RUNTIME_v2.5.42_YOUTUBE_ANALYTICS_CONSENT
+          path: runtime/HERMES_WORK_RUNTIME_v2.5.42_YOUTUBE_ANALYTICS_CONSENT.zip
           retention-days: 30
 
       - name: Publish isolated stable channel
@@ -182,8 +187,8 @@ jobs:
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"
-          cp runtime/HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC.zip "$tmp/"
-          cp runtime/HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC.zip.sha256 "$tmp/"
+          cp runtime/HERMES_WORK_RUNTIME_v2.5.42_YOUTUBE_ANALYTICS_CONSENT.zip "$tmp/"
+          cp runtime/HERMES_WORK_RUNTIME_v2.5.42_YOUTUBE_ANALYTICS_CONSENT.zip.sha256 "$tmp/"
           cp runtime/channel.json "$tmp/"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -192,15 +197,15 @@ jobs:
             git fetch origin main
             git checkout -B main origin/main
             mkdir -p release
-            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC.zip" release/
-            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC.zip.sha256" release/
+            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.42_YOUTUBE_ANALYTICS_CONSENT.zip" release/
+            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.42_YOUTUBE_ANALYTICS_CONSENT.zip.sha256" release/
             cp "$tmp/channel.json" release/
             git add release/
             if git diff --cached --quiet; then
               echo "Release channel already current."
               exit 0
             fi
-            git commit -m "Publish DJAEGER WORK v2.5.41 dashboard state sync"
+            git commit -m "Publish DJAEGER WORK v2.5.42 YouTube Analytics consent"
             if git push origin HEAD:main; then
               exit 0
             fi
