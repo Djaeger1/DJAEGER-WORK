@@ -3,7 +3,7 @@ name: HERMES Auto Studio
 on:
   workflow_dispatch:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '23 */4 * * *'
   push:
     branches:
       - main
@@ -24,15 +24,18 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
-      - name: Preflight free AI video provider on renderer changes
+      - name: Validate Auto Studio quota/backoff contract
         if: github.event_name == 'push'
         run: |
-          python3 -m pip install --quiet --disable-pip-version-check "gradio_client>=1.6,<2" pillow
-          python3 hermes-auto-studio/ai_video_scene.py --smoke --output /tmp/djaeger-ai-video-preflight.mp4 --duration 1.0
-          test -s /tmp/djaeger-ai-video-preflight.mp4
-          python3 -c 'import os; p="/tmp/djaeger-ai-video-preflight.mp4"; print("AI_VIDEO_PREFLIGHT_BYTES="+str(os.path.getsize(p)))'
-      - name: Run zero-card Auto Studio
+          bash -n hermes-auto-studio/render.sh
+          python3 -m py_compile hermes-auto-studio/ai_video_scene.py
+          python3 hermes-auto-studio/ai_video_scene.py --selftest
+      - name: Run resumable zero-card Auto Studio
         env:
           GH_TOKEN: ${{ github.token }}
           STUDIO_FEED: https://hermes-work-chatgpt-relay-v3-production.up.railway.app/studio-feed
+          PROVIDER_QUOTA_BACKOFF_SECONDS: "14400"
+          PROVIDER_QUOTA_BACKOFF_MAX_SECONDS: "43200"
+          PROVIDER_TRANSIENT_BACKOFF_SECONDS: "3600"
+          PROVIDER_TRANSIENT_BACKOFF_MAX_SECONDS: "14400"
         run: bash hermes-auto-studio/render.sh

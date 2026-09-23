@@ -18,6 +18,105 @@ if [ -z "$id" ] || [ -z "$tag" ]; then
   exit 0
 fi
 
+CHECKPOINT_TAG="${tag}-checkpoint"
+WAIT_STATE="/tmp/hermes-studio/provider-wait.json"
+WAIT_ATTEMPTS=0
+HAS_WAIT_STATE=0
+PROVIDER_QUOTA_BACKOFF_SECONDS="${PROVIDER_QUOTA_BACKOFF_SECONDS:-14400}"
+PROVIDER_QUOTA_BACKOFF_MAX_SECONDS="${PROVIDER_QUOTA_BACKOFF_MAX_SECONDS:-43200}"
+PROVIDER_TRANSIENT_BACKOFF_SECONDS="${PROVIDER_TRANSIENT_BACKOFF_SECONDS:-3600}"
+PROVIDER_TRANSIENT_BACKOFF_MAX_SECONDS="${PROVIDER_TRANSIENT_BACKOFF_MAX_SECONDS:-14400}"
+
+ensure_checkpoint_release() {
+  if gh release view "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+    return 0
+  fi
+  gh release create "$CHECKPOINT_TAG" \
+    --repo "$GITHUB_REPOSITORY" \
+    --target "${GITHUB_SHA:-main}" \
+    --title "HERMES Auto Studio checkpoint $id" \
+    --notes "Internal resumable checkpoint only. NOT publishable. publication_invariant=BLOCKED until the final AI-video quality gate passes." \
+    --prerelease >/dev/null
+}
+
+record_provider_wait() {
+  local state="$1"
+  local scene="$2"
+  local base max shift delay now retry retry_iso
+  case "$state" in
+    WAIT_QUOTA)
+      base="$PROVIDER_QUOTA_BACKOFF_SECONDS"
+      max="$PROVIDER_QUOTA_BACKOFF_MAX_SECONDS"
+      ;;
+    *)
+      base="$PROVIDER_TRANSIENT_BACKOFF_SECONDS"
+      max="$PROVIDER_TRANSIENT_BACKOFF_MAX_SECONDS"
+      ;;
+  esac
+  WAIT_ATTEMPTS=$((WAIT_ATTEMPTS+1))
+  shift=$((WAIT_ATTEMPTS-1))
+  [ "$shift" -le 2 ] || shift=2
+  delay=$((base << shift))
+  [ "$delay" -le "$max" ] || delay="$max"
+  now="$(date -u +%s)"
+  retry=$((now+delay))
+  retry_iso="$(date -u -d "@$retry" +'%Y-%m-%dT%H:%M:%SZ')"
+  jq -n \
+    --arg state "$state" \
+    --arg planner_id "$id" \
+    --arg render_tag "$tag" \
+    --arg provider "$AI_VIDEO_SPACE" \
+    --arg retry_at "$retry_iso" \
+    --argjson retry_after_epoch "$retry" \
+    --argjson attempts "$WAIT_ATTEMPTS" \
+    --argjson scene "$scene" \
+    '{
+      state:$state,
+      planner_id:$planner_id,
+      render_tag:$render_tag,
+      provider:$provider,
+      blocked_scene:$scene,
+      attempts:$attempts,
+      retry_after_epoch:$retry_after_epoch,
+      retry_at:$retry_at,
+      publication_invariant:"BLOCKED",
+      final_vector_video_scenes:0
+    }' > "$WAIT_STATE"
+  ensure_checkpoint_release
+  gh release upload "$CHECKPOINT_TAG" "$WAIT_STATE" --repo "$GITHUB_REPOSITORY" --clobber >/dev/null
+  HAS_WAIT_STATE=1
+  echo "AUTO_STUDIO_WAIT state=$state planner_id=$id scene=$scene attempt=$WAIT_ATTEMPTS retry_at=$retry_iso publication_invariant=BLOCKED"
+}
+
+clear_provider_wait() {
+  if [ "$HAS_WAIT_STATE" != "1" ]; then
+    WAIT_ATTEMPTS=0
+    return 0
+  fi
+  local now_iso
+  now_iso="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  jq -n \
+    --arg planner_id "$id" \
+    --arg render_tag "$tag" \
+    --arg provider "$AI_VIDEO_SPACE" \
+    --arg cleared_at "$now_iso" \
+    '{
+      state:"CLEARED",
+      planner_id:$planner_id,
+      render_tag:$render_tag,
+      provider:$provider,
+      attempts:0,
+      retry_after_epoch:0,
+      cleared_at:$cleared_at,
+      publication_invariant:"BLOCKED",
+      final_vector_video_scenes:0
+    }' > "$WAIT_STATE"
+  ensure_checkpoint_release
+  gh release upload "$CHECKPOINT_TAG" "$WAIT_STATE" --repo "$GITHUB_REPOSITORY" --clobber >/dev/null || true
+  HAS_WAIT_STATE=0
+  WAIT_ATTEMPTS=0
+}
+
 REBUILD_EXISTING=0
 if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
   oldmeta="/tmp/hermes-studio/existing-metadata.json"
@@ -41,6 +140,28 @@ if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
   echo "Rebuilding legacy/low-quality release for $tag."
 fi
 
+if gh release view "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+  rm -f "$WAIT_STATE"
+  gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --dir /tmp/hermes-studio --pattern 'provider-wait.json' --clobber >/dev/null 2>&1 || true
+  if [ -s "$WAIT_STATE" ]; then
+    wait_planner="$(jq -r '.planner_id // ""' "$WAIT_STATE" 2>/dev/null || true)"
+    wait_state="$(jq -r '.state // ""' "$WAIT_STATE" 2>/dev/null || true)"
+    WAIT_ATTEMPTS="$(jq -r '.attempts // 0' "$WAIT_STATE" 2>/dev/null || echo 0)"
+    retry_after="$(jq -r '.retry_after_epoch // 0' "$WAIT_STATE" 2>/dev/null || echo 0)"
+    case "$WAIT_ATTEMPTS" in ''|*[!0-9]*) WAIT_ATTEMPTS=0 ;; esac
+    case "$retry_after" in ''|*[!0-9]*) retry_after=0 ;; esac
+    if [ "$wait_planner" = "$id" ] && { [ "$wait_state" = "WAIT_QUOTA" ] || [ "$wait_state" = "WAIT_PROVIDER" ]; }; then
+      HAS_WAIT_STATE=1
+      now_epoch="$(date -u +%s)"
+      if [ "$retry_after" -gt "$now_epoch" ]; then
+        retry_at="$(jq -r '.retry_at // ""' "$WAIT_STATE" 2>/dev/null || true)"
+        echo "AUTO_STUDIO_BACKOFF state=$wait_state planner_id=$id retry_at=$retry_at attempts=$WAIT_ATTEMPTS"
+        exit 0
+      fi
+    fi
+  fi
+fi
+
 echo "Installing zero-card render tools..."
 sudo apt-get update -qq
 sudo apt-get install -y -qq ffmpeg jq imagemagick espeak-ng fonts-dejavu-core
@@ -52,6 +173,10 @@ python3 -m pip install --quiet --disable-pip-version-check --break-system-packag
 rm -rf studio
 mkdir -p studio/scenes
 cp "$FEED" studio/feed.json
+
+if gh release view "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+  gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --dir studio/scenes --pattern 'ai_*.mp4' --clobber >/dev/null 2>&1 || true
+fi
 
 LANG_CODE="$(jq -r '.job.language // "id"' studio/feed.json)"
 TITLE="$(jq -r '.job.video_title // .job.topic // "HERMES WORK"' studio/feed.json)"
@@ -85,6 +210,7 @@ fi
 AI_VIDEO_SCENES=0
 VECTOR_KEYFRAMES=0
 BASIC_KEYFRAMES=0
+CHECKPOINT_REUSED=0
 for idx in $(seq 0 $((COUNT-1))); do
   n=$((idx+1))
   scene="$(jq -c ".job.scenes[$idx]" studio/feed.json)"
@@ -133,15 +259,40 @@ PY
 
   ai_clip="studio/scenes/ai_$(printf '%02d' "$n").mp4"
   motion_prompt="$prompt. Animate this exact Character Bible keyframe with natural preschool-friendly motion. Keep every character's face, hair, clothing, colors, proportions and accessories unchanged. Smooth gentle motion, stable camera, no morphing, no added characters, no text generation."
-  echo "Sending scene $n prompt to AI video provider: $AI_VIDEO_SPACE"
-  if python3 hermes-auto-studio/ai_video_scene.py \
-      --image "$img" --prompt "$motion_prompt" --output "$ai_clip" \
-      --seed "$((CHANNEL_SEED+n))" --duration 1.0 --space "$AI_VIDEO_SPACE" \
-      && ffprobe -v error -show_entries stream=codec_type -of csv=p=0 "$ai_clip" | grep -q video; then
+
+  if [ -s "$ai_clip" ] && ffprobe -v error -show_entries stream=codec_type -of csv=p=0 "$ai_clip" | grep -q video; then
+    echo "Reusing AI-video checkpoint for scene $n."
     AI_VIDEO_SCENES=$((AI_VIDEO_SCENES+1))
+    CHECKPOINT_REUSED=$((CHECKPOINT_REUSED+1))
   else
-    echo "AI_VIDEO_REQUIRED: scene $n failed. Vector-only publication is forbidden."
-    exit 1
+    rm -f "$ai_clip"
+    echo "Sending scene $n prompt to AI video provider: $AI_VIDEO_SPACE"
+    set +e
+    python3 hermes-auto-studio/ai_video_scene.py \
+      --image "$img" --prompt "$motion_prompt" --output "$ai_clip" \
+      --seed "$((CHANNEL_SEED+n))" --duration 1.0 --space "$AI_VIDEO_SPACE"
+    ai_rc=$?
+    set -e
+
+    if [ "$ai_rc" -eq 0 ] && [ -s "$ai_clip" ] && ffprobe -v error -show_entries stream=codec_type -of csv=p=0 "$ai_clip" | grep -q video; then
+      AI_VIDEO_SCENES=$((AI_VIDEO_SCENES+1))
+      clear_provider_wait
+      ensure_checkpoint_release
+      if ! gh release upload "$CHECKPOINT_TAG" "$ai_clip" --repo "$GITHUB_REPOSITORY" --clobber >/dev/null; then
+        echo "AI_VIDEO_CHECKPOINT_FAILED: scene $n could not be persisted; refusing to spend more provider quota without resumability."
+        exit 1
+      fi
+      echo "AI_VIDEO_CHECKPOINT_SAVED scene=$n"
+    elif [ "$ai_rc" -eq 75 ]; then
+      record_provider_wait "WAIT_QUOTA" "$n"
+      exit 0
+    elif [ "$ai_rc" -eq 76 ]; then
+      record_provider_wait "WAIT_PROVIDER" "$n"
+      exit 0
+    else
+      echo "AI_VIDEO_REQUIRED: scene $n failed with non-transient rc=$ai_rc. Vector-only publication is forbidden."
+      exit 1
+    fi
   fi
 
   seg="studio/scenes/seg_$(printf '%02d' "$n").mp4"
@@ -202,8 +353,8 @@ jq '{
   repository:"Djaeger1/DJAEGER-WORK"
 }' studio/feed.json > studio/metadata.json
 jq --arg actual "$ACTUAL_DURATION" --arg quality "$QUALITY_GATE" --arg space "$AI_VIDEO_SPACE" \
-   --argjson ai_video "$AI_VIDEO_SCENES" --argjson vector_keys "$VECTOR_KEYFRAMES" --argjson basic_keys "$BASIC_KEYFRAMES" \
-   '. + {actual_duration_sec:($actual|tonumber),quality_gate:$quality,ai_video_space:$space,required_ai_video_scenes:$ai_video,successful_ai_video_scenes:$ai_video,final_vector_video_scenes:0,publication_invariant:(if ($quality=="PASS" and $ai_video>0) then "PASS" else "BLOCKED" end),visual_stats:{ai_video_scenes:$ai_video,character_bible_vector_keyframes:$vector_keys,basic_keyframes:$basic_keys}}' \
+   --argjson required "$COUNT" --argjson ai_video "$AI_VIDEO_SCENES" --argjson vector_keys "$VECTOR_KEYFRAMES" --argjson basic_keys "$BASIC_KEYFRAMES" --argjson checkpoint_reused "$CHECKPOINT_REUSED" \
+   '. + {actual_duration_sec:($actual|tonumber),quality_gate:$quality,ai_video_space:$space,required_ai_video_scenes:$required,successful_ai_video_scenes:$ai_video,final_vector_video_scenes:0,publication_invariant:(if ($quality=="PASS" and $ai_video==$required and $required>0) then "PASS" else "BLOCKED" end),visual_stats:{ai_video_scenes:$ai_video,checkpoint_reused:$checkpoint_reused,character_bible_vector_keyframes:$vector_keys,basic_keyframes:$basic_keys}}' \
    studio/metadata.json > studio/metadata.json.tmp
 mv studio/metadata.json.tmp studio/metadata.json
 
@@ -216,4 +367,10 @@ if [ "$REBUILD_EXISTING" = "1" ]; then
 else
   gh release create "$tag" studio/final.mp4 studio/thumbnail.jpg studio/metadata.json studio/probe.json     --repo "$GITHUB_REPOSITORY" --title "HERMES Auto Studio $id"     --notes "Auto-rendered by HERMES AUTO STUDIO V3 AI VIDEO with Character Bible V1 and AI-video-required quality gate. Public ZeroGPU provider, no paid API, 0 HERMES Neurons."
 fi
-echo "QUALITY_GATE=$QUALITY_GATE AI_VIDEO_SCENES=$AI_VIDEO_SCENES VECTOR_KEYFRAMES=$VECTOR_KEYFRAMES BASIC_KEYFRAMES=$BASIC_KEYFRAMES"
+
+if gh release view "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+  gh release delete "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes >/dev/null 2>&1 || \
+    echo "CHECKPOINT_CLEANUP_WARN tag=$CHECKPOINT_TAG"
+fi
+
+echo "QUALITY_GATE=$QUALITY_GATE AI_VIDEO_SCENES=$AI_VIDEO_SCENES CHECKPOINT_REUSED=$CHECKPOINT_REUSED VECTOR_KEYFRAMES=$VECTOR_KEYFRAMES BASIC_KEYFRAMES=$BASIC_KEYFRAMES"
