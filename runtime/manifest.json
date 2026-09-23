@@ -1,5 +1,5 @@
 {
-  "version": "v2.5.41-dashboard-state-sync",
-  "description": "Synchronizes DJAEGER WORK planner, Auto Studio provider-wait/checkpoint state, YouTube upload state, channel analytics readiness, and knowledge counters so the dashboard shows truthful live production status instead of placeholder or misleading values.",
+  "version": "v2.5.42-youtube-analytics-consent",
+  "description": "Adds secure incremental YouTube Analytics OAuth consent using loopback PKCE on the dashboard, stores the upgraded refresh token only on Redmi 5A, and triggers real retention/CTR/watch-time sync without exposing OAuth secrets.",
   "restart": false
 }
