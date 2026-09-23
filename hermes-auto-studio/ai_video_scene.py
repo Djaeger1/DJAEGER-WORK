@@ -39,6 +39,10 @@ def classify_provider_error(exc):
         "temporarily unavailable",
         "space is sleeping",
         "space unavailable",
+        "no gpu was available",
+        "zerogpu queue",
+        "zerogpu queues",
+        "higher priority in zerogpu",
         "connection timed out",
         "timed out",
         "timeout",
@@ -62,6 +66,7 @@ def selftest():
         ("You have exceeded your ZeroGPU runs limit. Authenticate for more quota", "WAIT_QUOTA", EXIT_WAIT_QUOTA),
         ("HTTP 429 Too Many Requests", "WAIT_QUOTA", EXIT_WAIT_QUOTA),
         ("HTTP 503 Service Unavailable", "WAIT_PROVIDER", EXIT_WAIT_PROVIDER),
+        ("No GPU was available after 60s. Create a free account to get a higher priority in ZeroGPU queues.", "WAIT_PROVIDER", EXIT_WAIT_PROVIDER),
         ("connection timed out while waiting for queue", "WAIT_PROVIDER", EXIT_WAIT_PROVIDER),
         ("unexpected provider endpoint signature", None, None),
     ]
