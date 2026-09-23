@@ -1500,7 +1500,7 @@ public class MainActivity extends Activity {
                 server = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"));
                 server.setSoTimeout(180000);
                 int port = server.getLocalPort();
-                String redirect = "http://127.0.0.1:" + port + "/oauth2callback";
+                String redirect = "http://127.0.0.1:" + port;
 
                 SecureRandom random = new SecureRandom();
                 byte[] stateBytes = new byte[24];
