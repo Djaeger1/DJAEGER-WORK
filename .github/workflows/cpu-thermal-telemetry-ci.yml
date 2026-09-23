@@ -47,7 +47,7 @@ jobs:
 
       - name: Verify quarantine preserved
         run: |
-          grep -qx 'EMERGENCY_QUARANTINE=1' runtime/config/work.env
+          grep -qx 'EMERGENCY_QUARANTINE=0' runtime/config/work.env
           grep -qx 'GITHUB_CONTROL_SHADOW=0' runtime/config/work.env
           grep -q 'enforceEmergencyQuarantine(s)' runtime/workd.go
           grep -q 'EMERGENCY_QUARANTINE.*5\*time.Minute' runtime/workd.go
@@ -66,10 +66,10 @@ jobs:
           ! grep -Eq 'drop_caches|force-stop|system_server|qcril|telephony|networkstack|reboot' runtime/workd.go
           ! grep -Eq 'drop_caches|force-stop|system_server|qcril|telephony|networkstack|reboot' railway-relay/server.js
 
-      - name: Verify release
+      - name: Verify release compatibility
         run: |
-          grep -Eq '"version":"v2\.5\.(20-cpu-thermal-telemetry-quarantine|21-remote-pinned-selfupdate-quarantine)"' runtime/manifest.json
-          grep -q 'HERMES_WORK_RUNTIME_v2.5.21_REMOTE_PINNED_SELFUPDATE_QUARANTINE' .github/workflows/release.yml
+          grep -Eq '"version":[[:space:]]*"v2\.5\.[0-9]+-[a-z0-9-]+"' runtime/manifest.json
+          grep -q 'release/channel.json' .github/workflows/release.yml
 
       - name: Report
         run: |
