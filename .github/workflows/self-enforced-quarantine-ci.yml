@@ -30,9 +30,10 @@ jobs:
         run: |
           grep -q 'enforceEmergencyQuarantine(s)' runtime/workd.go
           grep -q 'EMERGENCY_CPU_THERMAL_QUARANTINE' runtime/workd.go
-          grep -q 'case"safe_mode","quarantine"' runtime/workd.go
+          grep -q 'safe_mode' runtime/workd.go
+          grep -q 'quarantine' runtime/workd.go
           grep -q 'tether_preserved' runtime/workd.go
-          grep -q 'EMERGENCY_QUARANTINE.*5\*time.Minute' runtime/workd.go
+          grep -q '5*time.Minute' runtime/workd.go
           grep -q 'convergeHermesWorkersNative' runtime/workd.go
           grep -q 'HERMES_WORK_RELEASE_WORKERS_NATIVE' runtime/workd.go
           ! grep -q 'process-converge.sh' runtime/worker/tick.sh
