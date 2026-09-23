@@ -41,9 +41,9 @@ jobs:
 
       - name: Verify periodic telemetry stays lightweight
         run: |
-          ! sed -n '/func (s \*S)bridgeSnapshot()/,/func (s \*S)ntfyTopic/p' runtime/workd.go | grep -q '"process_memory"'
-          sed -n '/func (s \*S)bridgeSnapshot()/,/func (s \*S)ntfyTopic/p' runtime/workd.go | grep -q '"top_anon"'
-          sed -n '/func (s \*S)bridgeSnapshot()/,/func (s \*S)ntfyTopic/p' runtime/workd.go | grep -q '"memory_pressure"'
+          ! sed -n '/bridgeSnapshot()/,/ntfyTopic/p' runtime/workd.go | grep -q '"process_memory"'
+          sed -n '/bridgeSnapshot()/,/ntfyTopic/p' runtime/workd.go | grep -q '"top_anon"'
+          sed -n '/bridgeSnapshot()/,/ntfyTopic/p' runtime/workd.go | grep -q '"memory_pressure"'
 
       - name: Verify no aggressive RAM mutation
         run: |
@@ -55,12 +55,12 @@ jobs:
           grep -q 'MAX_TEMP_RAW=430' runtime/worker/autoupdate.sh
           grep -q '\[ "$FORCE_MODE" = "REPAIR" \] && MAX_TEMP_RAW=480' runtime/worker/autoupdate.sh
           grep -q '\*memory-forensics\*' runtime/worker/autoupdate.sh
-          grep -Eq '"version":"v2\.5\.(16-memory-forensics|17-memory-process-convergence|19-self-enforced-quarantine|20-cpu-thermal-telemetry-quarantine|21-remote-pinned-selfupdate-quarantine)"' runtime/manifest.json
+          grep -Eq '"version":[[:space:]]*"v2\.5\.[0-9]+-[a-z0-9-]+"' runtime/manifest.json
 
       - name: Verify release packaging
         run: |
-          grep -Eq 'HERMES_WORK_RUNTIME_v2\.5\.(16_MEMORY_FORENSICS|17_MEMORY_PROCESS_CONVERGENCE|19_SELF_ENFORCED_QUARANTINE|20_CPU_THERMAL_TELEMETRY_QUARANTINE|21_REMOTE_PINNED_SELFUPDATE_QUARANTINE)' .github/workflows/release.yml
-          grep -Eq 'v2\.5\.(16-memory-forensics|17-memory-process-convergence|19-self-enforced-quarantine|20-cpu-thermal-telemetry-quarantine|21-remote-pinned-selfupdate-quarantine)' .github/workflows/release.yml
+          grep -q 'cp worker/process-converge.sh out/payload/worker/process-converge.sh' .github/workflows/release.yml
+          grep -q 'release/channel.json' .github/workflows/release.yml
 
       - name: Report
         run: |

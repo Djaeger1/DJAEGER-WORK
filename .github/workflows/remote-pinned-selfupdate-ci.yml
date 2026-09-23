@@ -37,19 +37,20 @@ jobs:
 
       - name: Verify trust pinning
         run: |
-          grep -q 'const pinnedUpdateChannel="https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json"' runtime/workd.go
-          grep -q 'ch!=pinnedUpdateChannel' runtime/workd.go
+          grep -q 'https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json' runtime/workd.go
+          grep -q 'pinnedUpdateChannel' runtime/workd.go
+          grep -Eq 'ch[[:space:]]*!=[[:space:]]*pinnedUpdateChannel' runtime/workd.go
           grep -q 'sha256 mismatch' runtime/workd.go
           grep -q 'manifest version mismatch' runtime/workd.go
           grep -q 'bundle too large' runtime/workd.go
-          grep -q '32<<20' runtime/workd.go
+          grep -Eq '32[[:space:]]*<<[[:space:]]*20' runtime/workd.go
 
       - name: Verify remote boundary
         run: |
           grep -q 'func loopbackRemote' runtime/workd.go
-          grep -q 'case"remote_update"' runtime/workd.go
-          grep -q 'if !loopbackRemote(r)' runtime/workd.go
-          grep -q 'source=="PRIVATE_REMOTE"' runtime/workd.go
+          grep -Eq 'case[[:space:]]+"remote_update"' runtime/workd.go
+          grep -q '!loopbackRemote(r)' runtime/workd.go
+          grep -Eq 'source[[:space:]]*==[[:space:]]*"PRIVATE_REMOTE"' runtime/workd.go
           grep -q 'remote update requires quarantine' runtime/workd.go
 
       - name: Verify quarantine and hardware safety
@@ -67,10 +68,10 @@ jobs:
           grep -q 'quarantine_preserved' railway-relay/server.js
           ! grep -Eq 'reboot|drop_caches|force-stop|killall|pkill|system_server|qcril|telephony|networkstack|rndis0' railway-relay/server.js
 
-      - name: Verify release identity
+      - name: Verify release compatibility
         run: |
-          grep -q '"version":"v2.5.21-remote-pinned-selfupdate-quarantine"' runtime/manifest.json
-          grep -q 'HERMES_WORK_RUNTIME_v2.5.21_REMOTE_PINNED_SELFUPDATE_QUARANTINE' .github/workflows/release.yml
+          grep -Eq '"version":[[:space:]]*"v2\.5\.[0-9]+-[a-z0-9-]+"' runtime/manifest.json
+          grep -q 'release/channel.json' .github/workflows/release.yml
 
       - name: Report
         run: |

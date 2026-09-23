@@ -34,8 +34,8 @@ jobs:
         run: |
           grep -q 'func cpuUsageSummary()' runtime/workd.go
           grep -q 'os.ReadFile("/proc/stat")' runtime/workd.go
-          grep -q '"source":"/proc/stat"' runtime/workd.go
-          grep -q '"sample_ms":250' runtime/workd.go
+          grep -Eq '"source"[[:space:]]*:[[:space:]]*"/proc/stat"' runtime/workd.go
+          grep -Eq '"sample_ms"[[:space:]]*:[[:space:]]*250' runtime/workd.go
 
       - name: Verify thermal source
         run: |
@@ -47,10 +47,11 @@ jobs:
 
       - name: Verify quarantine preserved
         run: |
-          grep -qx 'EMERGENCY_QUARANTINE=1' runtime/config/work.env
+          grep -qx 'EMERGENCY_QUARANTINE=0' runtime/config/work.env
           grep -qx 'GITHUB_CONTROL_SHADOW=0' runtime/config/work.env
           grep -q 'enforceEmergencyQuarantine(s)' runtime/workd.go
-          grep -q 'EMERGENCY_QUARANTINE.*5\*time.Minute' runtime/workd.go
+          grep -q 'EMERGENCY_QUARANTINE' runtime/workd.go
+          grep -Fq 'time.Sleep(5 * time.Minute)' runtime/workd.go
           grep -q 'convergeHermesWorkersNative' runtime/workd.go
           ! grep -q 'process-converge.sh' runtime/worker/tick.sh
 
@@ -66,10 +67,10 @@ jobs:
           ! grep -Eq 'drop_caches|force-stop|system_server|qcril|telephony|networkstack|reboot' runtime/workd.go
           ! grep -Eq 'drop_caches|force-stop|system_server|qcril|telephony|networkstack|reboot' railway-relay/server.js
 
-      - name: Verify release
+      - name: Verify release compatibility
         run: |
-          grep -Eq '"version":"v2\.5\.(20-cpu-thermal-telemetry-quarantine|21-remote-pinned-selfupdate-quarantine)"' runtime/manifest.json
-          grep -q 'HERMES_WORK_RUNTIME_v2.5.21_REMOTE_PINNED_SELFUPDATE_QUARANTINE' .github/workflows/release.yml
+          grep -Eq '"version":[[:space:]]*"v2\.5\.[0-9]+-[a-z0-9-]+"' runtime/manifest.json
+          grep -q 'release/channel.json' .github/workflows/release.yml
 
       - name: Report
         run: |

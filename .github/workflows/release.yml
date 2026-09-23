@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -Fq 'UPDATE_CHANNEL_URL=https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json' runtime/config/work.env
-          grep -Fq '"version": "v2.5.40-snapshot-integrity"' runtime/manifest.json
+          grep -Fq '"version": "v2.5.41-dashboard-state-sync"' runtime/manifest.json
           sh -n runtime/worker/tick.sh
           sh -n runtime/worker/handoff.sh
           sh -n runtime/worker/autoupdate.sh
@@ -139,6 +139,12 @@ jobs:
           grep -Fq 'LEGACY_YOUTUBE_PUBLISHER_DISABLED' youtube-publisher/publish.sh
           grep -Fq '/api/work/snapshot' runtime/workd.go
           grep -Fq 'snapshotStatus' runtime/workd.go
+          grep -Fq '/api/work/dashboard' runtime/workd.go
+          grep -Fq 'DASHBOARD_STATE_V1' runtime/workd.go
+          grep -Fq 'studio_provider_wait.json' runtime/workd.go
+          grep -Fq 'WAIT_QUOTA' runtime/workd.go
+          grep -Fq 'ideas_not_produced":notRendered' runtime/workd.go
+          grep -Fq '"produced":s.studioResultCount()' runtime/workd.go
           ! grep -Fq "cron: '17,47 * * * *'" .github/workflows/youtube-publisher.yml
 
       - name: Build ARMv7 runtime
@@ -159,16 +165,16 @@ jobs:
           cp config/work.env out/payload/config/work.env
           chmod 755 out/payload/bin/workd out/payload/worker/*.sh
           cd out
-          zip -Xqr ../HERMES_WORK_RUNTIME_v2.5.39_PRODUCTION_LOOP_HARDENING.zip manifest.json payload
+          zip -Xqr ../HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC.zip manifest.json payload
           cd ..
-          sha256sum HERMES_WORK_RUNTIME_v2.5.39_PRODUCTION_LOOP_HARDENING.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v2.5.39_PRODUCTION_LOOP_HARDENING.zip.sha256
-          printf '{"channel":"stable","version":"v2.5.40-snapshot-integrity","bundle":"HERMES_WORK_RUNTIME_v2.5.39_PRODUCTION_LOOP_HARDENING.zip","sha256":"%s"}\n' "$(cat HERMES_WORK_RUNTIME_v2.5.39_PRODUCTION_LOOP_HARDENING.zip.sha256)" > channel.json
+          sha256sum HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC.zip.sha256
+          printf '{"channel":"stable","version":"v2.5.41-dashboard-state-sync","bundle":"HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC.zip","sha256":"%s"}\n' "$(cat HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC.zip.sha256)" > channel.json
 
       - name: Upload installable package
         uses: actions/upload-artifact@v4
         with:
-          name: HERMES_WORK_RUNTIME_v2.5.39_PRODUCTION_LOOP_HARDENING
-          path: runtime/HERMES_WORK_RUNTIME_v2.5.39_PRODUCTION_LOOP_HARDENING.zip
+          name: HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC
+          path: runtime/HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC.zip
           retention-days: 30
 
       - name: Publish isolated stable channel
@@ -176,8 +182,8 @@ jobs:
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"
-          cp runtime/HERMES_WORK_RUNTIME_v2.5.39_PRODUCTION_LOOP_HARDENING.zip "$tmp/"
-          cp runtime/HERMES_WORK_RUNTIME_v2.5.39_PRODUCTION_LOOP_HARDENING.zip.sha256 "$tmp/"
+          cp runtime/HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC.zip "$tmp/"
+          cp runtime/HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC.zip.sha256 "$tmp/"
           cp runtime/channel.json "$tmp/"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -186,15 +192,15 @@ jobs:
             git fetch origin main
             git checkout -B main origin/main
             mkdir -p release
-            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.39_PRODUCTION_LOOP_HARDENING.zip" release/
-            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.39_PRODUCTION_LOOP_HARDENING.zip.sha256" release/
+            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC.zip" release/
+            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.41_DASHBOARD_STATE_SYNC.zip.sha256" release/
             cp "$tmp/channel.json" release/
             git add release/
             if git diff --cached --quiet; then
               echo "Release channel already current."
               exit 0
             fi
-            git commit -m "Publish DJAEGER WORK v2.5.39 production loop hardening"
+            git commit -m "Publish DJAEGER WORK v2.5.41 dashboard state sync"
             if git push origin HEAD:main; then
               exit 0
             fi

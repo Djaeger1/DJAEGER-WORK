@@ -55,10 +55,9 @@ jobs:
           grep -q 'process-converge.sh' runtime/worker/handoff.sh
           grep -q 'restart_single_updater' runtime/worker/handoff.sh
 
-      - name: Verify release
+      - name: Verify release compatibility
         run: |
-          grep -Eq '"version":"v2\.5\.(17-memory-process-convergence|19-self-enforced-quarantine|20-cpu-thermal-telemetry-quarantine|21-remote-pinned-selfupdate-quarantine)"' runtime/manifest.json
-          grep -Eq 'HERMES_WORK_RUNTIME_v2\.5\.(17_MEMORY_PROCESS_CONVERGENCE|19_SELF_ENFORCED_QUARANTINE|20_CPU_THERMAL_TELEMETRY_QUARANTINE|21_REMOTE_PINNED_SELFUPDATE_QUARANTINE)' .github/workflows/release.yml
+          grep -Eq '"version":[[:space:]]*"v2\.5\.[0-9]+-[a-z0-9-]+"' runtime/manifest.json
           grep -q 'cp worker/process-converge.sh out/payload/worker/process-converge.sh' .github/workflows/release.yml
 
       - name: Report

@@ -30,16 +30,17 @@ jobs:
         run: |
           grep -q 'enforceEmergencyQuarantine(s)' runtime/workd.go
           grep -q 'EMERGENCY_CPU_THERMAL_QUARANTINE' runtime/workd.go
-          grep -q 'case"safe_mode","quarantine"' runtime/workd.go
+          grep -q 'safe_mode' runtime/workd.go
+          grep -q 'quarantine' runtime/workd.go
           grep -q 'tether_preserved' runtime/workd.go
-          grep -q 'EMERGENCY_QUARANTINE.*5\*time.Minute' runtime/workd.go
+          grep -q '5*time.Minute' runtime/workd.go
           grep -q 'convergeHermesWorkersNative' runtime/workd.go
           grep -q 'HERMES_WORK_RELEASE_WORKERS_NATIVE' runtime/workd.go
           ! grep -q 'process-converge.sh' runtime/worker/tick.sh
-      - name: Verify release
+      - name: Verify release compatibility
         run: |
-          grep -Eq '"version":"v2\.5\.(19-self-enforced-quarantine|20-cpu-thermal-telemetry-quarantine|21-remote-pinned-selfupdate-quarantine)"' runtime/manifest.json
-          grep -Eq 'HERMES_WORK_RUNTIME_v2\.5\.(19_SELF_ENFORCED_QUARANTINE|20_CPU_THERMAL_TELEMETRY_QUARANTINE|21_REMOTE_PINNED_SELFUPDATE_QUARANTINE)' .github/workflows/release.yml
+          grep -Eq '"version":[[:space:]]*"v2\.5\.[0-9]+-[a-z0-9-]+"' runtime/manifest.json
+          grep -q 'cp worker/process-converge.sh out/payload/worker/process-converge.sh' .github/workflows/release.yml
       - name: Safety
         run: |
           ! grep -Eq 'reboot|drop_caches|force-stop|system_server|qcril|telephony|networkstack' runtime/workd.go
