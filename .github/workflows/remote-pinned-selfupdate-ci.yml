@@ -48,9 +48,9 @@ jobs:
       - name: Verify remote boundary
         run: |
           grep -q 'func loopbackRemote' runtime/workd.go
-          grep -q 'case"remote_update"' runtime/workd.go
-          grep -q 'if !loopbackRemote(r)' runtime/workd.go
-          grep -q 'source=="PRIVATE_REMOTE"' runtime/workd.go
+          grep -Eq 'case[[:space:]]+"remote_update"' runtime/workd.go
+          grep -q '!loopbackRemote(r)' runtime/workd.go
+          grep -Eq 'source[[:space:]]*==[[:space:]]*"PRIVATE_REMOTE"' runtime/workd.go
           grep -q 'remote update requires quarantine' runtime/workd.go
 
       - name: Verify quarantine and hardware safety
