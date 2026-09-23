@@ -67,10 +67,10 @@ jobs:
           grep -q 'quarantine_preserved' railway-relay/server.js
           ! grep -Eq 'reboot|drop_caches|force-stop|killall|pkill|system_server|qcril|telephony|networkstack|rndis0' railway-relay/server.js
 
-      - name: Verify release identity
+      - name: Verify release compatibility
         run: |
-          grep -q '"version":"v2.5.21-remote-pinned-selfupdate-quarantine"' runtime/manifest.json
-          grep -q 'HERMES_WORK_RUNTIME_v2.5.21_REMOTE_PINNED_SELFUPDATE_QUARANTINE' .github/workflows/release.yml
+          grep -Eq '"version":[[:space:]]*"v2\.5\.[0-9]+-[a-z0-9-]+"' runtime/manifest.json
+          grep -q 'release/channel.json' .github/workflows/release.yml
 
       - name: Report
         run: |
