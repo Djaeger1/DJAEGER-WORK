@@ -34,8 +34,8 @@ jobs:
         run: |
           grep -q 'func cpuUsageSummary()' runtime/workd.go
           grep -q 'os.ReadFile("/proc/stat")' runtime/workd.go
-          grep -q '"source":"/proc/stat"' runtime/workd.go
-          grep -q '"sample_ms":250' runtime/workd.go
+          grep -Eq '"source"[[:space:]]*:[[:space:]]*"/proc/stat"' runtime/workd.go
+          grep -Eq '"sample_ms"[[:space:]]*:[[:space:]]*250' runtime/workd.go
 
       - name: Verify thermal source
         run: |
