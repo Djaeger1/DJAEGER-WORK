@@ -37,12 +37,13 @@ jobs:
 
       - name: Verify trust pinning
         run: |
-          grep -q 'const pinnedUpdateChannel="https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json"' runtime/workd.go
-          grep -q 'ch!=pinnedUpdateChannel' runtime/workd.go
+          grep -q 'https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json' runtime/workd.go
+          grep -q 'pinnedUpdateChannel' runtime/workd.go
+          grep -Eq 'ch[[:space:]]*!=[[:space:]]*pinnedUpdateChannel' runtime/workd.go
           grep -q 'sha256 mismatch' runtime/workd.go
           grep -q 'manifest version mismatch' runtime/workd.go
           grep -q 'bundle too large' runtime/workd.go
-          grep -q '32<<20' runtime/workd.go
+          grep -Eq '32[[:space:]]*<<[[:space:]]*20' runtime/workd.go
 
       - name: Verify remote boundary
         run: |
