@@ -57,7 +57,7 @@ jobs:
           grep -Fq 'plannerSummaryLite()' runtime/workd.go
           grep -Fq 'studioSummaryLite()' runtime/workd.go
           grep -Fq 'jsonPackageSummary(s.scriptDir())' runtime/workd.go
-          ! sed -n '/func (s \*S)bridgeSnapshot()/,/func (s \*S)ntfyTopic/p' runtime/workd.go | grep -Fq 'ensure'
+          ! sed -n '/bridgeSnapshot()/,/ntfyTopic/p' runtime/workd.go | grep -Fq 'ensure'
           grep -Fq 'handoff.lock' runtime/worker/handoff.sh
           grep -Fq 'handoff.lock' runtime/worker/tick.sh
           grep -Fq '/api/work/memory-audit' runtime/workd.go
@@ -67,12 +67,12 @@ jobs:
           grep -Fq 'MAX_TEMP_RAW=480' runtime/worker/autoupdate.sh
           sh -n runtime/worker/autoupdate.sh
           grep -Fq 'hermesProcessSummary()' runtime/workd.go
-          grep -Fq 'ThreadCount int64' runtime/workd.go
+          grep -Fq 'ThreadCount' runtime/workd.go
           grep -Fq 'child-helper' runtime/workd.go
           grep -Fq 'last_guard_reason' runtime/workd.go
-          grep -Fq 'studioTick=0' runtime/workd.go
-          grep -Fq 'worker=reason' runtime/workd.go
-          ! sed -n '/func (s \*S)bridgeSnapshot()/,/func (s \*S)ntfyTopic/p' runtime/workd.go | grep -Fq 'process_memory'
+          grep -Fq 'studioTick = 0' runtime/workd.go
+          grep -Fq 'worker = reason' runtime/workd.go
+          ! sed -n '/bridgeSnapshot()/,/ntfyTopic/p' runtime/workd.go | grep -Fq 'process_memory'
           grep -Fq 'MIN_MEM_KB=163840' runtime/worker/autoupdate.sh
           grep -Fq '*memory-forensics*' runtime/worker/autoupdate.sh
           grep -Fq 'status_fallback' runtime/workd.go
@@ -90,17 +90,17 @@ jobs:
           grep -Fq 'EMERGENCY_CPU_THERMAL_QUARANTINE' runtime/worker/handoff.sh
           grep -Fq 'emergency_quarantine' runtime/workd.go
           grep -Fq 'enforceEmergencyQuarantine' runtime/workd.go
-          grep -Fq 'case"safe_mode","quarantine"' runtime/workd.go
+          grep -Fq 'case "safe_mode", "quarantine":' runtime/workd.go
           grep -Fq 'cpuUsageSummary()' runtime/workd.go
           grep -Fq 'thermalSummary()' runtime/workd.go
           grep -Fq 'cpu_soc_max_c' runtime/workd.go
           grep -Fq 'battery_temp_c' runtime/workd.go
           grep -Fq 'pinnedUpdateChannel' runtime/workd.go
           grep -Fq 'performSignedUpdate' runtime/workd.go
-          grep -Fq 'case"remote_update"' runtime/workd.go
+          grep -Fq 'case "remote_update":' runtime/workd.go
           grep -Fq 'loopbackRemote(r)' runtime/workd.go
           grep -Fq 'manifest version mismatch' runtime/workd.go
-          ! sed -n '/func (s \*S)bridgeSnapshot()/,/func (s \*S)ntfyTopic/p' runtime/workd.go | grep -Fq '"process_memory"'
+          ! sed -n '/bridgeSnapshot()/,/ntfyTopic/p' runtime/workd.go | grep -Fq '"process_memory"'
           grep -Fq 'MAX_TEMP_RAW=430' runtime/worker/autoupdate.sh
           grep -Fq '/api/work/youtube/oauth' runtime/workd.go
           grep -Fq 'youtubeOAuthStatus()' runtime/workd.go
@@ -133,7 +133,7 @@ jobs:
           grep -Fq 'elapsedVideoTimeRatio' runtime/workd.go
           grep -Fq 'video_thumbnail_impressions_ctr' runtime/workd.go
           grep -Fq 'FEEDBACK_V3_CONFIDENCE' runtime/workd.go
-          grep -Fq 'strings.HasPrefix(p.Source,"youtube_data_api_v2")' runtime/workd.go
+          grep -Fq 'strings.HasPrefix(p.Source, "youtube_data_api_v2")' runtime/workd.go
           grep -Fq 'AUTO_STUDIO_V3_AI_VIDEO' runtime/workd.go
           grep -Fq 'YOUTUBE_SCHEDULER_V2' runtime/workd.go
           grep -Fq 'LEGACY_YOUTUBE_PUBLISHER_DISABLED' youtube-publisher/publish.sh
@@ -143,8 +143,8 @@ jobs:
           grep -Fq 'DASHBOARD_STATE_V1' runtime/workd.go
           grep -Fq 'studio_provider_wait.json' runtime/workd.go
           grep -Fq 'WAIT_QUOTA' runtime/workd.go
-          grep -Fq 'ideas_not_produced":notRendered' runtime/workd.go
-          grep -Fq '"produced":s.studioResultCount()' runtime/workd.go
+          grep -Fq '"ideas_not_produced": notRendered' runtime/workd.go
+          grep -Fq '"produced": s.studioResultCount()' runtime/workd.go
           ! grep -Fq "cron: '17,47 * * * *'" .github/workflows/youtube-publisher.yml
 
       - name: Build ARMv7 runtime
