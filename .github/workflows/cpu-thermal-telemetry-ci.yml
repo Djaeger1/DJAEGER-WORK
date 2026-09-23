@@ -50,7 +50,8 @@ jobs:
           grep -qx 'EMERGENCY_QUARANTINE=0' runtime/config/work.env
           grep -qx 'GITHUB_CONTROL_SHADOW=0' runtime/config/work.env
           grep -q 'enforceEmergencyQuarantine(s)' runtime/workd.go
-          grep -q 'EMERGENCY_QUARANTINE.*5\*time.Minute' runtime/workd.go
+          grep -q 'EMERGENCY_QUARANTINE' runtime/workd.go
+          grep -Fq 'time.Sleep(5 * time.Minute)' runtime/workd.go
           grep -q 'convergeHermesWorkersNative' runtime/workd.go
           ! grep -q 'process-converge.sh' runtime/worker/tick.sh
 
