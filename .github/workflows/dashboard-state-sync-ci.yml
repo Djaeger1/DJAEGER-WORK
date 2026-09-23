@@ -1,0 +1,52 @@
+name: TEMP Dashboard State Sync CI
+
+on:
+  push:
+    branches:
+      - fix/dashboard-state-sync-v2541
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.23.x'
+          cache: false
+      - name: Validate Go runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -d runtime/workd.go)"
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -o /tmp/workd runtime/workd.go
+          grep -Fq '/api/work/dashboard' runtime/workd.go
+          grep -Fq 'DASHBOARD_STATE_V1' runtime/workd.go
+          grep -Fq 'studio_provider_wait.json' runtime/workd.go
+          grep -Fq '"version": "v2.5.41-dashboard-state-sync"' runtime/manifest.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Restore dashboard logo
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p hermes-work-terminal/app/src/main/res/drawable
+          cat hermes-work-terminal/logo-b64/logo.*.b64 | base64 -d > hermes-work-terminal/app/src/main/res/drawable/djaeger_logo.png
+      - name: Build dashboard APK
+        working-directory: hermes-work-terminal
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:assembleRelease --stacktrace
+          test -s app/build/outputs/apk/release/app-release-unsigned.apk
+          grep -Fq 'versionCode 140' app/build.gradle
+          grep -Fq 'versionName "1.4.0"' app/build.gradle
