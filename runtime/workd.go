@@ -3854,6 +3854,140 @@ func (s *S) youtubeOAuthCapabilitiesHandler(w http.ResponseWriter, r *http.Reque
 	}
 	js(w, s.youtubeOAuthCapabilities())
 }
+
+type YouTubeOAuthUpgradeRequest struct {
+	Code         string `json:"code"`
+	RedirectURI  string `json:"redirect_uri"`
+	CodeVerifier string `json:"code_verifier"`
+}
+
+func validLoopbackRedirect(raw string) bool {
+	u, e := url.Parse(strings.TrimSpace(raw))
+	if e != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.Port() == "" || u.Path != "/oauth2callback" {
+		return false
+	}
+	p, e := strconv.Atoi(u.Port())
+	return e == nil && p >= 1024 && p <= 65535
+}
+
+func youtubeUpgradeAnalyticsToken(c YouTubeOAuthCredential, q YouTubeOAuthUpgradeRequest) (YouTubeOAuthCredential, map[string]any, error) {
+	q.Code = strings.TrimSpace(q.Code)
+	q.RedirectURI = strings.TrimSpace(q.RedirectURI)
+	q.CodeVerifier = strings.TrimSpace(q.CodeVerifier)
+	if q.Code == "" || !validLoopbackRedirect(q.RedirectURI) || len(q.CodeVerifier) < 43 || len(q.CodeVerifier) > 128 {
+		return c, nil, fmt.Errorf("invalid oauth upgrade request")
+	}
+
+	v := url.Values{}
+	v.Set("client_id", strings.TrimSpace(c.ClientID))
+	v.Set("client_secret", strings.TrimSpace(c.ClientSecret))
+	v.Set("code", q.Code)
+	v.Set("redirect_uri", q.RedirectURI)
+	v.Set("code_verifier", q.CodeVerifier)
+	v.Set("grant_type", "authorization_code")
+	req, e := http.NewRequest("POST", "https://oauth2.googleapis.com/token", strings.NewReader(v.Encode()))
+	if e != nil {
+		return c, nil, e
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	cl := androidHTTPClient()
+	cl.Timeout = 30 * time.Second
+	resp, e := cl.Do(req)
+	if e != nil {
+		return c, nil, e
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 262144))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var ge map[string]any
+		_ = json.Unmarshal(b, &ge)
+		code := strings.TrimSpace(fmt.Sprint(ge["error"]))
+		desc := strings.TrimSpace(fmt.Sprint(ge["error_description"]))
+		if code == "" || code == "<nil>" {
+			code = fmt.Sprintf("http_%d", resp.StatusCode)
+		}
+		if desc != "" && desc != "<nil>" {
+			return c, nil, fmt.Errorf("%s: %s", code, desc)
+		}
+		return c, nil, fmt.Errorf("%s", code)
+	}
+
+	var x struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int    `json:"expires_in"`
+	}
+	if json.Unmarshal(b, &x) != nil || strings.TrimSpace(x.AccessToken) == "" {
+		return c, nil, fmt.Errorf("oauth token response invalid")
+	}
+	if strings.TrimSpace(x.RefreshToken) == "" {
+		return c, nil, fmt.Errorf("refresh_token_missing_reconsent")
+	}
+	caps, e := youtubeOAuthCapabilitiesFromToken(strings.TrimSpace(x.AccessToken))
+	if e != nil {
+		return c, nil, e
+	}
+	forceSSL, _ := caps["youtube_force_ssl"].(bool)
+	analytics, _ := caps["yt_analytics_readonly"].(bool)
+	if !forceSSL || !analytics {
+		return c, nil, fmt.Errorf("required oauth scopes not granted")
+	}
+
+	c.RefreshToken = strings.TrimSpace(x.RefreshToken)
+	c.SavedAt = time.Now().Format(time.RFC3339)
+	return c, caps, nil
+}
+
+func (s *S) youtubeOAuthUpgradeAnalytics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	if !s.auth(r) {
+		http.Error(w, "unauthorized", 401)
+		return
+	}
+	if !localOrTrustedRemote(r) {
+		http.Error(w, "local_or_trusted_remote_only", 403)
+		return
+	}
+	c, ok := s.loadYouTubeOAuth()
+	if !ok {
+		http.Error(w, "youtube oauth not configured", 409)
+		return
+	}
+	var q YouTubeOAuthUpgradeRequest
+	if json.NewDecoder(io.LimitReader(r.Body, 131072)).Decode(&q) != nil {
+		http.Error(w, "invalid json", 400)
+		return
+	}
+	updated, caps, e := youtubeUpgradeAnalyticsToken(c, q)
+	if e != nil {
+		http.Error(w, "youtube analytics consent failed: "+youtubeClip(e.Error(), 240), 401)
+		return
+	}
+
+	b, _ := json.Marshal(updated)
+	tmp := s.youtubeOAuthPath() + ".tmp"
+	if e = os.WriteFile(tmp, b, 0600); e != nil {
+		http.Error(w, "credential save failed", 500)
+		return
+	}
+	if e = os.Rename(tmp, s.youtubeOAuthPath()); e != nil {
+		http.Error(w, "credential save failed", 500)
+		return
+	}
+	st := map[string]any{
+		"state": "VERIFIED",
+		"verified_at": time.Now().Format(time.RFC3339),
+		"scope": "youtube.force-ssl yt-analytics.readonly",
+		"analytics_consent": "GRANTED",
+	}
+	sb, _ := json.Marshal(st)
+	_ = os.WriteFile(s.youtubeOAuthStatePath(), sb, 0600)
+	_ = os.Remove(s.youtubeFeedbackMarkerPath())
+	js(w, map[string]any{"ok": true, "status": s.youtubeOAuthStatus(), "capabilities": caps, "analytics_refresh_requested": true, "secrets_exposed": false})
+}
 func youtubeClip(s string, n int) string {
 	r := []rune(strings.TrimSpace(s))
 	if len(r) > n {
@@ -6128,6 +6262,7 @@ func main() {
 	m.HandleFunc("/api/work/publication", s.publication)
 	m.HandleFunc("/api/work/youtube/oauth", s.youtubeOAuth)
 	m.HandleFunc("/api/work/youtube/oauth/capabilities", s.youtubeOAuthCapabilitiesHandler)
+	m.HandleFunc("/api/work/youtube/oauth/upgrade-analytics", s.youtubeOAuthUpgradeAnalytics)
 	m.HandleFunc("/api/work/youtube/publish", s.youtubePublish)
 	m.HandleFunc("/api/work/youtube/privacy", s.youtubePrivacy)
 	m.HandleFunc("/api/work/youtube/thumbnail", s.youtubeThumbnail)
