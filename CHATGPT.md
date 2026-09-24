@@ -69,3 +69,12 @@ This file is ONLY for DJAEGER WORK / HERMES WORK. Do not mix it with DJAEGER Gam
 - Do not invent unavailable YouTube Analytics metrics.
 - Preserve signed/pinned runtime update verification, rollback, thermal/resource guards, and DATA_ONLY bridge behavior.
 - Do not store raw OAuth tokens, API keys, remote keys, or other secrets in this file.
+
+
+## Live finalization checkpoint — 2026-09-24
+- Dashboard APK v1.4.1 SIGNED was remotely installed in-place on Redmi Note 8 Pro via the authorized terminal; package manager verified versionCode 141 / versionName 1.4.1. Existing app data was preserved (no uninstall, no reboot).
+- A stable dashboard APK channel now exists at release/dashboard/ so future signed dashboard builds can be fetched and installed without asking the user to manually download the artifact.
+- Auto Studio checkpoint is newer than the earlier scene-4 note: scenes 1-4 are persisted as ai_01.mp4 through ai_04.mp4.
+- Latest provider wait is WAIT_QUOTA on scene 5, attempt 1, retry_at=2026-09-24T03:01:14Z (10:01:14 WIB). publication_invariant remains BLOCKED until every required AI-video scene passes.
+- The next normal cron after that retry boundary is 2026-09-24T04:23:00Z (11:23 WIB).
+- YouTube Analytics remains the only human-consent gate: the existing token has youtube.force-ssl but not yt-analytics.readonly. Runtime v2.5.42 and dashboard v1.4.1 are prepared to perform incremental consent securely; Google account approval must not be bypassed.
