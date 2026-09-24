@@ -2,7 +2,7 @@ name: DJAEGER WORK Release
 
 on:
   push:
-    branches: [main]
+    branches: [main, djaeger-work-v2.6-creative-intelligence]
     paths:
       - 'runtime/**'
       - '.github/workflows/release.yml'
@@ -32,7 +32,18 @@ jobs:
         run: |
           set -euo pipefail
           grep -Fq 'UPDATE_CHANNEL_URL=https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json' runtime/config/work.env
-          grep -Fq '"version": "v2.5.43-youtube-analytics-playground"' runtime/manifest.json
+          grep -Fq '"version": "v2.6.0-creative-director"' runtime/manifest.json
+          bash -n hermes-auto-studio/render.sh
+          python3 -m py_compile hermes-auto-studio/ai_video_scene.py hermes-auto-studio/vector_scene.py hermes-auto-studio/quality_critic.py
+          grep -Fq 'CREATIVE_RESEARCH_V3' runtime/workd.go
+          grep -Fq 'YOUTUBE_BENCHMARK_V1' runtime/workd.go
+          grep -Fq 'CREATIVE_DIRECTOR_V1' runtime/workd.go
+          grep -Fq 'SCRIPT_ENGINE_V2_CREATIVE' runtime/workd.go
+          grep -Fq 'PRODUCTION_PACK_V2_CREATIVE' runtime/workd.go
+          grep -Fq 'DJAEGER_STUDIO_V4_CREATIVE' runtime/workd.go
+          grep -Fq 'ARTISTIC_QUALITY_GATE_V1' hermes-auto-studio/quality_critic.py
+          grep -Fq 'required_ai_video_shots' runtime/workd.go
+          ! grep -Fq -- '-stream_loop -1' hermes-auto-studio/render.sh
           sh -n runtime/worker/tick.sh
           sh -n runtime/worker/handoff.sh
           sh -n runtime/worker/autoupdate.sh
@@ -171,25 +182,26 @@ jobs:
           cp config/work.env out/payload/config/work.env
           chmod 755 out/payload/bin/workd out/payload/worker/*.sh
           cd out
-          zip -Xqr ../HERMES_WORK_RUNTIME_v2.5.43_YOUTUBE_ANALYTICS_PLAYGROUND.zip manifest.json payload
+          zip -Xqr ../HERMES_WORK_RUNTIME_v2.6.0_CREATIVE_DIRECTOR.zip manifest.json payload
           cd ..
-          sha256sum HERMES_WORK_RUNTIME_v2.5.43_YOUTUBE_ANALYTICS_PLAYGROUND.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v2.5.43_YOUTUBE_ANALYTICS_PLAYGROUND.zip.sha256
-          printf '{"channel":"stable","version":"v2.5.43-youtube-analytics-playground","bundle":"HERMES_WORK_RUNTIME_v2.5.43_YOUTUBE_ANALYTICS_PLAYGROUND.zip","sha256":"%s"}\n' "$(cat HERMES_WORK_RUNTIME_v2.5.43_YOUTUBE_ANALYTICS_PLAYGROUND.zip.sha256)" > channel.json
+          sha256sum HERMES_WORK_RUNTIME_v2.6.0_CREATIVE_DIRECTOR.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v2.6.0_CREATIVE_DIRECTOR.zip.sha256
+          printf '{"channel":"stable","version":"v2.6.0-creative-director","bundle":"HERMES_WORK_RUNTIME_v2.6.0_CREATIVE_DIRECTOR.zip","sha256":"%s"}\n' "$(cat HERMES_WORK_RUNTIME_v2.6.0_CREATIVE_DIRECTOR.zip.sha256)" > channel.json
 
       - name: Upload installable package
         uses: actions/upload-artifact@v4
         with:
-          name: HERMES_WORK_RUNTIME_v2.5.43_YOUTUBE_ANALYTICS_PLAYGROUND
-          path: runtime/HERMES_WORK_RUNTIME_v2.5.43_YOUTUBE_ANALYTICS_PLAYGROUND.zip
+          name: HERMES_WORK_RUNTIME_v2.6.0_CREATIVE_DIRECTOR
+          path: runtime/HERMES_WORK_RUNTIME_v2.6.0_CREATIVE_DIRECTOR.zip
           retention-days: 30
 
       - name: Publish isolated stable channel
+        if: github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"
-          cp runtime/HERMES_WORK_RUNTIME_v2.5.43_YOUTUBE_ANALYTICS_PLAYGROUND.zip "$tmp/"
-          cp runtime/HERMES_WORK_RUNTIME_v2.5.43_YOUTUBE_ANALYTICS_PLAYGROUND.zip.sha256 "$tmp/"
+          cp runtime/HERMES_WORK_RUNTIME_v2.6.0_CREATIVE_DIRECTOR.zip "$tmp/"
+          cp runtime/HERMES_WORK_RUNTIME_v2.6.0_CREATIVE_DIRECTOR.zip.sha256 "$tmp/"
           cp runtime/channel.json "$tmp/"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -198,15 +210,15 @@ jobs:
             git fetch origin main
             git checkout -B main origin/main
             mkdir -p release
-            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.43_YOUTUBE_ANALYTICS_PLAYGROUND.zip" release/
-            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.43_YOUTUBE_ANALYTICS_PLAYGROUND.zip.sha256" release/
+            cp "$tmp/HERMES_WORK_RUNTIME_v2.6.0_CREATIVE_DIRECTOR.zip" release/
+            cp "$tmp/HERMES_WORK_RUNTIME_v2.6.0_CREATIVE_DIRECTOR.zip.sha256" release/
             cp "$tmp/channel.json" release/
             git add release/
             if git diff --cached --quiet; then
               echo "Release channel already current."
               exit 0
             fi
-            git commit -m "Publish DJAEGER WORK v2.5.43 YouTube Analytics Playground repair"
+            git commit -m "Publish DJAEGER WORK v2.6.0 Creative Director"
             if git push origin HEAD:main; then
               exit 0
             fi
