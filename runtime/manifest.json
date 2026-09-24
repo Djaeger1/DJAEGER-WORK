@@ -1,5 +1,5 @@
 {
-  "version": "v2.6.0-creative-director",
-  "description": "Upgrades DJAEGER WORK from topic-only research to Creative Research V3 with YouTube benchmark signals, Creative Director briefs, explicit multi-shot scripts, Character Bible V2, Auto Studio V4 multi-shot AI video, selective failed-shot retry, and an artistic quality gate that blocks repetitive or low-motion renders.",
+  "version": "v2.6.1-adaptive-research",
+  "description": "Replaces the fixed 200-item research ceiling with guarded novelty-aware expansion, prioritizes unseen candidates, and preserves thermal/resource safety.",
   "restart": false
 }
