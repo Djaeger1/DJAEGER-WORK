@@ -19,6 +19,7 @@ if [ -z "$id" ] || [ -z "$tag" ]; then
 fi
 
 CHECKPOINT_TAG="${tag}-checkpoint"
+RENDER_CONTRACT="V4.1_SEMANTIC_FALLBACK"
 WAIT_STATE="/tmp/hermes-studio/provider-wait.json"
 WAIT_ATTEMPTS=0
 HAS_WAIT_STATE=0
@@ -66,6 +67,7 @@ record_provider_wait() {
     --arg planner_id "$id" \
     --arg render_tag "$tag" \
     --arg provider "$AI_VIDEO_SPACE" \
+    --arg render_contract "$RENDER_CONTRACT" \
     --arg retry_at "$retry_iso" \
     --argjson retry_after_epoch "$retry" \
     --argjson attempts "$WAIT_ATTEMPTS" \
@@ -75,6 +77,7 @@ record_provider_wait() {
       planner_id:$planner_id,
       render_tag:$render_tag,
       provider:$provider,
+      render_contract:$render_contract,
       blocked_scene:$scene,
       attempts:$attempts,
       retry_after_epoch:$retry_after_epoch,
@@ -99,12 +102,14 @@ clear_provider_wait() {
     --arg planner_id "$id" \
     --arg render_tag "$tag" \
     --arg provider "$AI_VIDEO_SPACE" \
+    --arg render_contract "$RENDER_CONTRACT" \
     --arg cleared_at "$now_iso" \
     '{
       state:"CLEARED",
       planner_id:$planner_id,
       render_tag:$render_tag,
       provider:$provider,
+      render_contract:$render_contract,
       attempts:0,
       retry_after_epoch:0,
       cleared_at:$cleared_at,
@@ -130,10 +135,11 @@ if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
   old_bible="$(jq -r '.character_bible // ""' "$oldmeta" 2>/dev/null || true)"
   old_generation="$(jq -r '.render_generation // ""' "$oldmeta" 2>/dev/null || true)"
   old_invariant="$(jq -r '.publication_invariant // ""' "$oldmeta" 2>/dev/null || true)"
+  old_contract="$(jq -r '.render_contract // ""' "$oldmeta" 2>/dev/null || true)"
   old_required="$(jq -r '.required_ai_video_shots // 0' "$oldmeta" 2>/dev/null || echo 0)"
   old_success="$(jq -r '.successful_ai_video_shots // 0' "$oldmeta" 2>/dev/null || echo 0)"
   old_final_vector="$(jq -r '.final_vector_video_scenes // -1' "$oldmeta" 2>/dev/null || echo -1)"
-  if [ "$old_quality" = "PASS" ] && awk "BEGIN{exit !($old_score >= 62)}" && [ "$old_bible" = "DJAEGER_WORK_KIDS_V2" ] && [ "$old_generation" = "DJAEGER_STUDIO_V4_CREATIVE" ] && [ "$old_invariant" = "PASS" ] && [ "$old_required" -gt 0 ] && [ "$old_success" -eq "$old_required" ] && [ "$old_final_vector" -eq 0 ]; then
+  if [ "$old_quality" = "PASS" ] && awk "BEGIN{exit !($old_score >= 62)}" && [ "$old_bible" = "DJAEGER_WORK_KIDS_V2" ] && [ "$old_generation" = "DJAEGER_STUDIO_V4_CREATIVE" ] && [ "$old_contract" = "$RENDER_CONTRACT" ] && [ "$old_invariant" = "PASS" ] && [ "$old_required" -gt 0 ] && [ "$old_success" -eq "$old_required" ] && [ "$old_final_vector" -eq 0 ]; then
     echo "Current Creative Director V4 release already exists for $tag."
     exit 0
   fi
@@ -147,11 +153,12 @@ if gh release view "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1
   if [ -s "$WAIT_STATE" ]; then
     wait_planner="$(jq -r '.planner_id // ""' "$WAIT_STATE" 2>/dev/null || true)"
     wait_state="$(jq -r '.state // ""' "$WAIT_STATE" 2>/dev/null || true)"
+    wait_contract="$(jq -r '.render_contract // ""' "$WAIT_STATE" 2>/dev/null || true)"
     WAIT_ATTEMPTS="$(jq -r '.attempts // 0' "$WAIT_STATE" 2>/dev/null || echo 0)"
     retry_after="$(jq -r '.retry_after_epoch // 0' "$WAIT_STATE" 2>/dev/null || echo 0)"
     case "$WAIT_ATTEMPTS" in ''|*[!0-9]*) WAIT_ATTEMPTS=0 ;; esac
     case "$retry_after" in ''|*[!0-9]*) retry_after=0 ;; esac
-    if [ "$wait_planner" = "$id" ] && { [ "$wait_state" = "WAIT_QUOTA" ] || [ "$wait_state" = "WAIT_PROVIDER" ]; }; then
+    if [ "$wait_planner" = "$id" ] && [ "$wait_contract" = "$RENDER_CONTRACT" ] && { [ "$wait_state" = "WAIT_QUOTA" ] || [ "$wait_state" = "WAIT_PROVIDER" ]; }; then
       HAS_WAIT_STATE=1
       now_epoch="$(date -u +%s)"
       if [ "$retry_after" -gt "$now_epoch" ]; then
@@ -176,7 +183,7 @@ mkdir -p studio/scenes
 cp "$FEED" studio/feed.json
 
 if gh release view "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-  gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --dir studio/scenes --pattern 'ai_*.mp4' --clobber >/dev/null 2>&1 || true
+  gh release download "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" --dir studio/scenes --pattern 'ai_v41_*.mp4' --clobber >/dev/null 2>&1 || true
 fi
 
 LANG_CODE="$(jq -r '.job.language // "id"' studio/feed.json)"
@@ -253,9 +260,15 @@ print(f"{max(a,b,3.0):.2f}")
 PY
 )"
 
-  shot_count="$(printf '%s' "$scene" | jq '(.shots // []) | length')"
-  if [ "$shot_count" -lt 1 ]; then
-    shot_count=1
+  explicit_shot_count="$(printf '%s' "$scene" | jq '(.shots // []) | length')"
+  purpose="$(printf '%s' "$scene" | jq -r '.purpose // ""')"
+  if [ "$explicit_shot_count" -gt 0 ]; then
+    shot_count="$explicit_shot_count"
+  else
+    case "$purpose" in
+      TEACH_1|TEACH_2|INTERACTIVE_RECALL) shot_count=2 ;;
+      *) shot_count=1 ;;
+    esac
   fi
   PLANNED_SHOTS=$((PLANNED_SHOTS+shot_count))
   scene_list="studio/scenes/scene_$(printf '%02d' "$n")_shots.txt"
@@ -263,10 +276,36 @@ PY
 
   for sidx in $(seq 0 $((shot_count-1))); do
     sn=$((sidx+1))
-    if printf '%s' "$scene" | jq -e '.shots and (.shots|length)>0' >/dev/null 2>&1; then
+    if [ "$explicit_shot_count" -gt 0 ]; then
       shot="$(printf '%s' "$scene" | jq -c ".shots[$sidx]")"
     else
-      shot="$(jq -nc --arg p "$prompt" --arg subject "$(printf '%s' "$scene" | jq -r '.subject // .visual_goal // .purpose // "learning object"')" --argjson d "$scene_dur" '{number:1,duration_sec:$d,subject:$subject,action:"clear learning action",camera:"stable medium shot",prompt:$p}')"
+      semantic_subject="$(printf '%s' "$scene" | jq -r '.visual_prompt // ""' | sed -n 's/.*Explicit learning subject: \([^.]\+\)\..*/\1/p')"
+      if [ -z "$semantic_subject" ]; then
+        semantic_subject="$(printf '%s' "$scene" | jq -r '.subject // .visual_goal // .on_screen_text // .purpose // "learning object"')"
+      fi
+      if [ "$shot_count" -eq 2 ]; then
+        first_dur=$((scene_dur/2))
+        [ "$first_dur" -ge 2 ] || first_dur=2
+        if [ "$sn" -eq 1 ]; then
+          fallback_dur="$first_dur"
+          fallback_action="discover and point"
+          fallback_camera="stable medium shot"
+        else
+          fallback_dur=$((scene_dur-first_dur))
+          [ "$fallback_dur" -ge 2 ] || fallback_dur=2
+          if [ "$purpose" = "INTERACTIVE_RECALL" ]; then
+            fallback_action="choice and positive reveal"
+          else
+            fallback_action="close-up reveal"
+          fi
+          fallback_camera="clean close-up with a new composition"
+        fi
+      else
+        fallback_dur="$scene_dur"
+        fallback_action="discover and point"
+        fallback_camera="stable medium shot"
+      fi
+      shot="$(jq -nc --arg p "$prompt" --arg subject "$semantic_subject" --arg action "$fallback_action" --arg camera "$fallback_camera" --argjson d "$fallback_dur" --argjson number "$sn" '{number:$number,duration_sec:$d,subject:$subject,action:$action,camera:$camera,prompt:$p}')"
     fi
     shotdur="$(printf '%s' "$shot" | jq -r '.duration_sec // 0')"
     [ "$shotdur" -gt 0 ] 2>/dev/null || shotdur="$scene_dur"
@@ -289,7 +328,7 @@ PY
     fi
     [ -n "$FIRST_KEYFRAME" ] || FIRST_KEYFRAME="$img"
 
-    ai_clip="studio/scenes/ai_$(printf '%02d' "$n")_$(printf '%02d' "$sn").mp4"
+    ai_clip="studio/scenes/ai_v41_$(printf '%02d' "$n")_$(printf '%02d' "$sn").mp4"
     quality_json="studio/scenes/quality_$(printf '%02d' "$n")_$(printf '%02d' "$sn").json"
     motion_prompt="$STYLE_PROMPT. Character Bible: $CHARACTER_ANCHORS. Scene cast: $cast. Explicit subject: $subject. Action: $action. Camera: $camera. $shot_prompt. Animate this exact semantic Character Bible keyframe for a real shot with visible natural preschool-friendly motion. Keep every character's face, hair, clothing, colors, proportions and accessories unchanged. Preserve the learning subject. Stable camera unless the shot plan asks otherwise. No morphing, no added characters, no generated text, no repeated gesture loop."
 
@@ -439,6 +478,7 @@ jq '{
   render_tag:.job.render_tag,
   visual_provider:"CHARACTER_BIBLE_V2_SEMANTIC_KEYFRAME_TO_WAN_I2V",
   render_generation:"DJAEGER_STUDIO_V4_CREATIVE",
+  render_contract:"V4.1_SEMANTIC_FALLBACK",
   voice_provider:"EDGE_TTS_OR_ESPEAK_FALLBACK",
   render_provider:"GITHUB_ACTIONS_FFMPEG_MULTISHOT",
   target_duration_sec:(.job.duration_sec // 0),
