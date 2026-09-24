@@ -1,5 +1,5 @@
 {
-  "version": "v2.5.42-youtube-analytics-consent",
-  "description": "Adds secure incremental YouTube Analytics OAuth consent using loopback PKCE on the dashboard, stores the upgraded refresh token only on Redmi 5A, and triggers real retention/CTR/watch-time sync without exposing OAuth secrets.",
+  "version": "v2.5.43-youtube-analytics-playground",
+  "description": "Repairs YouTube Analytics consent for the existing WEB OAuth client by using its registered OAuth Playground redirect, preserves the refresh-token vault on Redmi 5A, and avoids the invalid Android loopback callback.",
   "restart": false
 }
