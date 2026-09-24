@@ -6,8 +6,8 @@ Updated: 2026-09-24
 This file is ONLY for DJAEGER WORK / HERMES WORK. Do not mix it with DJAEGER Gaming.
 
 ## Current runtime
-- Stable channel: v2.6.0-creative-director
-- Bundle: HERMES_WORK_RUNTIME_v2.6.0_CREATIVE_DIRECTOR.zip
+- Stable channel: v2.6.1-adaptive-research
+- Bundle: HERMES_WORK_RUNTIME_v2.6.1_ADAPTIVE_RESEARCH.zip
 - Previous rollback release: v2.5.43-youtube-analytics-playground
 - Live Redmi 5A auto-updater verification on 2026-09-24: UP_TO_DATE, reason=AUTO_UPDATE_SUCCESS, SHA256 integrity enabled, rollback enabled.
 - Runtime auto-update path: signed/pinned release channel -> trusted remote maintenance -> Redmi 5A.
@@ -15,7 +15,7 @@ This file is ONLY for DJAEGER WORK / HERMES WORK. Do not mix it with DJAEGER Gam
 - No reboot is required by the v2.5.41 manifest.
 
 ## Dashboard
-- Android dashboard version: 1.4.3 (versionCode 143).
+- Android dashboard version: 1.4.4 (versionCode 144).
 - Signed stable dashboard APK is published through release/dashboard/ and installed in-place on Redmi Note 8 Pro.
 - Runtime updates and dashboard APK updates remain separate channels; the dashboard stable APK channel can now be fetched and installed remotely through the authorized terminal without uninstalling app data.
 - Planner no longer uses hard-coded BELUM TERHUBUNG placeholders for scripts/production/upload.
@@ -23,6 +23,15 @@ This file is ONLY for DJAEGER WORK / HERMES WORK. Do not mix it with DJAEGER Gam
 - Insights treats FEEDBACK_CONNECTED as a healthy connected state.
 - Missing Analytics values display as BELUM ADA DATA rather than implying zero.
 - BELUM DIPRODUKSI was renamed BELUM RENDER and now uses the strict pre-render count.
+
+## Adaptive research V4
+- Research engine: CREATIVE_RESEARCH_V4_ADAPTIVE.
+- The old fixed top-200 cutoff was removed. Baseline research still starts from the established seed set, then expands only when novelty is below target.
+- Default guarded bounds: minimum 40 new candidates, up to 64 queries, up to 800 evaluated candidates, and 2 expansion queries per source query.
+- Unseen candidates are prioritized before bounded truncation so old high-score duplicates cannot permanently block lower-ranked new ideas.
+- Guard is rechecked during expansion; partial results are retained if thermal/resource guard activates.
+- Result telemetry now includes queries_processed, baseline_queries, expansion_queries, candidates_total, candidates_truncated, novelty_target, novelty_state, and guard_stop_reason.
+- Dashboard 1.4.4 extends the run-research request timeout so adaptive discovery can finish without the old 8-second local timeout.
 
 ## Runtime dashboard contract
 - New endpoint: GET /api/work/dashboard
@@ -116,3 +125,12 @@ This file is ONLY for DJAEGER WORK / HERMES WORK. Do not mix it with DJAEGER Gam
 - Verified V4.1 run logs now show correct subjects reaching the renderer: scene 1 shot 1 = `satu apel merah`; scene 2 shot 1 = `satu apel merah, dua bola biru, tiga bintang kuning`; scene 3 shot 1 = `satu apel merah`.
 - V4.1 successfully checkpointed scene 1 shot 1 and scene 2 shot 1, then ZeroGPU returned `WAIT_QUOTA` at scene 3 shot 1. Latest retry boundary: `2026-09-24T09:25:15Z` (16:25:15 WIB). Publication invariant remains BLOCKED until all required shots pass and final artistic score is >=62.
 - Hourly automation `DJAEGER Work V4.1 Watch` tracks this exact job and must resume only after provider backoff, preserve successful V4.1 checkpoints, and never resume the obsolete V3 scene-5 job.
+
+
+## Adaptive research live verification — 2026-09-24
+- PR #37 merged to main and both GitHub workflows passed: runtime release and signed native dashboard.
+- Stable runtime channel published v2.6.1-adaptive-research with SHA256-pinned bundle.
+- Redmi 5A auto-updater installed v2.6.1 without manual terminal, flash, or reboot; live relay telemetry reported AUTO_UPDATE_SUCCESS / UP_TO_DATE.
+- Fresh live snapshot reported release=v2.6.1-adaptive-research, worker_state=READY, safe_mode=false, and research_engine=CREATIVE_RESEARCH_V4_ADAPTIVE.
+- Signed dashboard channel published v1.4.4 / versionCode 144.
+- A one-shot authenticated run-research was not forced through device shell; Railway Agent verification was unavailable because its usage limit was reached. Static source validation, successful ARMv7 build, successful APK build, stable-channel publication, and live engine activation are verified.
