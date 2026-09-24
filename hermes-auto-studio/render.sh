@@ -126,14 +126,15 @@ if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
     mv /tmp/hermes-studio/metadata.json "$oldmeta"
   fi
   old_quality="$(jq -r '.quality_gate // "LEGACY_UNVERIFIED"' "$oldmeta" 2>/dev/null || echo LEGACY_UNVERIFIED)"
+  old_score="$(jq -r '.artistic_quality_score // 0' "$oldmeta" 2>/dev/null || echo 0)"
   old_bible="$(jq -r '.character_bible // ""' "$oldmeta" 2>/dev/null || true)"
   old_generation="$(jq -r '.render_generation // ""' "$oldmeta" 2>/dev/null || true)"
   old_invariant="$(jq -r '.publication_invariant // ""' "$oldmeta" 2>/dev/null || true)"
-  old_required="$(jq -r '.required_ai_video_scenes // 0' "$oldmeta" 2>/dev/null || echo 0)"
-  old_success="$(jq -r '.successful_ai_video_scenes // 0' "$oldmeta" 2>/dev/null || echo 0)"
+  old_required="$(jq -r '.required_ai_video_shots // 0' "$oldmeta" 2>/dev/null || echo 0)"
+  old_success="$(jq -r '.successful_ai_video_shots // 0' "$oldmeta" 2>/dev/null || echo 0)"
   old_final_vector="$(jq -r '.final_vector_video_scenes // -1' "$oldmeta" 2>/dev/null || echo -1)"
-  if [ "$old_quality" = "PASS" ] && [ "$old_bible" = "DJAEGER_WORK_KIDS_V1" ] && [ "$old_generation" = "DJAEGER_STUDIO_V3_AI_VIDEO" ] && [ "$old_invariant" = "PASS" ] && [ "$old_required" -gt 0 ] && [ "$old_success" -eq "$old_required" ] && [ "$old_final_vector" -eq 0 ]; then
-    echo "Current Character Bible AI-video release already exists for $tag."
+  if [ "$old_quality" = "PASS" ] && awk "BEGIN{exit !($old_score >= 62)}" && [ "$old_bible" = "DJAEGER_WORK_KIDS_V2" ] && [ "$old_generation" = "DJAEGER_STUDIO_V4_CREATIVE" ] && [ "$old_invariant" = "PASS" ] && [ "$old_required" -gt 0 ] && [ "$old_success" -eq "$old_required" ] && [ "$old_final_vector" -eq 0 ]; then
+    echo "Current Creative Director V4 release already exists for $tag."
     exit 0
   fi
   REBUILD_EXISTING=1
@@ -208,35 +209,30 @@ fi
 
 : > studio/concat.txt
 AI_VIDEO_SCENES=0
+AI_VIDEO_SHOTS=0
+PLANNED_SHOTS=0
 VECTOR_KEYFRAMES=0
 BASIC_KEYFRAMES=0
 CHECKPOINT_REUSED=0
+SELECTIVE_RETRIES=0
+FIRST_KEYFRAME=""
+
+clip_quality_ok() {
+  local clip="$1"
+  local report="$2"
+  python3 hermes-auto-studio/quality_critic.py     --video "$clip" --mode clip --expected-duration 1.5     --min-score 40 --output "$report" >/tmp/hermes-studio/clip-quality.log 2>&1
+}
+
 for idx in $(seq 0 $((COUNT-1))); do
   n=$((idx+1))
   scene="$(jq -c ".job.scenes[$idx]" studio/feed.json)"
   prompt="$(printf '%s' "$scene" | jq -r '.visual_prompt // .purpose // "friendly preschool educational illustration"')"
-  cast="$(jq -r --arg n "$n" '.scene_cast[$n] // ["Nara","Pip"] | join(", ")' "$CHARACTER_BIBLE")"
+  cast="$(jq -r --arg n "$n" '.scene_cast[$n] // .default_cast // ["Nara","Pip"] | join(", ")' "$CHARACTER_BIBLE")"
   prompt="$STYLE_PROMPT. Character Bible: $CHARACTER_ANCHORS. Scene cast: $cast. Only use the named recurring cast for this scene; preserve their exact face, hair, clothes, colors, proportions, and accessories. $prompt"
   voice="$(printf '%s' "$scene" | jq -r '.voice_over // ""')"
   onscreen="$(printf '%s' "$scene" | jq -r '.on_screen_text // ""')"
   scene_dur="$(printf '%s' "$scene" | jq -r '.duration_sec // 7')"
   [ "$scene_dur" -ge 3 ] 2>/dev/null || scene_dur=7
-
-  img="studio/scenes/scene_$(printf '%02d' "$n").jpg"
-  svg="studio/scenes/scene_$(printf '%02d' "$n").svg"
-
-  # Character Bible is the identity anchor. We deliberately render the keyframe
-  # deterministically first, then the external AI video model animates that exact cast.
-  echo "Preparing Character Bible keyframe $n."
-  if python3 hermes-auto-studio/vector_scene.py --bible "$CHARACTER_BIBLE" --scene "$scene" --topic "$TITLE" --cast "$cast" --number "$n" --output "$svg" \
-    && convert -background none "$svg" -quality 92 "$img" \
-    && identify "$img" >/dev/null 2>&1; then
-    VECTOR_KEYFRAMES=$((VECTOR_KEYFRAMES+1))
-  else
-    BASIC_KEYFRAMES=$((BASIC_KEYFRAMES+1))
-    convert -size 1280x720 "gradient:#23395d-#101820" -gravity center -fill white -font DejaVu-Sans-Bold -pointsize 58 \
-      -annotate +0-40 "DJAEGER WORK KIDS" -pointsize 34 -annotate +0+55 "$onscreen" "$img"
-  fi
 
   audio="studio/scenes/scene_$(printf '%02d' "$n").mp3"
   if [ -n "$VOICE" ] && edge-tts --voice "$VOICE" --text "$voice" --write-media "$audio" >/dev/null 2>&1; then
@@ -257,53 +253,142 @@ print(f"{max(a,b,3.0):.2f}")
 PY
 )"
 
-  ai_clip="studio/scenes/ai_$(printf '%02d' "$n").mp4"
-  motion_prompt="$prompt. Animate this exact Character Bible keyframe with natural preschool-friendly motion. Keep every character's face, hair, clothing, colors, proportions and accessories unchanged. Smooth gentle motion, stable camera, no morphing, no added characters, no text generation."
+  shot_count="$(printf '%s' "$scene" | jq '(.shots // []) | length')"
+  if [ "$shot_count" -lt 1 ]; then
+    shot_count=1
+  fi
+  PLANNED_SHOTS=$((PLANNED_SHOTS+shot_count))
+  scene_list="studio/scenes/scene_$(printf '%02d' "$n")_shots.txt"
+  : > "$scene_list"
 
-  if [ -s "$ai_clip" ] && ffprobe -v error -show_entries stream=codec_type -of csv=p=0 "$ai_clip" | grep -q video; then
-    echo "Reusing AI-video checkpoint for scene $n."
-    AI_VIDEO_SCENES=$((AI_VIDEO_SCENES+1))
-    CHECKPOINT_REUSED=$((CHECKPOINT_REUSED+1))
-  else
-    rm -f "$ai_clip"
-    echo "Sending scene $n prompt to AI video provider: $AI_VIDEO_SPACE"
-    set +e
-    python3 hermes-auto-studio/ai_video_scene.py \
-      --image "$img" --prompt "$motion_prompt" --output "$ai_clip" \
-      --seed "$((CHANNEL_SEED+n))" --duration 1.0 --space "$AI_VIDEO_SPACE"
-    ai_rc=$?
-    set -e
+  for sidx in $(seq 0 $((shot_count-1))); do
+    sn=$((sidx+1))
+    if printf '%s' "$scene" | jq -e '.shots and (.shots|length)>0' >/dev/null 2>&1; then
+      shot="$(printf '%s' "$scene" | jq -c ".shots[$sidx]")"
+    else
+      shot="$(jq -nc --arg p "$prompt" --arg subject "$(printf '%s' "$scene" | jq -r '.subject // .visual_goal // .purpose // "learning object"')" --argjson d "$scene_dur" '{number:1,duration_sec:$d,subject:$subject,action:"clear learning action",camera:"stable medium shot",prompt:$p}')"
+    fi
+    shotdur="$(printf '%s' "$shot" | jq -r '.duration_sec // 0')"
+    [ "$shotdur" -gt 0 ] 2>/dev/null || shotdur="$scene_dur"
+    subject="$(printf '%s' "$shot" | jq -r '.subject // "learning object"')"
+    action="$(printf '%s' "$shot" | jq -r '.action // "clear learning action"')"
+    camera="$(printf '%s' "$shot" | jq -r '.camera // "stable medium shot"')"
+    shot_prompt="$(printf '%s' "$shot" | jq -r '.prompt // empty')"
+    [ -n "$shot_prompt" ] || shot_prompt="$prompt"
 
-    if [ "$ai_rc" -eq 0 ] && [ -s "$ai_clip" ] && ffprobe -v error -show_entries stream=codec_type -of csv=p=0 "$ai_clip" | grep -q video; then
-      AI_VIDEO_SCENES=$((AI_VIDEO_SCENES+1))
-      clear_provider_wait
-      ensure_checkpoint_release
-      if ! gh release upload "$CHECKPOINT_TAG" "$ai_clip" --repo "$GITHUB_REPOSITORY" --clobber >/dev/null; then
-        echo "AI_VIDEO_CHECKPOINT_FAILED: scene $n could not be persisted; refusing to spend more provider quota without resumability."
+    shot_scene="$(printf '%s' "$scene" | jq -c --arg subject "$subject" --arg goal "$action" '. + {subject:$subject,visual_goal:$goal,on_screen_text:""}')"
+    img="studio/scenes/scene_$(printf '%02d' "$n")_shot_$(printf '%02d' "$sn").jpg"
+    svg="studio/scenes/scene_$(printf '%02d' "$n")_shot_$(printf '%02d' "$sn").svg"
+
+    echo "Preparing semantic Character Bible keyframe scene=$n shot=$sn subject=$subject"
+    if python3 hermes-auto-studio/vector_scene.py --bible "$CHARACTER_BIBLE" --scene "$shot_scene" --topic "$TITLE" --cast "$cast" --number "$n" --output "$svg"       && convert -background none "$svg" -quality 94 "$img"       && identify "$img" >/dev/null 2>&1; then
+      VECTOR_KEYFRAMES=$((VECTOR_KEYFRAMES+1))
+    else
+      BASIC_KEYFRAMES=$((BASIC_KEYFRAMES+1))
+      convert -size 1280x720 "gradient:#23395d-#101820" -gravity center -fill white -font DejaVu-Sans-Bold -pointsize 46         -annotate +0+0 "$subject" "$img"
+    fi
+    [ -n "$FIRST_KEYFRAME" ] || FIRST_KEYFRAME="$img"
+
+    ai_clip="studio/scenes/ai_$(printf '%02d' "$n")_$(printf '%02d' "$sn").mp4"
+    quality_json="studio/scenes/quality_$(printf '%02d' "$n")_$(printf '%02d' "$sn").json"
+    motion_prompt="$STYLE_PROMPT. Character Bible: $CHARACTER_ANCHORS. Scene cast: $cast. Explicit subject: $subject. Action: $action. Camera: $camera. $shot_prompt. Animate this exact semantic Character Bible keyframe for a real shot with visible natural preschool-friendly motion. Keep every character's face, hair, clothing, colors, proportions and accessories unchanged. Preserve the learning subject. Stable camera unless the shot plan asks otherwise. No morphing, no added characters, no generated text, no repeated gesture loop."
+
+    clip_ready=0
+    if [ -s "$ai_clip" ] && ffprobe -v error -show_entries stream=codec_type -of csv=p=0 "$ai_clip" | grep -q video && clip_quality_ok "$ai_clip" "$quality_json"; then
+      echo "Reusing validated AI-video checkpoint scene=$n shot=$sn."
+      CHECKPOINT_REUSED=$((CHECKPOINT_REUSED+1))
+      clip_ready=1
+    fi
+
+    if [ "$clip_ready" -ne 1 ]; then
+      rm -f "$ai_clip" "$quality_json"
+      for attempt in 1 2; do
+        seed="$((CHANNEL_SEED+n*100+sn+(attempt-1)*10000))"
+        echo "AI-video scene=$n shot=$sn attempt=$attempt provider=$AI_VIDEO_SPACE"
+        set +e
+        python3 hermes-auto-studio/ai_video_scene.py           --image "$img" --prompt "$motion_prompt" --output "$ai_clip"           --seed "$seed" --duration 2.0 --space "$AI_VIDEO_SPACE"
+        ai_rc=$?
+        set -e
+
+        if [ "$ai_rc" -eq 75 ]; then
+          record_provider_wait "WAIT_QUOTA" "$n"
+          exit 0
+        elif [ "$ai_rc" -eq 76 ]; then
+          record_provider_wait "WAIT_PROVIDER" "$n"
+          exit 0
+        elif [ "$ai_rc" -ne 0 ]; then
+          echo "AI_VIDEO_REQUIRED: scene=$n shot=$sn failed rc=$ai_rc"
+          if [ "$attempt" -ge 2 ]; then
+            exit 1
+          fi
+          SELECTIVE_RETRIES=$((SELECTIVE_RETRIES+1))
+          continue
+        fi
+
+        if [ -s "$ai_clip" ] && ffprobe -v error -show_entries stream=codec_type -of csv=p=0 "$ai_clip" | grep -q video && clip_quality_ok "$ai_clip" "$quality_json"; then
+          clip_ready=1
+          clear_provider_wait
+          break
+        fi
+        echo "ARTISTIC_CLIP_REJECT scene=$n shot=$sn attempt=$attempt"
+        rm -f "$ai_clip"
+        if [ "$attempt" -lt 2 ]; then
+          SELECTIVE_RETRIES=$((SELECTIVE_RETRIES+1))
+        fi
+      done
+      if [ "$clip_ready" -ne 1 ]; then
+        echo "ARTISTIC_CLIP_GATE_FAILED scene=$n shot=$sn; publication blocked."
         exit 1
       fi
-      echo "AI_VIDEO_CHECKPOINT_SAVED scene=$n"
-    elif [ "$ai_rc" -eq 75 ]; then
-      record_provider_wait "WAIT_QUOTA" "$n"
-      exit 0
-    elif [ "$ai_rc" -eq 76 ]; then
-      record_provider_wait "WAIT_PROVIDER" "$n"
-      exit 0
-    else
-      echo "AI_VIDEO_REQUIRED: scene $n failed with non-transient rc=$ai_rc. Vector-only publication is forbidden."
-      exit 1
+      ensure_checkpoint_release
+      if ! gh release upload "$CHECKPOINT_TAG" "$ai_clip" --repo "$GITHUB_REPOSITORY" --clobber >/dev/null; then
+        echo "AI_VIDEO_CHECKPOINT_FAILED scene=$n shot=$sn; refusing further quota spend without resumability."
+        exit 1
+      fi
+      echo "AI_VIDEO_CHECKPOINT_SAVED scene=$n shot=$sn"
     fi
-  fi
 
+    AI_VIDEO_SHOTS=$((AI_VIDEO_SHOTS+1))
+
+    clipdur="$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$ai_clip" 2>/dev/null || echo 2)"
+    read slow pad <<EOF
+$(python3 - "$clipdur" "$shotdur" <<'PY'
+import sys
+clip=max(float(sys.argv[1] or 2),0.2)
+target=max(float(sys.argv[2] or 3),0.5)
+slow=min(2.0,max(1.0,target/clip))
+remain=max(0.0,target-clip*slow)
+print(f"{slow:.4f} {remain:.4f}")
+PY
+)
+EOF
+    shotseg="studio/scenes/shotseg_$(printf '%02d' "$n")_$(printf '%02d' "$sn").mp4"
+    ffmpeg -y -loglevel error -i "$ai_clip" -t "$shotdur"       -vf "setpts=${slow}*PTS,scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,fps=30,tpad=stop_mode=clone:stop_duration=${pad},format=yuv420p"       -an -c:v libx264 -preset veryfast -crf 21 "$shotseg"
+    echo "file '$(basename "$shotseg")'" >> "$scene_list"
+  done
+
+  AI_VIDEO_SCENES=$((AI_VIDEO_SCENES+1))
+
+  scene_visual="studio/scenes/scene_visual_$(printf '%02d' "$n").mp4"
+  ffmpeg -y -loglevel error -f concat -safe 0 -i "$scene_list" -c copy "$scene_visual"
+
+  textfile="studio/scenes/text_$(printf '%02d' "$n").txt"
+  printf '%s' "$onscreen" > "$textfile"
   seg="studio/scenes/seg_$(printf '%02d' "$n").mp4"
-  ffmpeg -y -loglevel error -stream_loop -1 -i "$ai_clip" -i "$audio" -t "$dur" \
-    -vf "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,fps=30,format=yuv420p" \
-    -c:v libx264 -preset veryfast -crf 22 -c:a aac -b:a 128k -af "apad" "$seg"
+  if [ -n "$onscreen" ]; then
+    ffmpeg -y -loglevel error -i "$scene_visual" -i "$audio" -t "$dur"       -vf "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:textfile=${textfile}:fontcolor=white:fontsize=42:borderw=3:bordercolor=black@0.55:box=1:boxcolor=black@0.30:boxborderw=16:x=(w-text_w)/2:y=h-text_h-58:enable='between(t,0.35,3.25)',format=yuv420p"       -c:v libx264 -preset veryfast -crf 21 -c:a aac -b:a 144k -af "apad" "$seg"
+  else
+    ffmpeg -y -loglevel error -i "$scene_visual" -i "$audio" -t "$dur"       -c:v copy -c:a aac -b:a 144k -af "apad" "$seg"
+  fi
   echo "file 'scenes/$(basename "$seg")'" >> studio/concat.txt
 done
 
 ffmpeg -y -loglevel error -f concat -safe 0 -i studio/concat.txt -c copy studio/final.mp4
-cp studio/scenes/scene_01.jpg studio/thumbnail.jpg
+if [ -n "$FIRST_KEYFRAME" ] && [ -s "$FIRST_KEYFRAME" ]; then
+  convert "$FIRST_KEYFRAME" -resize 1280x720^ -gravity center -extent 1280x720     -fill "rgba(0,0,0,0.48)" -draw "roundrectangle 55,535 1225,685 28,28"     -fill white -font DejaVu-Sans-Bold -pointsize 46 -gravity south -annotate +0+62 "$TITLE"     studio/thumbnail.jpg
+else
+  ffmpeg -y -loglevel error -ss 1 -i studio/final.mp4 -frames:v 1 studio/thumbnail.jpg
+fi
 ffprobe -v error -show_entries format=duration,size -of json studio/final.mp4 > studio/probe.json
 
 TARGET_DURATION="$(jq -r '.job.duration_sec // 0' studio/feed.json)"
@@ -324,48 +409,84 @@ fi
 
 QUALITY_GATE="PASS"
 if [ "$AI_VIDEO_SCENES" -ne "$COUNT" ]; then
-  echo "AI video quality gate failed: $AI_VIDEO_SCENES/$COUNT scenes"
+  echo "AI-video scene coverage failed: $AI_VIDEO_SCENES/$COUNT scenes"
   exit 1
 fi
+if [ "$AI_VIDEO_SHOTS" -ne "$PLANNED_SHOTS" ] || [ "$PLANNED_SHOTS" -lt "$COUNT" ]; then
+  echo "AI-video shot coverage failed: $AI_VIDEO_SHOTS/$PLANNED_SHOTS shots"
+  exit 1
+fi
+
+set +e
+python3 hermes-auto-studio/quality_critic.py   --video studio/final.mp4 --mode final   --expected-duration "$TARGET_DURATION"   --expected-shots "$PLANNED_SHOTS" --actual-shots "$AI_VIDEO_SHOTS"   --min-score 62 --output studio/quality-report.json
+critic_rc=$?
+set -e
+if [ "$critic_rc" -ne 0 ]; then
+  echo "ARTISTIC_QUALITY_GATE_FAILED: refusing publication."
+  cat studio/quality-report.json || true
+  exit 1
+fi
+ARTISTIC_SCORE="$(jq -r '.score // 0' studio/quality-report.json)"
+
 jq '{
   state:"RENDERED",
-  engine:"AUTO_STUDIO_V2",
+  engine:"AUTO_STUDIO_V4_CREATIVE",
   planner_id:.job.planner_id,
   topic:.job.topic,
   title:.job.video_title,
   description:.job.description,
   hashtags:.job.hashtags,
   render_tag:.job.render_tag,
-  visual_provider:"CHARACTER_BIBLE_KEYFRAME_TO_WAN_I2V",
-  render_generation:"DJAEGER_STUDIO_V3_AI_VIDEO",
+  visual_provider:"CHARACTER_BIBLE_V2_SEMANTIC_KEYFRAME_TO_WAN_I2V",
+  render_generation:"DJAEGER_STUDIO_V4_CREATIVE",
   voice_provider:"EDGE_TTS_OR_ESPEAK_FALLBACK",
-  render_provider:"GITHUB_ACTIONS_FFMPEG",
+  render_provider:"GITHUB_ACTIONS_FFMPEG_MULTISHOT",
   target_duration_sec:(.job.duration_sec // 0),
   card_required:false,
   hermes_ai_used:false,
   external_ai_video_used:true,
   ai_video_provider:"HUGGINGFACE_ZERO_GPU_WAN2_2_AOTI_FAST",
-  ai_video_clip_duration_sec:1.0,
-  zerogpu_quota_mode:"ANONYMOUS_ZERO_COST_TARGET_UNDER_2_MIN_PER_DAILY_VIDEO",
+  ai_video_clip_duration_sec:2.0,
+  ai_video_strategy:"MULTI_SHOT_NO_STREAM_LOOP_SELECTIVE_RETRY",
+  zerogpu_quota_mode:"ANONYMOUS_ZERO_COST_RESUMABLE_CHECKPOINTS",
   neurons_used:0,
-  character_bible:"DJAEGER_WORK_KIDS_V1",
-  recurring_cast:["Nara","Bimo","Sasa","Pip"],
+  character_bible:"DJAEGER_WORK_KIDS_V2",
+  recurring_cast:["Nara","Pip"],
+  artistic_quality_gate:"ARTISTIC_QUALITY_GATE_V1",
   repository:"Djaeger1/DJAEGER-WORK"
 }' studio/feed.json > studio/metadata.json
-jq --arg actual "$ACTUAL_DURATION" --arg quality "$QUALITY_GATE" --arg space "$AI_VIDEO_SPACE" \
-   --argjson required "$COUNT" --argjson ai_video "$AI_VIDEO_SCENES" --argjson vector_keys "$VECTOR_KEYFRAMES" --argjson basic_keys "$BASIC_KEYFRAMES" --argjson checkpoint_reused "$CHECKPOINT_REUSED" \
-   '. + {actual_duration_sec:($actual|tonumber),quality_gate:$quality,ai_video_space:$space,required_ai_video_scenes:$required,successful_ai_video_scenes:$ai_video,final_vector_video_scenes:0,publication_invariant:(if ($quality=="PASS" and $ai_video==$required and $required>0) then "PASS" else "BLOCKED" end),visual_stats:{ai_video_scenes:$ai_video,checkpoint_reused:$checkpoint_reused,character_bible_vector_keyframes:$vector_keys,basic_keyframes:$basic_keys}}' \
-   studio/metadata.json > studio/metadata.json.tmp
+jq --arg actual "$ACTUAL_DURATION" --arg quality "$QUALITY_GATE" --arg score "$ARTISTIC_SCORE" --arg space "$AI_VIDEO_SPACE"    --argjson required_scenes "$COUNT" --argjson ai_scenes "$AI_VIDEO_SCENES"    --argjson required_shots "$PLANNED_SHOTS" --argjson ai_shots "$AI_VIDEO_SHOTS"    --argjson vector_keys "$VECTOR_KEYFRAMES" --argjson basic_keys "$BASIC_KEYFRAMES"    --argjson checkpoint_reused "$CHECKPOINT_REUSED" --argjson selective_retries "$SELECTIVE_RETRIES"    '. + {
+      actual_duration_sec:($actual|tonumber),
+      quality_gate:$quality,
+      artistic_quality_score:($score|tonumber),
+      ai_video_space:$space,
+      required_ai_video_scenes:$required_scenes,
+      successful_ai_video_scenes:$ai_scenes,
+      required_ai_video_shots:$required_shots,
+      successful_ai_video_shots:$ai_shots,
+      final_vector_video_scenes:0,
+      publication_invariant:(if ($quality=="PASS" and ($score|tonumber)>=62 and $ai_shots==$required_shots and $required_shots>0) then "PASS" else "BLOCKED" end),
+      visual_stats:{
+        ai_video_scenes:$ai_scenes,
+        ai_video_shots:$ai_shots,
+        planned_shots:$required_shots,
+        checkpoint_reused:$checkpoint_reused,
+        selective_retries:$selective_retries,
+        semantic_character_bible_keyframes:$vector_keys,
+        basic_keyframes:$basic_keys,
+        stream_loop_used:false
+      }
+    }' studio/metadata.json > studio/metadata.json.tmp
 mv studio/metadata.json.tmp studio/metadata.json
 
 echo "Rendered: $TITLE"
 cat studio/probe.json
 
 if [ "$REBUILD_EXISTING" = "1" ]; then
-  gh release upload "$tag" studio/final.mp4 studio/thumbnail.jpg studio/metadata.json studio/probe.json --repo "$GITHUB_REPOSITORY" --clobber
-  gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --title "HERMES Auto Studio $id"     --notes "Re-rendered by HERMES AUTO STUDIO V3 AI VIDEO with Character Bible V1 and AI-video-required quality gate. Public ZeroGPU provider, no paid API, 0 HERMES Neurons."
+  gh release upload "$tag" studio/final.mp4 studio/thumbnail.jpg studio/metadata.json studio/probe.json studio/quality-report.json --repo "$GITHUB_REPOSITORY" --clobber
+  gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --title "HERMES Auto Studio $id"     --notes "Re-rendered by HERMES AUTO STUDIO V4 Creative Director with Character Bible V2, multi-shot AI video, selective retry, and artistic quality gate. Public ZeroGPU provider, no paid API, 0 HERMES Neurons."
 else
-  gh release create "$tag" studio/final.mp4 studio/thumbnail.jpg studio/metadata.json studio/probe.json     --repo "$GITHUB_REPOSITORY" --title "HERMES Auto Studio $id"     --notes "Auto-rendered by HERMES AUTO STUDIO V3 AI VIDEO with Character Bible V1 and AI-video-required quality gate. Public ZeroGPU provider, no paid API, 0 HERMES Neurons."
+  gh release create "$tag" studio/final.mp4 studio/thumbnail.jpg studio/metadata.json studio/probe.json studio/quality-report.json     --repo "$GITHUB_REPOSITORY" --title "HERMES Auto Studio $id"     --notes "Auto-rendered by HERMES AUTO STUDIO V4 Creative Director with Character Bible V2, multi-shot AI video, selective retry, and artistic quality gate. Public ZeroGPU provider, no paid API, 0 HERMES Neurons."
 fi
 
 if gh release view "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -373,4 +494,4 @@ if gh release view "$CHECKPOINT_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1
     echo "CHECKPOINT_CLEANUP_WARN tag=$CHECKPOINT_TAG"
 fi
 
-echo "QUALITY_GATE=$QUALITY_GATE AI_VIDEO_SCENES=$AI_VIDEO_SCENES CHECKPOINT_REUSED=$CHECKPOINT_REUSED VECTOR_KEYFRAMES=$VECTOR_KEYFRAMES BASIC_KEYFRAMES=$BASIC_KEYFRAMES"
+echo "QUALITY_GATE=$QUALITY_GATE ARTISTIC_SCORE=$ARTISTIC_SCORE AI_VIDEO_SCENES=$AI_VIDEO_SCENES AI_VIDEO_SHOTS=$AI_VIDEO_SHOTS PLANNED_SHOTS=$PLANNED_SHOTS SELECTIVE_RETRIES=$SELECTIVE_RETRIES CHECKPOINT_REUSED=$CHECKPOINT_REUSED"
