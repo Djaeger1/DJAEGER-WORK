@@ -5,6 +5,7 @@ on:
     branches: [main, djaeger-work-v2.6-creative-intelligence]
     paths:
       - 'runtime/**'
+      - 'hermes-auto-studio/**'
       - '.github/workflows/release.yml'
   workflow_dispatch:
 
