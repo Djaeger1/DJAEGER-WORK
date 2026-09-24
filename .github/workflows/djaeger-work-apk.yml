@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: djaeger-work-native-apk
@@ -121,7 +121,7 @@ jobs:
           grep -Fq 'X-Djaeger-Remote-Key' "$SRC"
           grep -Fq '● REMOTE' "$SRC"
           grep -Fq 'Djaeger1/DJAEGER-WORK/main/release/channel.json' "$SRC"
-          grep -Fq 'APP_VERSION=1.4.0' "$SRC"
+          grep -Fq 'APP_VERSION=1.4.1' "$SRC"
           grep -Fq '/status-feed' "$SRC"
           grep -Fq '/api/work/dashboard' "$SRC"
           grep -Fq 'FEEDBACK_CONNECTED' "$SRC"
@@ -192,3 +192,33 @@ jobs:
             SHA256.txt
             SIGNING_STATUS.txt
           retention-days: 30
+
+      - name: Publish current signed dashboard
+        if: env.SIGNING_MODE == 'SIGNED'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release/dashboard
+          cp "$APK_OUTPUT" release/dashboard/DJAEGER_WORK_Dashboard_latest_SIGNED.apk
+          sha256sum release/dashboard/DJAEGER_WORK_Dashboard_latest_SIGNED.apk | awk '{print $1}' > release/dashboard/DJAEGER_WORK_Dashboard_latest_SIGNED.apk.sha256
+          printf '{"version":"1.4.1","version_code":141,"package":"com.hermes.workdashboard","sha256":"%s","source_commit":"%s"}\n' \
+            "$(cat release/dashboard/DJAEGER_WORK_Dashboard_latest_SIGNED.apk.sha256)" "$GITHUB_SHA" > release/dashboard/channel.json
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add release/dashboard/
+          if git diff --cached --quiet; then
+            echo "Dashboard release already current."
+            exit 0
+          fi
+          git commit -m "Publish DJAEGER WORK dashboard v1.4.1"
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 2))
+          done
+          echo "Failed to publish dashboard APK." >&2
+          exit 1
