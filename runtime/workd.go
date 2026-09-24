@@ -268,7 +268,7 @@ func (s *S) bridgeSnapshot() map[string]any {
 		"production_pack_state": "READY", "production_ready": prodN, "production_topic": prodTopic, "production_engine": "PRODUCTION_PACK_V1",
 		"handoff_state": ho["state"], "handoff_queue": ho["queue_total"], "next_handoff_job": ho["next_job"], "handoff_engine": "HANDOFF_V1",
 		"production_desk_state": "READY", "production_desk_engine": "PRODUCTION_DESK_V1",
-		"studio_state": studio["state"], "studio_engine": "AUTO_STUDIO_V3_AI_VIDEO", "studio_job": studio["job"],
+		"studio_state": studio["state"], "studio_engine": "AUTO_STUDIO_V4_CREATIVE", "studio_job": studio["job"],
 		"publication_state": pub["state"], "publications_total": pub["records"], "publication_engine": "YOUTUBE_SCHEDULER_V2",
 		"feedback_state": fb["state"], "performance_records": fb["records"], "strong_signal": fb["strong_signal"], "weak_signal": fb["weak_signal"], "feedback_engine": "FEEDBACK_V3_CONFIDENCE", "youtube_feedback_last_sync": strings.TrimSpace(readfile(s.youtubeFeedbackLastSyncPath())),
 		"auto_update_state": au["state"], "auto_update_last_check": au["last_check"], "github_control_state": gc["state"], "github_control_reason": gc["reason"], "github_control_generation": gc["generation"], "github_control_writes_allowed": false, "process_convergence": s.processConvergenceInfo(), "bridge_agent": "HERMES_WORK_DATA_BRIDGE_v3", "bridge_state": s.bridgeInfo()["state"], "bridge_reason": s.bridgeInfo()["reason"], "bridge_last_sync": s.bridgeInfo()["last_sync"], "ai_used": false, "neurons_used": 0,
@@ -3777,23 +3777,26 @@ type StudioJob struct {
 	NeuronsUsed    int          `json:"neurons_used"`
 }
 type StudioResult struct {
-	State                   string `json:"state"`
-	PlannerID               string `json:"planner_id"`
-	RenderTag               string `json:"render_tag"`
-	VideoURL                string `json:"video_url"`
-	ThumbnailURL            string `json:"thumbnail_url"`
-	MetadataURL             string `json:"metadata_url"`
-	CompletedAt             string `json:"completed_at"`
-	Engine                  string `json:"engine"`
-	QualityGate             string `json:"quality_gate"`
-	RenderGeneration        string `json:"render_generation"`
-	CharacterBible          string `json:"character_bible"`
-	RequiredAIVideoScenes   int    `json:"required_ai_video_scenes"`
-	SuccessfulAIVideoScenes int    `json:"successful_ai_video_scenes"`
-	FinalVectorVideoScenes  int    `json:"final_vector_video_scenes"`
-	ProvenanceState         string `json:"provenance_state"`
-	AIUsed                  bool   `json:"ai_used"`
-	NeuronsUsed             int    `json:"neurons_used"`
+	State                   string  `json:"state"`
+	PlannerID               string  `json:"planner_id"`
+	RenderTag               string  `json:"render_tag"`
+	VideoURL                string  `json:"video_url"`
+	ThumbnailURL            string  `json:"thumbnail_url"`
+	MetadataURL             string  `json:"metadata_url"`
+	CompletedAt             string  `json:"completed_at"`
+	Engine                  string  `json:"engine"`
+	QualityGate             string  `json:"quality_gate"`
+	ArtisticQualityScore    float64 `json:"artistic_quality_score"`
+	RenderGeneration        string  `json:"render_generation"`
+	CharacterBible          string  `json:"character_bible"`
+	RequiredAIVideoScenes   int     `json:"required_ai_video_scenes"`
+	SuccessfulAIVideoScenes int     `json:"successful_ai_video_scenes"`
+	RequiredAIVideoShots    int     `json:"required_ai_video_shots"`
+	SuccessfulAIVideoShots  int     `json:"successful_ai_video_shots"`
+	FinalVectorVideoScenes  int     `json:"final_vector_video_scenes"`
+	ProvenanceState         string  `json:"provenance_state"`
+	AIUsed                  bool    `json:"ai_used"`
+	NeuronsUsed             int     `json:"neurons_used"`
 }
 type StudioProviderWait struct {
 	State                string `json:"state"`
@@ -3850,7 +3853,9 @@ func (s *S) studioResultCount() int {
 		if e != nil || json.Unmarshal(b, &r) != nil {
 			continue
 		}
-		if r.State == "RENDERED_VALIDATED" && r.ProvenanceState == "PASS" && r.QualityGate == "PASS" && r.RenderGeneration == "DJAEGER_STUDIO_V3_AI_VIDEO" && r.CharacterBible == "DJAEGER_WORK_KIDS_V1" && r.RequiredAIVideoScenes > 0 && r.SuccessfulAIVideoScenes == r.RequiredAIVideoScenes && r.FinalVectorVideoScenes == 0 {
+		legacyOK := r.RenderGeneration == "DJAEGER_STUDIO_V3_AI_VIDEO" && r.CharacterBible == "DJAEGER_WORK_KIDS_V1" && r.RequiredAIVideoScenes > 0 && r.SuccessfulAIVideoScenes == r.RequiredAIVideoScenes
+		creativeOK := r.RenderGeneration == "DJAEGER_STUDIO_V4_CREATIVE" && r.CharacterBible == "DJAEGER_WORK_KIDS_V2" && r.RequiredAIVideoShots > 0 && r.SuccessfulAIVideoShots == r.RequiredAIVideoShots && r.ArtisticQualityScore >= 62
+		if r.State == "RENDERED_VALIDATED" && r.ProvenanceState == "PASS" && r.QualityGate == "PASS" && r.FinalVectorVideoScenes == 0 && (legacyOK || creativeOK) {
 			n++
 		}
 	}
@@ -3966,7 +3971,7 @@ func (s *S) buildStudioJobForTopic(target string) (StudioJob, bool) {
 		if !ok {
 			continue
 		}
-		j := StudioJob{State: "WAITING_RENDER", Engine: "AUTO_STUDIO_V3_AI_VIDEO", PlannerID: p.ID, Topic: p.Title, Category: p.Category, Language: sp.Language, VideoTitle: sp.VideoTitle, Description: sp.Description, DurationSec: sp.DurationSec, Scenes: sp.Scenes, Hashtags: sp.Hashtags, RenderTag: studioTag(p.ID), VisualProvider: "CHARACTER_BIBLE_TO_WAN_AI_VIDEO_REQUIRED", VoiceProvider: "NO_CARD_TTS_WITH_LOCAL_FALLBACK", RenderProvider: "GITHUB_ACTIONS_WAN_FFMPEG", CreatedAt: time.Now().Format(time.RFC3339), AIUsed: false, NeuronsUsed: 0}
+		j := StudioJob{State: "WAITING_RENDER", Engine: "AUTO_STUDIO_V4_CREATIVE", PlannerID: p.ID, Topic: p.Title, Category: p.Category, Language: sp.Language, VideoTitle: sp.VideoTitle, Description: sp.Description, DurationSec: sp.DurationSec, Scenes: sp.Scenes, Hashtags: sp.Hashtags, RenderTag: studioTag(p.ID), VisualProvider: "CHARACTER_BIBLE_TO_WAN_AI_VIDEO_REQUIRED", VoiceProvider: "NO_CARD_TTS_WITH_LOCAL_FALLBACK", RenderProvider: "GITHUB_ACTIONS_WAN_FFMPEG", CreatedAt: time.Now().Format(time.RFC3339), AIUsed: false, NeuronsUsed: 0}
 		return j, true
 	}
 	return StudioJob{}, false
@@ -3992,27 +3997,27 @@ func (s *S) ensureStudioPending() bool {
 func (s *S) studioInfo() map[string]any {
 	if j, ok := s.loadStudioPending(); ok {
 		if r, done := s.loadStudioResult(j.PlannerID); done {
-			return map[string]any{"state": "RENDERED", "engine": "AUTO_STUDIO_V3_AI_VIDEO", "job": j, "result": r, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
+			return map[string]any{"state": "RENDERED", "engine": "AUTO_STUDIO_V4_CREATIVE", "job": j, "result": r, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
 		}
 		if pw, waiting := s.loadStudioProviderWait(j.PlannerID); waiting {
-			return map[string]any{"state": pw.State, "engine": "AUTO_STUDIO_V3_AI_VIDEO", "job": j, "provider_wait": pw, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
+			return map[string]any{"state": pw.State, "engine": "AUTO_STUDIO_V4_CREATIVE", "job": j, "provider_wait": pw, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
 		}
-		return map[string]any{"state": "WAITING_RENDER", "engine": "AUTO_STUDIO_V3_AI_VIDEO", "job": j, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
+		return map[string]any{"state": "WAITING_RENDER", "engine": "AUTO_STUDIO_V4_CREATIVE", "job": j, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
 	}
 	s.clearStudioProviderWait()
 	if s.studioRenderedToday() {
-		return map[string]any{"state": "DAILY_TARGET_MET", "engine": "AUTO_STUDIO_V3_AI_VIDEO", "job": nil, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
+		return map[string]any{"state": "DAILY_TARGET_MET", "engine": "AUTO_STUDIO_V4_CREATIVE", "job": nil, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
 	}
 	if !s.researchCompletedToday() {
-		return map[string]any{"state": "WAITING_TODAY_RESEARCH", "engine": "AUTO_STUDIO_V3_AI_VIDEO", "job": nil, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
+		return map[string]any{"state": "WAITING_TODAY_RESEARCH", "engine": "AUTO_STUDIO_V4_CREATIVE", "job": nil, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
 	}
 	j, ok := s.buildStudioJob()
 	if !ok {
-		return map[string]any{"state": "WAITING_PRODUCTION_JOB", "engine": "AUTO_STUDIO_V3_AI_VIDEO", "job": nil, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
+		return map[string]any{"state": "WAITING_PRODUCTION_JOB", "engine": "AUTO_STUDIO_V4_CREATIVE", "job": nil, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
 	}
 	os.MkdirAll(filepath.Dir(s.studioPendingPath()), 0700)
 	_ = s.saveStudioPending(j)
-	return map[string]any{"state": "WAITING_RENDER", "engine": "AUTO_STUDIO_V3_AI_VIDEO", "job": j, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
+	return map[string]any{"state": "WAITING_RENDER", "engine": "AUTO_STUDIO_V4_CREATIVE", "job": j, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
 }
 func (s *S) studio(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
@@ -4115,18 +4120,21 @@ func (s *S) pollStudioResult() {
 		return
 	}
 	var md struct {
-		QualityGate             string `json:"quality_gate"`
-		RenderGeneration        string `json:"render_generation"`
-		CharacterBible          string `json:"character_bible"`
-		RequiredAIVideoScenes   int    `json:"required_ai_video_scenes"`
-		SuccessfulAIVideoScenes int    `json:"successful_ai_video_scenes"`
-		FinalVectorVideoScenes  int    `json:"final_vector_video_scenes"`
-		PublicationInvariant    string `json:"publication_invariant"`
+		QualityGate             string  `json:"quality_gate"`
+		ArtisticQualityScore    float64 `json:"artistic_quality_score"`
+		RenderGeneration        string  `json:"render_generation"`
+		CharacterBible          string  `json:"character_bible"`
+		RequiredAIVideoScenes   int     `json:"required_ai_video_scenes"`
+		SuccessfulAIVideoScenes int     `json:"successful_ai_video_scenes"`
+		RequiredAIVideoShots    int     `json:"required_ai_video_shots"`
+		SuccessfulAIVideoShots  int     `json:"successful_ai_video_shots"`
+		FinalVectorVideoScenes  int     `json:"final_vector_video_scenes"`
+		PublicationInvariant    string  `json:"publication_invariant"`
 	}
 	if json.Unmarshal(mb, &md) != nil {
 		return
 	}
-	valid := md.QualityGate == "PASS" && md.RenderGeneration == "DJAEGER_STUDIO_V3_AI_VIDEO" && md.CharacterBible == "DJAEGER_WORK_KIDS_V1" && md.PublicationInvariant == "PASS" && md.RequiredAIVideoScenes > 0 && md.SuccessfulAIVideoScenes == md.RequiredAIVideoScenes && md.FinalVectorVideoScenes == 0
+	valid := md.QualityGate == "PASS" && md.ArtisticQualityScore >= 62 && md.RenderGeneration == "DJAEGER_STUDIO_V4_CREATIVE" && md.CharacterBible == "DJAEGER_WORK_KIDS_V2" && md.PublicationInvariant == "PASS" && md.RequiredAIVideoShots > 0 && md.SuccessfulAIVideoShots == md.RequiredAIVideoShots && md.FinalVectorVideoScenes == 0
 	if !valid {
 		_ = os.WriteFile(filepath.Join(s.Root, "state", "studio_provenance_error"), []byte("PUBLICATION_BLOCKED "+j.PlannerID+"\n"), 0600)
 		return
@@ -4135,7 +4143,7 @@ func (s *S) pollStudioResult() {
 	if done == "" {
 		done = time.Now().Format(time.RFC3339)
 	}
-	r := StudioResult{State: "RENDERED_VALIDATED", PlannerID: j.PlannerID, RenderTag: j.RenderTag, VideoURL: video, ThumbnailURL: thumb, MetadataURL: meta, CompletedAt: done, Engine: "AUTO_STUDIO_V3_AI_VIDEO", QualityGate: md.QualityGate, RenderGeneration: md.RenderGeneration, CharacterBible: md.CharacterBible, RequiredAIVideoScenes: md.RequiredAIVideoScenes, SuccessfulAIVideoScenes: md.SuccessfulAIVideoScenes, FinalVectorVideoScenes: md.FinalVectorVideoScenes, ProvenanceState: "PASS", AIUsed: false, NeuronsUsed: 0}
+	r := StudioResult{State: "RENDERED_VALIDATED", PlannerID: j.PlannerID, RenderTag: j.RenderTag, VideoURL: video, ThumbnailURL: thumb, MetadataURL: meta, CompletedAt: done, Engine: "AUTO_STUDIO_V4_CREATIVE", QualityGate: md.QualityGate, ArtisticQualityScore: md.ArtisticQualityScore, RenderGeneration: md.RenderGeneration, CharacterBible: md.CharacterBible, RequiredAIVideoScenes: md.RequiredAIVideoScenes, SuccessfulAIVideoScenes: md.SuccessfulAIVideoScenes, RequiredAIVideoShots: md.RequiredAIVideoShots, SuccessfulAIVideoShots: md.SuccessfulAIVideoShots, FinalVectorVideoScenes: md.FinalVectorVideoScenes, ProvenanceState: "PASS", AIUsed: false, NeuronsUsed: 0}
 	b, _ := json.MarshalIndent(r, "", "  ")
 	os.MkdirAll(filepath.Dir(s.studioResultPath(j.PlannerID)), 0700)
 	if writeSimple(s.studioResultPath(j.PlannerID), string(b)+"\n") != nil {
@@ -4672,7 +4680,7 @@ func (s *S) youtubeCandidate(id string) (PlanItem, StudioResult, ScriptPackage, 
 	if !ok || strings.TrimSpace(sr.VideoURL) == "" {
 		return p, sr, ScriptPackage{}, fmt.Errorf("rendered video not found")
 	}
-	if sr.State != "RENDERED_VALIDATED" || sr.ProvenanceState != "PASS" || sr.QualityGate != "PASS" || sr.RenderGeneration != "DJAEGER_STUDIO_V3_AI_VIDEO" || sr.CharacterBible != "DJAEGER_WORK_KIDS_V1" || sr.RequiredAIVideoScenes <= 0 || sr.SuccessfulAIVideoScenes != sr.RequiredAIVideoScenes || sr.FinalVectorVideoScenes != 0 {
+	if sr.State != "RENDERED_VALIDATED" || sr.ProvenanceState != "PASS" || sr.QualityGate != "PASS" || sr.ArtisticQualityScore < 62 || sr.RenderGeneration != "DJAEGER_STUDIO_V4_CREATIVE" || sr.CharacterBible != "DJAEGER_WORK_KIDS_V2" || sr.RequiredAIVideoShots <= 0 || sr.SuccessfulAIVideoShots != sr.RequiredAIVideoShots || sr.FinalVectorVideoScenes != 0 {
 		return p, sr, ScriptPackage{}, fmt.Errorf("PUBLICATION_BLOCKED: AI-video provenance invariant failed")
 	}
 	if !youtubeAssetAllowed(sr.VideoURL) || !youtubeAssetAllowed(sr.ThumbnailURL) {
