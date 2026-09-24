@@ -115,13 +115,13 @@ jobs:
           print("Six-menu DJAEGER WORK contract preserved.")
           PY
           grep -Fq 'applicationId "com.hermes.workdashboard"' hermes-work-terminal/app/build.gradle
-          grep -Fq 'versionCode 141' hermes-work-terminal/app/build.gradle
-          grep -Fq 'versionName "1.4.1"' hermes-work-terminal/app/build.gradle
+          grep -Fq 'versionCode 142' hermes-work-terminal/app/build.gradle
+          grep -Fq 'versionName "1.4.2"' hermes-work-terminal/app/build.gradle
           grep -Fq 'Executors.newFixedThreadPool(4)' "$SRC"
           grep -Fq 'X-Djaeger-Remote-Key' "$SRC"
           grep -Fq '● REMOTE' "$SRC"
           grep -Fq 'Djaeger1/DJAEGER-WORK/main/release/channel.json' "$SRC"
-          grep -Fq 'APP_VERSION=1.4.1' "$SRC"
+          grep -Fq 'APP_VERSION=1.4.2' "$SRC"
           grep -Fq '/status-feed' "$SRC"
           grep -Fq '/api/work/dashboard' "$SRC"
           grep -Fq 'FEEDBACK_CONNECTED' "$SRC"
@@ -130,7 +130,8 @@ jobs:
           grep -Fq 'metricOrWaiting' "$SRC"
           grep -Fq '/api/work/youtube/oauth/upgrade-analytics' "$SRC"
           grep -Fq 'AKTIFKAN YOUTUBE ANALYTICS' "$SRC"
-          grep -Fq 'code_challenge_method=S256' "$SRC"
+          grep -Fq 'developers.google.com/oauthplayground' "$SRC"
+          grep -Fq 'SIMPAN IZIN ANALYTICS' "$SRC"
           ! grep -Fq 'TextView scripts = metric(r1, "NASKAH SIAP", "BELUM TERHUBUNG")' "$SRC"
           ! grep -Fq 'generateUpdateReport(out, null);' "$SRC"
           test ! -e hermes-work-terminal/signing/hermes_work_terminal.jks.b64
@@ -162,20 +163,20 @@ jobs:
           BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           "$BT/aapt" dump badging "$APK" | tee /tmp/badging.txt
           grep -Fq "package: name='com.hermes.workdashboard'" /tmp/badging.txt
-          grep -Fq "versionCode='141'" /tmp/badging.txt
-          grep -Fq "versionName='1.4.1'" /tmp/badging.txt
+          grep -Fq "versionCode='142'" /tmp/badging.txt
+          grep -Fq "versionName='1.4.2'" /tmp/badging.txt
           grep -Fq "application-label:'DJAEGER WORK'" /tmp/badging.txt
 
           if [ "$SIGNING_MODE" = "SIGNED" ]; then
             "$BT/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/apksigner.txt
             grep -Fq "certificate SHA-256 digest: 5b2fe7069026a0366d0c28e626ef836fb46141d6ed131a8cd5bc2ed06b774e9d" /tmp/apksigner.txt
-            OUT=DJAEGER_WORK_Dashboard_v1.4.1_SIGNED.apk
+            OUT=DJAEGER_WORK_Dashboard_v1.4.2_SIGNED.apk
           else
             if "$BT/apksigner" verify "$APK" >/dev/null 2>&1; then
               echo "Unexpected signature in validation-only build" >&2
               exit 1
             fi
-            OUT=DJAEGER_WORK_Dashboard_v1.4.1_UNSIGNED.apk
+            OUT=DJAEGER_WORK_Dashboard_v1.4.2_UNSIGNED.apk
           fi
 
           cp "$APK" "$OUT"
@@ -186,7 +187,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-WORK-Native-v1.4.1-${{ env.SIGNING_MODE }}
+          name: DJAEGER-WORK-Native-v1.4.2-${{ env.SIGNING_MODE }}
           path: |
             ${{ env.APK_OUTPUT }}
             SHA256.txt
@@ -201,7 +202,7 @@ jobs:
           mkdir -p release/dashboard
           cp "$APK_OUTPUT" release/dashboard/DJAEGER_WORK_Dashboard_latest_SIGNED.apk
           sha256sum release/dashboard/DJAEGER_WORK_Dashboard_latest_SIGNED.apk | awk '{print $1}' > release/dashboard/DJAEGER_WORK_Dashboard_latest_SIGNED.apk.sha256
-          printf '{"version":"1.4.1","version_code":141,"package":"com.hermes.workdashboard","sha256":"%s","source_commit":"%s"}\n' \
+          printf '{"version":"1.4.2","version_code":141,"package":"com.hermes.workdashboard","sha256":"%s","source_commit":"%s"}\n' \
             "$(cat release/dashboard/DJAEGER_WORK_Dashboard_latest_SIGNED.apk.sha256)" "$GITHUB_SHA" > release/dashboard/channel.json
 
           git config user.name "github-actions[bot]"
@@ -212,7 +213,7 @@ jobs:
             echo "Dashboard release already current."
             exit 0
           fi
-          git commit -m "Publish DJAEGER WORK dashboard v1.4.1"
+          git commit -m "Publish DJAEGER WORK dashboard v1.4.2"
           for attempt in 1 2 3; do
             if git push origin HEAD:main; then
               exit 0
