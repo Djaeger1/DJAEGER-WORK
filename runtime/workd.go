@@ -260,7 +260,7 @@ func (s *S) bridgeSnapshot() map[string]any {
 		"tether_state": ts, "temperature_c": temp(), "battery_temp_c": temp(), "cpu_usage": cpuUsageSummary(), "thermal": thermalSummary(), "mem_available_mb": mem(), "workd_rss_mb": selfRSS(), "mem_breakdown": memBreakdown(), "memory_pressure": memoryPressureSummary(), "swap": swapSummary(),
 		"zram": zramStats(), "top_rss": topRSSProcesses(10), "top_anon": topAnonProcesses(10),
 		"worker_state": worker, "safe_mode": exists(filepath.Join(s.Root, "state", "safe_mode")),
-		"research_total": s.researchTotal(), "last_research": strings.TrimSpace(readfile(filepath.Join(s.Root, "state", "last_research"))), "research_engine": "SUGGEST_MULTI_V2",
+		"research_total": s.researchTotal(), "last_research": strings.TrimSpace(readfile(filepath.Join(s.Root, "state", "last_research"))), "research_engine": "CREATIVE_RESEARCH_V3",
 		"daily_brief_state": db["state"], "ideas_ready": db["ideas_ready"], "top_opportunity": db["top_opportunity"], "opportunity_engine": "OPPORTUNITY_V1",
 		"planner_state": pl["state"], "planner_queue": pl["queue_total"], "next_for_script": pl["next_for_script"], "planner_engine": "PLANNER_V1",
 		"script_prep_state": "READY", "script_prep_ready": prepN, "script_topic": prepTopic, "script_prep_engine": "SCRIPT_PREP_V1",
@@ -1262,7 +1262,7 @@ func (s *S) status(w http.ResponseWriter, r *http.Request) {
 		gcs = "DISABLED"
 	}
 	pc := s.processConvergenceInfo()
-	js(w, map[string]any{"service": "HERMES_WORK", "control_center": "v2.4.0", "release": cur, "configured_release": configured, "auto_update_state": aus, "auto_update": au, "github_control_state": gcs, "github_control": gc, "github_control_writes_allowed": false, "process_convergence": pc, "emergency_quarantine": readenv(filepath.Join(s.Rel, "config", "work.env"), "EMERGENCY_QUARANTINE") == "1", "temperature_c": temp(), "battery_temp_c": temp(), "cpu_usage": cpuUsageSummary(), "thermal": thermalSummary(), "mem_available_mb": mem(), "workd_rss_mb": selfRSS(), "tether_state": ts, "tether_ip": ip, "worker_paused": exists(filepath.Join(s.Root, "state", "worker_paused")), "safe_mode": exists(filepath.Join(s.Root, "state", "safe_mode")), "bridge_enabled": readenv(filepath.Join(s.Rel, "config", "work.env"), "BRIDGE_ENABLED") == "1", "bridge_state": bst, "bridge_last_sync": bi["last_sync"], "bridge_mode": "DATA_ONLY", "bridge_ai_used": false, "bridge_neurons_used": 0, "research_total": s.researchTotal(), "last_research": strings.TrimSpace(readfile(filepath.Join(s.Root, "state", "last_research"))), "research_engine": "SUGGEST_MULTI_V2", "components": map[string]string{"collector": "READY_V2", "dedup": "READY_V1", "categorizer": "READY_V1", "trend_scoring": "READY_V2", "opportunity_engine": "READY_V1", "reasoning": "DEFERRED", "content_planner": "READY_V3", "script_prep": "READY_V1", "script_engine": "READY_V1", "production_pack": "READY_V1", "handoff": "READY_V1", "production_desk": "READY_V1", "auto_studio": "READY_V1", "publication": "READY_V1", "channel_connector": "READY_V1", "feedback": "READY_V1", "knowledge": "READY_FOUNDATION", "scheduler": "READY_V2", "bridge": bst, "auto_updater": aus, "github_control": gcs}})
+	js(w, map[string]any{"service": "HERMES_WORK", "control_center": "v2.4.0", "release": cur, "configured_release": configured, "auto_update_state": aus, "auto_update": au, "github_control_state": gcs, "github_control": gc, "github_control_writes_allowed": false, "process_convergence": pc, "emergency_quarantine": readenv(filepath.Join(s.Rel, "config", "work.env"), "EMERGENCY_QUARANTINE") == "1", "temperature_c": temp(), "battery_temp_c": temp(), "cpu_usage": cpuUsageSummary(), "thermal": thermalSummary(), "mem_available_mb": mem(), "workd_rss_mb": selfRSS(), "tether_state": ts, "tether_ip": ip, "worker_paused": exists(filepath.Join(s.Root, "state", "worker_paused")), "safe_mode": exists(filepath.Join(s.Root, "state", "safe_mode")), "bridge_enabled": readenv(filepath.Join(s.Rel, "config", "work.env"), "BRIDGE_ENABLED") == "1", "bridge_state": bst, "bridge_last_sync": bi["last_sync"], "bridge_mode": "DATA_ONLY", "bridge_ai_used": false, "bridge_neurons_used": 0, "research_total": s.researchTotal(), "last_research": strings.TrimSpace(readfile(filepath.Join(s.Root, "state", "last_research"))), "research_engine": "CREATIVE_RESEARCH_V3", "components": map[string]string{"collector": "READY_V2", "dedup": "READY_V1", "categorizer": "READY_V1", "trend_scoring": "READY_V3", "benchmark": "YOUTUBE_BENCHMARK_V1", "creative_intelligence": "CREATIVE_DIRECTOR_V1", "opportunity_engine": "READY_V2", "reasoning": "CREATIVE_RULES_PLUS_FEEDBACK", "content_planner": "READY_V4", "script_prep": "READY_V1", "script_engine": "READY_V1", "production_pack": "READY_V1", "handoff": "READY_V1", "production_desk": "READY_V1", "auto_studio": "READY_V1", "publication": "READY_V1", "channel_connector": "READY_V1", "feedback": "READY_V1", "knowledge": "READY_FOUNDATION", "scheduler": "READY_V2", "bridge": bst, "auto_updater": aus, "github_control": gcs}})
 }
 func (s *S) action(w http.ResponseWriter, r *http.Request) {
 	if !s.auth(r) {
@@ -1902,6 +1902,276 @@ func suggest(q, ds string) ([]string, error) {
 }
 func ytSuggest(q string) ([]string, error)  { return suggest(q, "yt") }
 func webSuggest(q string) ([]string, error) { return suggest(q, "") }
+
+type BenchmarkVideo struct {
+	Query        string  `json:"query"`
+	Category     string  `json:"category"`
+	VideoID      string  `json:"video_id"`
+	Title        string  `json:"title"`
+	Channel      string  `json:"channel"`
+	PublishedAt  string  `json:"published_at"`
+	DurationSec  int     `json:"duration_sec"`
+	Views        int64   `json:"views"`
+	ViewVelocity float64 `json:"view_velocity_per_day"`
+	ThumbnailURL string  `json:"thumbnail_url"`
+	MadeForKids  bool    `json:"made_for_kids"`
+	CollectedAt  string  `json:"collected_at"`
+}
+
+func iso8601DurationSec(v string) int {
+	v = strings.TrimSpace(strings.ToUpper(v))
+	if !strings.HasPrefix(v, "PT") {
+		return 0
+	}
+	v = strings.TrimPrefix(v, "PT")
+	total := 0
+	n := 0
+	for _, r := range v {
+		if r >= '0' && r <= '9' {
+			n = n*10 + int(r-'0')
+			continue
+		}
+		switch r {
+		case 'H':
+			total += n * 3600
+		case 'M':
+			total += n * 60
+		case 'S':
+			total += n
+		}
+		n = 0
+	}
+	return total
+}
+
+func (s *S) benchmarkPath() string {
+	return filepath.Join(s.Root, "data", "database", "benchmark.jsonl")
+}
+
+func youtubeBenchmarkSearch(token, q, cat string) ([]BenchmarkVideo, error) {
+	v := url.Values{}
+	v.Set("part", "snippet")
+	v.Set("type", "video")
+	v.Set("maxResults", "5")
+	v.Set("order", "viewCount")
+	v.Set("safeSearch", "strict")
+	v.Set("videoDuration", "short")
+	v.Set("relevanceLanguage", "id")
+	v.Set("regionCode", "ID")
+	v.Set("q", q)
+	req, e := http.NewRequest("GET", "https://www.googleapis.com/youtube/v3/search?"+v.Encode(), nil)
+	if e != nil {
+		return nil, e
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	cl := androidHTTPClient()
+	cl.Timeout = 25 * time.Second
+	resp, e := cl.Do(req)
+	if e != nil {
+		return nil, e
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("youtube benchmark search http %d %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var sr struct {
+		Items []struct {
+			ID struct {
+				VideoID string `json:"videoId"`
+			} `json:"id"`
+			Snippet struct {
+				Title        string `json:"title"`
+				ChannelTitle string `json:"channelTitle"`
+				PublishedAt  string `json:"publishedAt"`
+				Thumbnails   map[string]struct {
+					URL string `json:"url"`
+				} `json:"thumbnails"`
+			} `json:"snippet"`
+		} `json:"items"`
+	}
+	if json.Unmarshal(body, &sr) != nil {
+		return nil, fmt.Errorf("youtube benchmark search invalid json")
+	}
+	ids := []string{}
+	seed := map[string]BenchmarkVideo{}
+	now := time.Now()
+	for _, it := range sr.Items {
+		id := strings.TrimSpace(it.ID.VideoID)
+		if id == "" {
+			continue
+		}
+		thumb := ""
+		if x, ok := it.Snippet.Thumbnails["medium"]; ok {
+			thumb = x.URL
+		} else if x, ok := it.Snippet.Thumbnails["default"]; ok {
+			thumb = x.URL
+		}
+		seed[id] = BenchmarkVideo{Query: q, Category: cat, VideoID: id, Title: it.Snippet.Title, Channel: it.Snippet.ChannelTitle, PublishedAt: it.Snippet.PublishedAt, ThumbnailURL: thumb, CollectedAt: now.Format(time.RFC3339)}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return []BenchmarkVideo{}, nil
+	}
+	dv := url.Values{}
+	dv.Set("part", "statistics,contentDetails,status")
+	dv.Set("id", strings.Join(ids, ","))
+	dreq, _ := http.NewRequest("GET", "https://www.googleapis.com/youtube/v3/videos?"+dv.Encode(), nil)
+	dreq.Header.Set("Authorization", "Bearer "+token)
+	dresp, e := cl.Do(dreq)
+	if e != nil {
+		return nil, e
+	}
+	defer dresp.Body.Close()
+	dbody, _ := io.ReadAll(io.LimitReader(dresp.Body, 1<<20))
+	if dresp.StatusCode < 200 || dresp.StatusCode >= 300 {
+		return nil, fmt.Errorf("youtube benchmark videos http %d %s", dresp.StatusCode, strings.TrimSpace(string(dbody)))
+	}
+	var vr struct {
+		Items []struct {
+			ID         string `json:"id"`
+			Statistics struct {
+				ViewCount string `json:"viewCount"`
+			} `json:"statistics"`
+			ContentDetails struct {
+				Duration string `json:"duration"`
+			} `json:"contentDetails"`
+			Status struct {
+				MadeForKids bool `json:"madeForKids"`
+			} `json:"status"`
+		} `json:"items"`
+	}
+	if json.Unmarshal(dbody, &vr) != nil {
+		return nil, fmt.Errorf("youtube benchmark videos invalid json")
+	}
+	out := []BenchmarkVideo{}
+	for _, it := range vr.Items {
+		b, ok := seed[it.ID]
+		if !ok {
+			continue
+		}
+		b.Views, _ = strconv.ParseInt(it.Statistics.ViewCount, 10, 64)
+		b.DurationSec = iso8601DurationSec(it.ContentDetails.Duration)
+		b.MadeForKids = it.Status.MadeForKids
+		days := 1.0
+		if pt, e := time.Parse(time.RFC3339, b.PublishedAt); e == nil {
+			days = time.Since(pt).Hours() / 24
+			if days < 1 {
+				days = 1
+			}
+		}
+		b.ViewVelocity = float64(b.Views) / days
+		out = append(out, b)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ViewVelocity == out[j].ViewVelocity {
+			return out[i].Views > out[j].Views
+		}
+		return out[i].ViewVelocity > out[j].ViewVelocity
+	})
+	return out, nil
+}
+
+func (s *S) refreshCreativeBenchmark(items []AutoItem) map[string]any {
+	day := time.Now().Format("2006-01-02")
+	statePath := filepath.Join(s.Root, "state", "last_benchmark_date")
+	if strings.TrimSpace(readfile(statePath)) == day && exists(s.benchmarkPath()) {
+		n := 0
+		if b, e := os.ReadFile(s.benchmarkPath()); e == nil {
+			for _, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+				if strings.TrimSpace(l) != "" {
+					n++
+				}
+			}
+		}
+		return map[string]any{"state": "READY_CACHED", "engine": "YOUTUBE_BENCHMARK_V1", "samples": n}
+	}
+	cred, ok := s.loadYouTubeOAuth()
+	if !ok {
+		return map[string]any{"state": "WAITING_YOUTUBE_OAUTH", "engine": "YOUTUBE_BENCHMARK_V1", "samples": 0}
+	}
+	token, _, e := youtubeAccessToken(cred)
+	if e != nil {
+		return map[string]any{"state": "WAITING_TOKEN", "engine": "YOUTUBE_BENCHMARK_V1", "error": e.Error(), "samples": 0}
+	}
+	queries := []AutoItem{}
+	seenCat := map[string]bool{}
+	for _, it := range items {
+		cat := classify(it.Title)
+		if cat == "other" || seenCat[cat] {
+			continue
+		}
+		seenCat[cat] = true
+		queries = append(queries, it)
+		if len(queries) >= 3 {
+			break
+		}
+	}
+	if len(queries) == 0 {
+		queries = []AutoItem{{Title: "belajar angka anak", Score: 50}, {Title: "nama hewan anak", Score: 50}, {Title: "belajar warna anak", Score: 50}}
+	}
+	all := []BenchmarkVideo{}
+	errors := []string{}
+	for _, q := range queries {
+		rows, e := youtubeBenchmarkSearch(token, q.Title, classify(q.Title))
+		if e != nil {
+			errors = append(errors, e.Error())
+			continue
+		}
+		all = append(all, rows...)
+		time.Sleep(150 * time.Millisecond)
+	}
+	if len(all) == 0 {
+		reason := strings.Join(errors, " | ")
+		state := "WAIT_PROVIDER"
+		if strings.Contains(strings.ToLower(reason), "quota") {
+			state = "WAIT_API_QUOTA"
+		}
+		return map[string]any{"state": state, "engine": "YOUTUBE_BENCHMARK_V1", "error": reason, "samples": 0}
+	}
+	if e := os.MkdirAll(filepath.Dir(s.benchmarkPath()), 0700); e != nil {
+		return map[string]any{"state": "WRITE_FAILED", "engine": "YOUTUBE_BENCHMARK_V1", "error": e.Error(), "samples": 0}
+	}
+	tmp := s.benchmarkPath() + ".tmp"
+	of, e := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+	if e != nil {
+		return map[string]any{"state": "WRITE_FAILED", "engine": "YOUTUBE_BENCHMARK_V1", "error": e.Error(), "samples": 0}
+	}
+	enc := json.NewEncoder(of)
+	for _, row := range all {
+		_ = enc.Encode(row)
+	}
+	_ = of.Close()
+	_ = os.Rename(tmp, s.benchmarkPath())
+	_ = os.WriteFile(statePath, []byte(day+"\n"), 0600)
+	return map[string]any{"state": "READY", "engine": "YOUTUBE_BENCHMARK_V1", "samples": len(all), "queries": len(queries), "errors": len(errors)}
+}
+
+func (s *S) benchmarkSummary(cat string) (int, int, float64) {
+	b, e := os.ReadFile(s.benchmarkPath())
+	if e != nil {
+		return 0, 0, 0
+	}
+	n, dur := 0, 0
+	velocity := 0.0
+	for _, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		var x BenchmarkVideo
+		if json.Unmarshal([]byte(l), &x) != nil || x.Category != cat {
+			continue
+		}
+		n++
+		if x.DurationSec > 0 && x.DurationSec <= 180 {
+			dur += x.DurationSec
+		}
+		velocity += x.ViewVelocity
+	}
+	avgDur := 0
+	if n > 0 {
+		avgDur = dur / n
+		velocity /= float64(n)
+	}
+	return n, avgDur, velocity
+}
 func (s *S) autoResearch() (map[string]any, error) {
 	ok, reason := guard(s)
 	if !ok {
@@ -1974,7 +2244,8 @@ func (s *S) autoResearch() (map[string]any, error) {
 	if e != nil {
 		return nil, e
 	}
-	res := map[string]any{"ok": true, "state": "RESEARCHED", "sources_checked": checked, "source_errors": errors, "found": len(items), "added": added, "duplicates": dup, "engine": "SUGGEST_MULTI_V2", "zero_neuron": true}
+	benchmark := s.refreshCreativeBenchmark(items)
+	res := map[string]any{"ok": true, "state": "RESEARCHED", "sources_checked": checked, "source_errors": errors, "found": len(items), "added": added, "duplicates": dup, "engine": "CREATIVE_RESEARCH_V3", "benchmark": benchmark, "zero_neuron": true}
 	b, _ := json.Marshal(res)
 	os.WriteFile(filepath.Join(s.Root, "state", "last_research_result.json"), b, 0600)
 	s.writeDailyBrief()
