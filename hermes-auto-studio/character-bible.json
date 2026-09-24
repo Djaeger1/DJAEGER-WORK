@@ -1,12 +1,14 @@
 {
-  "version": 1,
+  "version": 2,
   "channel_identity": "DJAEGER Work Kids",
   "style": {
-    "prompt": "premium clean 2D preschool animation, soft cinematic lighting, rounded shapes, expressive friendly faces, polished educational cartoon, consistent proportions, warm cheerful palette, uncluttered background, no logos, no watermarks",
+    "prompt": "premium clean 2D preschool animation, soft cinematic lighting, rounded shapes, expressive friendly faces, polished educational cartoon, warm cheerful palette, strong foreground/background separation, one clear learning object per shot, uncluttered child-safe composition, no logos, no watermarks, no generated text",
     "rules": [
       "Keep the same face, hairstyle, clothing colors, body proportions, and accessories for every recurring character.",
-      "Never redesign a recurring character between scenes or episodes.",
-      "Use large readable learning objects and simple child-safe compositions.",
+      "Never redesign a recurring character between shots, scenes, or episodes.",
+      "Use one dominant learning object per shot and keep it large enough for a preschool child to recognize immediately.",
+      "Use simple backgrounds with strong subject separation and avoid decorative clutter.",
+      "Do not place text inside AI-generated keyframes; readable captions are composited after generation.",
       "Do not imitate copyrighted characters."
     ]
   },
@@ -32,12 +34,26 @@
       "visual_anchor": "small round turquoise bird mascot with a yellow belly, tiny orange beak, two feather tufts on top, oversized friendly dark eyes, short wings, simple rounded silhouette"
     }
   ],
+  "default_cast": ["Nara", "Pip"],
   "scene_cast": {
     "1": ["Nara", "Pip"],
     "2": ["Nara", "Pip"],
-    "3": ["Nara", "Bimo", "Pip"],
-    "4": ["Nara", "Sasa", "Pip"],
-    "5": ["Nara", "Bimo", "Sasa", "Pip"],
-    "6": ["Nara", "Bimo", "Sasa", "Pip"]
-  }
+    "3": ["Nara", "Pip"],
+    "4": ["Nara", "Pip"],
+    "5": ["Nara", "Pip"],
+    "6": ["Nara", "Pip"]
+  },
+  "shot_rules": {
+    "preferred_shot_length_sec": [2, 4],
+    "max_characters_per_learning_shot": 2,
+    "camera": "stable medium or close shot with gentle motion only",
+    "continuity": "same recurring cast identity and wardrobe across all shots",
+    "text": "post-production overlay only"
+  },
+  "motion_rules": [
+    "Every AI-video clip must contain visible subject or character motion.",
+    "Avoid one-second loops and repeated identical motion.",
+    "Prefer one clear action per shot: enter, point, react, reveal, count, choose, or celebrate.",
+    "Use a new composition when the learning object changes."
+  ]
 }
