@@ -220,7 +220,7 @@ async function migrationStudioCandidate() {
   if(!Array.isArray(script.scenes)||script.scenes.length<1) return null;
   return safeStudioJob({
     state:"WAITING_RENDER",
-    engine:"AUTO_STUDIO_V1",
+    engine:"AUTO_STUDIO_V4_CREATIVE",
     planner_id:pid,
     topic:String(plan.title||desk.next_job||script.topic||"").slice(0,500),
     category:String(plan.category||"").slice(0,80),
@@ -231,9 +231,9 @@ async function migrationStudioCandidate() {
     scenes:script.scenes,
     hashtags:Array.isArray(script.hashtags)?script.hashtags:[],
     render_tag:"hermes-studio-"+pid.toLowerCase(),
-    visual_provider:"FREE_FIRST_AI_WITH_DETERMINISTIC_FALLBACK",
+    visual_provider:"CHARACTER_BIBLE_TO_WAN_AI_VIDEO_REQUIRED",
     voice_provider:"NO_CARD_TTS_WITH_LOCAL_FALLBACK",
-    render_provider:"GITHUB_ACTIONS_FFMPEG",
+    render_provider:"GITHUB_ACTIONS_WAN_FFMPEG",
     created_at:new Date().toISOString(),
     ai_used:false,
     neurons_used:0
@@ -268,13 +268,23 @@ function safeStudioJob(j) {
     duration_sec:Number(s.duration_sec||0),
     purpose:String(s.purpose||"").slice(0,240),
     voice_over:String(s.voice_over||"").slice(0,1200),
-    visual_prompt:String(s.visual_prompt||"").slice(0,2400),
+    subject:String(s.subject||"").slice(0,500),
+    visual_goal:String(s.visual_goal||"").slice(0,1200),
+    visual_prompt:String(s.visual_prompt||"").slice(0,3200),
     on_screen_text:String(s.on_screen_text||"").slice(0,300),
-    edit_note:String(s.edit_note||"").slice(0,500)
+    edit_note:String(s.edit_note||"").slice(0,700),
+    shots:Array.isArray(s.shots)?s.shots.slice(0,6).map(sh=>({
+      number:Number(sh?.number||0),
+      duration_sec:Number(sh?.duration_sec||0),
+      subject:String(sh?.subject||"").slice(0,500),
+      action:String(sh?.action||"").slice(0,500),
+      camera:String(sh?.camera||"").slice(0,300),
+      prompt:String(sh?.prompt||"").slice(0,3600)
+    })):[]
   })) : [];
   return {
     state:String(j.state||"WAITING_RENDER"),
-    engine:"AUTO_STUDIO_V1",
+    engine:String(j.engine||"AUTO_STUDIO_V4_CREATIVE").slice(0,120),
     planner_id:String(j.planner_id||"").slice(0,80),
     topic:String(j.topic||"").slice(0,500),
     category:String(j.category||"").slice(0,80),
@@ -285,9 +295,9 @@ function safeStudioJob(j) {
     scenes,
     hashtags:Array.isArray(j.hashtags)?j.hashtags.slice(0,30).map(v=>String(v).slice(0,100)):[],
     render_tag:String(j.render_tag||"").slice(0,120),
-    visual_provider:String(j.visual_provider||"").slice(0,120),
-    voice_provider:String(j.voice_provider||"").slice(0,120),
-    render_provider:String(j.render_provider||"").slice(0,120),
+    visual_provider:String(j.visual_provider||"").slice(0,160),
+    voice_provider:String(j.voice_provider||"").slice(0,160),
+    render_provider:String(j.render_provider||"").slice(0,160),
     created_at:j.created_at||null,
     ai_used:false,
     neurons_used:0
