@@ -87,6 +87,72 @@ public class MainActivity extends Activity {
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         buildShell();
         showPage(0);
+        handleIncomingOAuthShare(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIncomingOAuthShare(intent);
+    }
+
+    private String extractOAuthCodeFromSharedText(String shared) {
+        if (shared == null) return "";
+        shared = shared.trim();
+        try {
+            Uri u = Uri.parse(shared);
+            String code = u.getQueryParameter("code");
+            if (code != null && !code.trim().isEmpty()) return code.trim();
+        } catch (Exception ignored) {}
+        if (shared.startsWith("4/")) return shared;
+        int p = shared.indexOf("code=");
+        if (p >= 0) {
+            String rest = shared.substring(p + 5);
+            int amp = rest.indexOf('&');
+            if (amp >= 0) rest = rest.substring(0, amp);
+            try { return URLDecoder.decode(rest, "UTF-8").trim(); } catch (Exception ignored) {}
+        }
+        return "";
+    }
+
+    private void handleIncomingOAuthShare(Intent intent) {
+        if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) return;
+        String shared = intent.getStringExtra(Intent.EXTRA_TEXT);
+        String code = extractOAuthCodeFromSharedText(shared);
+        if (code.isEmpty()) {
+            Toast.makeText(this, "Tautan OAuth tidak berisi authorization code.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        completeYouTubeAnalyticsConsentDirect(code);
+        intent.removeExtra(Intent.EXTRA_TEXT);
+    }
+
+    private void completeYouTubeAnalyticsConsentDirect(String code) {
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("code", code);
+            payload.put("redirect_uri", "https://developers.google.com/oauthplayground");
+            payload.put("code_verifier", "");
+            apiAsync("POST", "/api/work/youtube/oauth/upgrade-analytics", payload.toString(), true, (httpCode, response) -> {
+                if (httpCode >= 200 && httpCode < 300) {
+                    Toast.makeText(this, "YouTube Analytics terhubung. Menyinkronkan data…", Toast.LENGTH_LONG).show();
+                    apiAsync("POST", "/api/work/youtube/feedback", null, true, (syncCode, syncBody) -> {
+                        showPage(3);
+                        if (syncCode >= 200 && syncCode < 300) {
+                            Toast.makeText(this, "Sinkronisasi Analytics selesai.", Toast.LENGTH_LONG).show();
+                        } else {
+                            Toast.makeText(this, "Izin tersimpan; sinkronisasi akan dicoba otomatis.", Toast.LENGTH_LONG).show();
+                        }
+                    });
+                } else {
+                    Toast.makeText(this, "Penyimpanan izin Analytics gagal (HTTP " + httpCode + ").", Toast.LENGTH_LONG).show();
+                    showPage(4);
+                }
+            });
+        } catch (Exception e) {
+            Toast.makeText(this, "Kode OAuth tidak dapat diproses.", Toast.LENGTH_LONG).show();
+        }
     }
 
     private void buildShell() {
@@ -1321,7 +1387,7 @@ public class MainActivity extends Activity {
         io.execute(() -> {
             StringBuilder report = new StringBuilder();
             report.append("===== HASIL PEMBARUAN DJAEGER WORK =====\n");
-            report.append("APP_VERSION=1.4.2\n");
+            report.append("APP_VERSION=1.4.3\n");
             report.append("RUNTIME_URL=").append(runtimeUrl()).append("\n");
             report.append("GENERATED_AT=").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new java.util.Date())).append("\n\n");
 
