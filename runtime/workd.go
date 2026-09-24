@@ -260,7 +260,7 @@ func (s *S) bridgeSnapshot() map[string]any {
 		"tether_state": ts, "temperature_c": temp(), "battery_temp_c": temp(), "cpu_usage": cpuUsageSummary(), "thermal": thermalSummary(), "mem_available_mb": mem(), "workd_rss_mb": selfRSS(), "mem_breakdown": memBreakdown(), "memory_pressure": memoryPressureSummary(), "swap": swapSummary(),
 		"zram": zramStats(), "top_rss": topRSSProcesses(10), "top_anon": topAnonProcesses(10),
 		"worker_state": worker, "safe_mode": exists(filepath.Join(s.Root, "state", "safe_mode")),
-		"research_total": s.researchTotal(), "last_research": strings.TrimSpace(readfile(filepath.Join(s.Root, "state", "last_research"))), "research_engine": "CREATIVE_RESEARCH_V3",
+		"research_total": s.researchTotal(), "last_research": strings.TrimSpace(readfile(filepath.Join(s.Root, "state", "last_research"))), "research_engine": "CREATIVE_RESEARCH_V4_ADAPTIVE",
 		"daily_brief_state": db["state"], "ideas_ready": db["ideas_ready"], "top_opportunity": db["top_opportunity"], "opportunity_engine": "OPPORTUNITY_V1",
 		"planner_state": pl["state"], "planner_queue": pl["queue_total"], "next_for_script": pl["next_for_script"], "planner_engine": "PLANNER_V1",
 		"script_prep_state": "READY", "script_prep_ready": prepN, "script_topic": prepTopic, "script_prep_engine": "SCRIPT_PREP_V1",
@@ -1262,7 +1262,7 @@ func (s *S) status(w http.ResponseWriter, r *http.Request) {
 		gcs = "DISABLED"
 	}
 	pc := s.processConvergenceInfo()
-	js(w, map[string]any{"service": "HERMES_WORK", "control_center": "v2.4.0", "release": cur, "configured_release": configured, "auto_update_state": aus, "auto_update": au, "github_control_state": gcs, "github_control": gc, "github_control_writes_allowed": false, "process_convergence": pc, "emergency_quarantine": readenv(filepath.Join(s.Rel, "config", "work.env"), "EMERGENCY_QUARANTINE") == "1", "temperature_c": temp(), "battery_temp_c": temp(), "cpu_usage": cpuUsageSummary(), "thermal": thermalSummary(), "mem_available_mb": mem(), "workd_rss_mb": selfRSS(), "tether_state": ts, "tether_ip": ip, "worker_paused": exists(filepath.Join(s.Root, "state", "worker_paused")), "safe_mode": exists(filepath.Join(s.Root, "state", "safe_mode")), "bridge_enabled": readenv(filepath.Join(s.Rel, "config", "work.env"), "BRIDGE_ENABLED") == "1", "bridge_state": bst, "bridge_last_sync": bi["last_sync"], "bridge_mode": "DATA_ONLY", "bridge_ai_used": false, "bridge_neurons_used": 0, "research_total": s.researchTotal(), "last_research": strings.TrimSpace(readfile(filepath.Join(s.Root, "state", "last_research"))), "research_engine": "CREATIVE_RESEARCH_V3", "components": map[string]string{"collector": "READY_V2", "dedup": "READY_V1", "categorizer": "READY_V1", "trend_scoring": "READY_V3", "benchmark": "YOUTUBE_BENCHMARK_V1", "creative_intelligence": "CREATIVE_DIRECTOR_V1", "opportunity_engine": "READY_V2", "reasoning": "CREATIVE_RULES_PLUS_FEEDBACK", "content_planner": "READY_V4", "script_prep": "READY_V1", "script_engine": "READY_V1", "production_pack": "READY_V1", "handoff": "READY_V1", "production_desk": "READY_V1", "auto_studio": "READY_V1", "publication": "READY_V1", "channel_connector": "READY_V1", "feedback": "READY_V1", "knowledge": "READY_FOUNDATION", "scheduler": "READY_V2", "bridge": bst, "auto_updater": aus, "github_control": gcs}})
+	js(w, map[string]any{"service": "HERMES_WORK", "control_center": "v2.4.0", "release": cur, "configured_release": configured, "auto_update_state": aus, "auto_update": au, "github_control_state": gcs, "github_control": gc, "github_control_writes_allowed": false, "process_convergence": pc, "emergency_quarantine": readenv(filepath.Join(s.Rel, "config", "work.env"), "EMERGENCY_QUARANTINE") == "1", "temperature_c": temp(), "battery_temp_c": temp(), "cpu_usage": cpuUsageSummary(), "thermal": thermalSummary(), "mem_available_mb": mem(), "workd_rss_mb": selfRSS(), "tether_state": ts, "tether_ip": ip, "worker_paused": exists(filepath.Join(s.Root, "state", "worker_paused")), "safe_mode": exists(filepath.Join(s.Root, "state", "safe_mode")), "bridge_enabled": readenv(filepath.Join(s.Rel, "config", "work.env"), "BRIDGE_ENABLED") == "1", "bridge_state": bst, "bridge_last_sync": bi["last_sync"], "bridge_mode": "DATA_ONLY", "bridge_ai_used": false, "bridge_neurons_used": 0, "research_total": s.researchTotal(), "last_research": strings.TrimSpace(readfile(filepath.Join(s.Root, "state", "last_research"))), "research_engine": "CREATIVE_RESEARCH_V4_ADAPTIVE", "components": map[string]string{"collector": "READY_V2", "dedup": "READY_V1", "categorizer": "READY_V1", "trend_scoring": "READY_V3", "benchmark": "YOUTUBE_BENCHMARK_V1", "creative_intelligence": "CREATIVE_DIRECTOR_V1", "opportunity_engine": "READY_V2", "reasoning": "CREATIVE_RULES_PLUS_FEEDBACK", "content_planner": "READY_V4", "script_prep": "READY_V1", "script_engine": "READY_V1", "production_pack": "READY_V1", "handoff": "READY_V1", "production_desk": "READY_V1", "auto_studio": "READY_V1", "publication": "READY_V1", "channel_connector": "READY_V1", "feedback": "READY_V1", "knowledge": "READY_FOUNDATION", "scheduler": "READY_V2", "bridge": bst, "auto_updater": aus, "github_control": gcs}})
 }
 func (s *S) action(w http.ResponseWriter, r *http.Request) {
 	if !s.auth(r) {
@@ -2177,10 +2177,52 @@ func (s *S) autoResearch() (map[string]any, error) {
 	if !ok {
 		return map[string]any{"ok": false, "state": "GUARDED", "reason": reason}, nil
 	}
+
 	seeds := []string{
 		"learn colors for kids", "learn numbers for kids", "alphabet for kids", "phonics for kids", "animals for kids", "shapes for kids", "good habits for kids", "english words for kids", "short stories for kids",
 		"belajar warna anak", "belajar angka anak", "alfabet anak", "fonik anak", "nama hewan anak", "bentuk untuk anak", "kebiasaan baik anak", "bahasa inggris anak", "cerita pendek anak",
-		"preschool learning", "toddler learning", "kindergarten learning", "early learning activities", "kids educational video"}
+		"preschool learning", "toddler learning", "kindergarten learning", "early learning activities", "kids educational video",
+	}
+	fallbackSeeds := []string{
+		"kids learning quiz", "educational songs for kids", "preschool science for kids", "kids math activities",
+		"bedtime stories for kids", "preschool vocabulary", "belajar berhitung anak", "tebak hewan anak",
+		"lagu edukasi anak", "aktivitas paud", "sains anak sederhana", "cerita moral anak",
+		"kosakata anak", "permainan edukasi anak",
+	}
+
+	cfgPath := filepath.Join(s.Rel, "config", "work.env")
+	cfgInt := func(key string, def, min, max int) int {
+		v := strings.TrimSpace(readenv(cfgPath, key))
+		n, e := strconv.Atoi(v)
+		if e != nil {
+			n = def
+		}
+		if n < min {
+			n = min
+		}
+		if n > max {
+			n = max
+		}
+		return n
+	}
+	minNew := cfgInt("RESEARCH_MIN_NEW_ITEMS", 40, 1, 400)
+	maxQueries := cfgInt("RESEARCH_MAX_QUERIES", 64, len(seeds), 160)
+	maxCandidates := cfgInt("RESEARCH_MAX_CANDIDATES", 800, 200, 2000)
+	expandPerQuery := cfgInt("RESEARCH_EXPAND_PER_QUERY", 2, 1, 5)
+
+	existing := map[string]bool{}
+	if b, e := os.ReadFile(filepath.Join(s.Root, "data", "database", "research.jsonl")); e == nil {
+		for _, l := range strings.Split(string(b), "\n") {
+			var z map[string]any
+			if json.Unmarshal([]byte(l), &z) != nil {
+				continue
+			}
+			if u, _ := z["url"].(string); u != "" {
+				existing[u] = true
+			}
+		}
+	}
+
 	type aggRow struct {
 		Count, Best int
 		Sources     map[string]bool
@@ -2188,6 +2230,9 @@ func (s *S) autoResearch() (map[string]any, error) {
 	agg := map[string]*aggRow{}
 	checked := 0
 	errors := 0
+	processed := 0
+	guardStop := ""
+
 	collect := func(source string, ss []string) {
 		for i, t := range ss {
 			t = strings.TrimSpace(t)
@@ -2207,22 +2252,91 @@ func (s *S) autoResearch() (map[string]any, error) {
 			z.Sources[source] = true
 		}
 	}
-	for _, q := range seeds {
+	novelCount := func() int {
+		n := 0
+		for title := range agg {
+			u := "search:" + url.QueryEscape(title)
+			if !existing[u] {
+				n++
+			}
+		}
+		return n
+	}
+
+	queries := append([]string{}, seeds...)
+	queued := map[string]bool{}
+	for _, q := range queries {
+		queued[strings.ToLower(strings.TrimSpace(q))] = true
+	}
+	enqueue := func(q string) bool {
+		q = strings.TrimSpace(q)
+		k := strings.ToLower(q)
+		if q == "" || queued[k] {
+			return false
+		}
+		queued[k] = true
+		queries = append(queries, q)
+		return true
+	}
+	fallbackQueued := false
+
+	for len(queries) > 0 && processed < maxQueries {
+		if processed > 0 && processed%8 == 0 {
+			if gok, greason := guard(s); !gok {
+				guardStop = greason
+				break
+			}
+		}
+
+		q := queries[0]
+		queries = queries[1:]
+		processed++
+		discovered := []string{}
+
 		if ss, e := ytSuggest(q); e == nil {
 			checked++
 			collect("youtube", ss)
+			discovered = append(discovered, ss...)
 		} else {
 			errors++
 		}
 		time.Sleep(80 * time.Millisecond)
+
 		if ss, e := webSuggest(q); e == nil {
 			checked++
 			collect("web", ss)
+			discovered = append(discovered, ss...)
 		} else {
 			errors++
 		}
 		time.Sleep(80 * time.Millisecond)
+
+		if processed == len(seeds) && novelCount() < minNew && !fallbackQueued {
+			for _, fq := range fallbackSeeds {
+				enqueue(fq)
+			}
+			fallbackQueued = true
+		}
+
+		if novelCount() < minNew && processed < maxQueries {
+			addedQueries := 0
+			for _, candidate := range discovered {
+				if enqueue(candidate) {
+					addedQueries++
+					if addedQueries >= expandPerQuery {
+						break
+					}
+				}
+			}
+		}
+
+		// Always finish the baseline seed set. After that, stop as soon as
+		// enough genuinely new candidates have been discovered.
+		if processed >= len(seeds) && novelCount() >= minNew {
+			break
+		}
 	}
+
 	var items []AutoItem
 	for title, z := range agg {
 		srcCount := len(z.Sources)
@@ -2233,19 +2347,93 @@ func (s *S) autoResearch() (map[string]any, error) {
 		if sc < 1 {
 			sc = 1
 		}
-		pretty := title
-		items = append(items, AutoItem{Title: pretty, Source: "suggest_multi", URL: "search:" + url.QueryEscape(pretty), Score: sc})
+		items = append(items, AutoItem{
+			Title:  title,
+			Source: "suggest_multi",
+			URL:    "search:" + url.QueryEscape(title),
+			Score:  sc,
+		})
 	}
-	sort.Slice(items, func(i, j int) bool { return items[i].Score > items[j].Score })
-	if len(items) > 200 {
-		items = items[:200]
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Score == items[j].Score {
+			return items[i].Title < items[j].Title
+		}
+		return items[i].Score > items[j].Score
+	})
+
+	totalCandidates := len(items)
+	benchmarkItems := append([]AutoItem(nil), items...)
+	truncated := 0
+	if len(items) > maxCandidates {
+		truncated = len(items) - maxCandidates
+		selected := make([]AutoItem, 0, maxCandidates)
+		// Novel candidates are never sacrificed merely because old high-score
+		// suggestions occupy the front of the ranking.
+		for _, it := range items {
+			if !existing[it.URL] {
+				selected = append(selected, it)
+				if len(selected) >= maxCandidates {
+					break
+				}
+			}
+		}
+		if len(selected) < maxCandidates {
+			for _, it := range items {
+				if existing[it.URL] {
+					selected = append(selected, it)
+					if len(selected) >= maxCandidates {
+						break
+					}
+				}
+			}
+		}
+		items = selected
 	}
+
 	added, dup, e := s.storeAuto(items)
 	if e != nil {
 		return nil, e
 	}
-	benchmark := s.refreshCreativeBenchmark(items)
-	res := map[string]any{"ok": true, "state": "RESEARCHED", "sources_checked": checked, "source_errors": errors, "found": len(items), "added": added, "duplicates": dup, "engine": "CREATIVE_RESEARCH_V3", "benchmark": benchmark, "zero_neuron": true}
+	benchmark := s.refreshCreativeBenchmark(benchmarkItems)
+
+	state := "RESEARCHED"
+	noveltyState := "TARGET_MET"
+	if guardStop != "" {
+		state = "RESEARCHED_GUARD_STOP"
+		noveltyState = "PARTIAL_GUARD"
+	} else if added == 0 && processed >= maxQueries {
+		state = "SATURATED"
+		noveltyState = "SATURATED"
+	} else if added < minNew {
+		noveltyState = "PARTIAL"
+	}
+	expansionQueries := processed - len(seeds)
+	if expansionQueries < 0 {
+		expansionQueries = 0
+	}
+
+	res := map[string]any{
+		"ok":                    true,
+		"state":                 state,
+		"sources_checked":       checked,
+		"source_errors":         errors,
+		"queries_processed":     processed,
+		"baseline_queries":      len(seeds),
+		"expansion_queries":     expansionQueries,
+		"found":                 len(items),
+		"candidates_total":      totalCandidates,
+		"candidates_truncated":  truncated,
+		"added":                 added,
+		"duplicates":            dup,
+		"novelty_target":        minNew,
+		"novelty_state":         noveltyState,
+		"guard_stop_reason":     guardStop,
+		"max_queries":           maxQueries,
+		"max_candidates":        maxCandidates,
+		"engine":                "CREATIVE_RESEARCH_V4_ADAPTIVE",
+		"benchmark":             benchmark,
+		"zero_neuron":           true,
+	}
 	b, _ := json.Marshal(res)
 	os.WriteFile(filepath.Join(s.Root, "state", "last_research_result.json"), b, 0600)
 	s.writeDailyBrief()
