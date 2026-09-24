@@ -32,8 +32,8 @@ android {
         applicationId "com.hermes.workdashboard"
         minSdk 23
         targetSdk 35
-        versionCode 144
-        versionName "1.4.4"
+        versionCode 145
+        versionName "1.4.5"
     }
 
     buildTypes {
