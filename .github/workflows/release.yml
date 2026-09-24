@@ -30,7 +30,7 @@ jobs:
       - name: Validate isolated source
         shell: bash
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           grep -Fq 'UPDATE_CHANNEL_URL=https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json' runtime/config/work.env
           grep -Fq '"version": "v2.6.0-creative-director"' runtime/manifest.json
           bash -n hermes-auto-studio/render.sh
@@ -151,7 +151,7 @@ jobs:
           grep -Fq 'video_thumbnail_impressions_ctr' runtime/workd.go
           grep -Fq 'FEEDBACK_V3_CONFIDENCE' runtime/workd.go
           grep -Fq 'strings.HasPrefix(p.Source, "youtube_data_api_v2")' runtime/workd.go
-          grep -Fq 'AUTO_STUDIO_V3_AI_VIDEO' runtime/workd.go
+          grep -Fq 'AUTO_STUDIO_V4_CREATIVE' runtime/workd.go
           grep -Fq 'YOUTUBE_SCHEDULER_V2' runtime/workd.go
           grep -Fq 'LEGACY_YOUTUBE_PUBLISHER_DISABLED' youtube-publisher/publish.sh
           grep -Fq '/api/work/snapshot' runtime/workd.go
