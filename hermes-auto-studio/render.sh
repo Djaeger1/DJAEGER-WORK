@@ -376,9 +376,9 @@ EOF
   printf '%s' "$onscreen" > "$textfile"
   seg="studio/scenes/seg_$(printf '%02d' "$n").mp4"
   if [ -n "$onscreen" ]; then
-    ffmpeg -y -loglevel error -i "$scene_visual" -i "$audio" -t "$dur"       -vf "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:textfile=${textfile}:fontcolor=white:fontsize=42:borderw=3:bordercolor=black@0.55:box=1:boxcolor=black@0.30:boxborderw=16:x=(w-text_w)/2:y=h-text_h-58:enable='between(t,0.35,3.25)',format=yuv420p"       -c:v libx264 -preset veryfast -crf 21 -c:a aac -b:a 144k -af "apad" "$seg"
+    ffmpeg -y -loglevel error -i "$scene_visual" -i "$audio" -t "$dur"       -vf "tpad=stop_mode=clone:stop_duration=12,drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:textfile=${textfile}:fontcolor=white:fontsize=42:borderw=3:bordercolor=black@0.55:box=1:boxcolor=black@0.30:boxborderw=16:x=(w-text_w)/2:y=h-text_h-58:enable='between(t,0.35,3.25)',format=yuv420p"       -c:v libx264 -preset veryfast -crf 21 -c:a aac -b:a 144k -af "apad" "$seg"
   else
-    ffmpeg -y -loglevel error -i "$scene_visual" -i "$audio" -t "$dur"       -c:v copy -c:a aac -b:a 144k -af "apad" "$seg"
+    ffmpeg -y -loglevel error -i "$scene_visual" -i "$audio" -t "$dur"       -vf "tpad=stop_mode=clone:stop_duration=12,format=yuv420p"       -c:v libx264 -preset veryfast -crf 21 -c:a aac -b:a 144k -af "apad" "$seg"
   fi
   echo "file 'scenes/$(basename "$seg")'" >> studio/concat.txt
 done
