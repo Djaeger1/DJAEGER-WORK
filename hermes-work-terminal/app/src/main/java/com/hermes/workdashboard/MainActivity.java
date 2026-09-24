@@ -706,6 +706,12 @@ public class MainActivity extends Activity {
         yt.addView(ytConnect);
         Button ytAnalytics = actionButton("AKTIFKAN YOUTUBE ANALYTICS", false);
         yt.addView(ytAnalytics);
+        EditText ytAnalyticsCode = field("Kode OAuth Analytics", "", false);
+        ytAnalyticsCode.setVisibility(View.GONE);
+        yt.addView(ytAnalyticsCode);
+        Button ytAnalyticsFinish = actionButton("SIMPAN IZIN ANALYTICS", false);
+        ytAnalyticsFinish.setVisibility(View.GONE);
+        yt.addView(ytAnalyticsFinish);
         TextView ytOut = mono("Menunggu kredensial.");
         yt.addView(ytOut);
         Button ytPublish = actionButton("UJI UPLOAD PRIVATE", false);
@@ -759,7 +765,17 @@ public class MainActivity extends Activity {
         });
 
         ytAnalytics.setOnClickListener(v ->
-                startYouTubeAnalyticsConsent(ytClient, ytState, ytOut, ytAnalytics));
+                startYouTubeAnalyticsConsent(ytClient, ytState, ytOut, ytAnalytics, ytAnalyticsCode, ytAnalyticsFinish));
+
+        ytAnalyticsFinish.setOnClickListener(v -> {
+            String code = ytAnalyticsCode.getText().toString().trim();
+            if (code.isEmpty()) {
+                ytOut.setText("Tempel kode otorisasi dari OAuth Playground.");
+                return;
+            }
+            ytAnalyticsFinish.setEnabled(false);
+            completeYouTubeAnalyticsConsent(code, ytState, ytOut, ytAnalytics, ytAnalyticsCode, ytAnalyticsFinish);
+        });
 
         apiAsync("GET", "/api/work/youtube/publish", null, false, (code, response) -> {
             if (code >= 200 && code < 300) {
@@ -1481,7 +1497,8 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {}
     }
 
-    private void startYouTubeAnalyticsConsent(EditText ytClient, TextView ytState, TextView ytOut, Button ytAnalytics) {
+    private void startYouTubeAnalyticsConsent(EditText ytClient, TextView ytState, TextView ytOut,
+                                                Button ytAnalytics, EditText ytAnalyticsCode, Button ytAnalyticsFinish) {
         if (token().isEmpty()) {
             ytOut.setText("TOKEN ADMIN belum tersimpan. Buka PEMBARUAN → KONEKSI.");
             return;
@@ -1491,106 +1508,63 @@ public class MainActivity extends Activity {
             ytOut.setText("OAuth Client ID tidak valid.");
             return;
         }
-        ytAnalytics.setEnabled(false);
-        ytOut.setText("Menyiapkan izin YouTube Analytics…");
+        try {
+            String redirect = "https://developers.google.com/oauthplayground";
+            String scope = "https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/yt-analytics.readonly";
+            String authUrl = "https://accounts.google.com/o/oauth2/v2/auth"
+                    + "?client_id=" + URLEncoder.encode(clientId, "UTF-8")
+                    + "&redirect_uri=" + URLEncoder.encode(redirect, "UTF-8")
+                    + "&response_type=code"
+                    + "&scope=" + URLEncoder.encode(scope, "UTF-8")
+                    + "&access_type=offline"
+                    + "&include_granted_scopes=true"
+                    + "&prompt=consent";
+            ytAnalyticsCode.setVisibility(View.VISIBLE);
+            ytAnalyticsFinish.setVisibility(View.VISIBLE);
+            ytAnalytics.setEnabled(false);
+            ytOut.setText("Google akan memakai redirect OAuth Playground yang sudah terdaftar. Setujui izin Analytics, lalu salin kode otorisasi dari OAuth Playground ke kolom di bawah.");
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(authUrl)));
+        } catch (Exception e) {
+            ytAnalytics.setEnabled(true);
+            ytOut.setText("Browser tidak dapat dibuka: " + e.getMessage());
+        }
+    }
 
-        io.execute(() -> {
-            ServerSocket server = null;
-            try {
-                server = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"));
-                server.setSoTimeout(180000);
-                int port = server.getLocalPort();
-                String redirect = "http://127.0.0.1:" + port;
-
-                SecureRandom random = new SecureRandom();
-                byte[] stateBytes = new byte[24];
-                byte[] verifierBytes = new byte[48];
-                random.nextBytes(stateBytes);
-                random.nextBytes(verifierBytes);
-                String state = base64Url(stateBytes);
-                String verifier = base64Url(verifierBytes);
-                String challenge = base64Url(MessageDigest.getInstance("SHA-256")
-                        .digest(verifier.getBytes(StandardCharsets.US_ASCII)));
-
-                String scope = "https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/yt-analytics.readonly";
-                String authUrl = "https://accounts.google.com/o/oauth2/v2/auth"
-                        + "?client_id=" + URLEncoder.encode(clientId, "UTF-8")
-                        + "&redirect_uri=" + URLEncoder.encode(redirect, "UTF-8")
-                        + "&response_type=code"
-                        + "&scope=" + URLEncoder.encode(scope, "UTF-8")
-                        + "&access_type=offline"
-                        + "&include_granted_scopes=true"
-                        + "&prompt=consent"
-                        + "&state=" + URLEncoder.encode(state, "UTF-8")
-                        + "&code_challenge=" + URLEncoder.encode(challenge, "UTF-8")
-                        + "&code_challenge_method=S256";
-
-                ui(() -> {
-                    try {
-                        ytOut.setText("Browser Google dibuka. Setujui izin YouTube Analytics sekali saja.");
-                        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(authUrl)));
-                    } catch (Exception e) {
-                        ytAnalytics.setEnabled(true);
-                        ytOut.setText("Browser tidak dapat dibuka: " + e.getMessage());
-                    }
-                });
-
-                try (Socket socket = server.accept();
-                     BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))) {
-                    String requestLine = reader.readLine();
-                    String target = "";
-                    if (requestLine != null) {
-                        String[] p = requestLine.split(" ");
-                        if (p.length >= 2) target = p[1];
-                    }
-                    String gotState = oauthQueryParam(target, "state");
-                    String code = oauthQueryParam(target, "code");
-                    String error = oauthQueryParam(target, "error");
-                    boolean ok = error.isEmpty() && !code.isEmpty() && state.equals(gotState);
-                    writeOAuthBrowserResponse(socket, ok);
-                    if (!ok) {
-                        throw new Exception(error.isEmpty() ? "state/callback tidak valid" : error);
-                    }
-
-                    JSONObject payload = new JSONObject();
-                    payload.put("code", code);
-                    payload.put("redirect_uri", redirect);
-                    payload.put("code_verifier", verifier);
-                    apiAsync("POST", "/api/work/youtube/oauth/upgrade-analytics", payload.toString(), true, (httpCode, response) -> {
-                        if (httpCode >= 200 && httpCode < 300) {
-                            ytState.setText("Status OAuth: TERVERIFIKASI + ANALYTICS");
-                            ytState.setTextColor(OK);
-                            ytAnalytics.setText("YOUTUBE ANALYTICS AKTIF");
-                            ytAnalytics.setEnabled(false);
-                            ytOut.setText("Izin Analytics tersimpan aman. Menyinkronkan Retensi, CTR, dan Waktu Tonton…");
-                            apiAsync("POST", "/api/work/youtube/feedback", null, true, (syncCode, syncBody) -> {
-                                if (syncCode >= 200 && syncCode < 300) {
-                                    ytOut.setText("YouTube Analytics aktif dan sinkronisasi selesai. Tekan ↻ untuk memperbarui Wawasan.");
-                                } else {
-                                    ytOut.setText("Izin Analytics aktif. Sinkronisasi data akan dicoba otomatis oleh DJAEGER WORK.");
-                                }
-                            });
+    private void completeYouTubeAnalyticsConsent(String code, TextView ytState, TextView ytOut,
+                                                 Button ytAnalytics, EditText ytAnalyticsCode, Button ytAnalyticsFinish) {
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("code", code);
+            payload.put("redirect_uri", "https://developers.google.com/oauthplayground");
+            payload.put("code_verifier", "");
+            apiAsync("POST", "/api/work/youtube/oauth/upgrade-analytics", payload.toString(), true, (httpCode, response) -> {
+                if (httpCode >= 200 && httpCode < 300) {
+                    ytState.setText("Status OAuth: TERVERIFIKASI + ANALYTICS");
+                    ytState.setTextColor(OK);
+                    ytAnalytics.setText("YOUTUBE ANALYTICS AKTIF");
+                    ytAnalytics.setEnabled(false);
+                    ytAnalyticsCode.setText("");
+                    ytAnalyticsCode.setVisibility(View.GONE);
+                    ytAnalyticsFinish.setVisibility(View.GONE);
+                    ytOut.setText("Izin Analytics tersimpan aman. Menyinkronkan Retensi, CTR, dan Waktu Tonton…");
+                    apiAsync("POST", "/api/work/youtube/feedback", null, true, (syncCode, syncBody) -> {
+                        if (syncCode >= 200 && syncCode < 300) {
+                            ytOut.setText("YouTube Analytics aktif dan sinkronisasi selesai. Tekan ↻ untuk memperbarui Wawasan.");
                         } else {
-                            ytAnalytics.setEnabled(true);
-                            ytOut.setText("Izin Google diterima, tetapi penyimpanan Analytics gagal. HTTP " + httpCode + "\n" + response.trim());
+                            ytOut.setText("Izin Analytics aktif. Sinkronisasi data akan dicoba otomatis oleh DJAEGER WORK.");
                         }
                     });
+                } else {
+                    ytAnalytics.setEnabled(true);
+                    ytAnalyticsFinish.setEnabled(true);
+                    ytOut.setText("Kode Analytics belum dapat disimpan. HTTP " + httpCode + "\n" + response.trim());
                 }
-            } catch (java.net.SocketTimeoutException e) {
-                ui(() -> {
-                    ytAnalytics.setEnabled(true);
-                    ytOut.setText("Waktu persetujuan habis. Tekan AKTIFKAN YOUTUBE ANALYTICS untuk mencoba lagi.");
-                });
-            } catch (Exception e) {
-                final String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
-                ui(() -> {
-                    ytAnalytics.setEnabled(true);
-                    ytOut.setText("Izin YouTube Analytics belum selesai: " + msg);
-                });
-            } finally {
-                if (server != null) try { server.close(); } catch (Exception ignored) {}
-            }
-        });
+            });
+        } catch (Exception e) {
+            ytAnalytics.setEnabled(true);
+            ytAnalyticsFinish.setEnabled(true);
+            ytOut.setText("Gagal menyiapkan kode Analytics: " + e.getMessage());
+        }
     }
 
     private void setConnectionBadge(String route) {
