@@ -1387,7 +1387,7 @@ public class MainActivity extends Activity {
         io.execute(() -> {
             StringBuilder report = new StringBuilder();
             report.append("===== HASIL PEMBARUAN DJAEGER WORK =====\n");
-            report.append("APP_VERSION=1.4.3\n");
+            report.append("APP_VERSION=1.4.4\n");
             report.append("RUNTIME_URL=").append(runtimeUrl()).append("\n");
             report.append("GENERATED_AT=").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new java.util.Date())).append("\n\n");
 
@@ -1679,8 +1679,11 @@ public class MainActivity extends Activity {
     private void apiAsync(String method, String path, String body, boolean auth, ApiCallback cb) {
         io.execute(() -> {
             Exception localError = null;
+            final boolean longResearch = "/api/work/run-research".equals(path);
+            final int localReadTimeout = longResearch ? 90000 : 8000;
+            final int remoteReadTimeout = longResearch ? 120000 : 45000;
             try {
-                HttpResult local = requestWithTimeout(method, runtimeUrl() + path, body, auth, "", 2500, 8000);
+                HttpResult local = requestWithTimeout(method, runtimeUrl() + path, body, auth, "", 2500, localReadTimeout);
                 if (local.code > 0) {
                     if (local.code >= 200 && local.code < 300) {
                         ui(() -> setConnectionBadge("LOCAL"));
@@ -1696,7 +1699,7 @@ public class MainActivity extends Activity {
             String rk = remoteKey();
             if (!ru.isEmpty() && !rk.isEmpty()) {
                 try {
-                    HttpResult remote = requestWithTimeout(method, ru + path, body, auth, rk, 5000, 45000);
+                    HttpResult remote = requestWithTimeout(method, ru + path, body, auth, rk, 5000, remoteReadTimeout);
                     if (remote.code > 0) {
                         if (remote.code >= 200 && remote.code < 300) ui(() -> setConnectionBadge("REMOTE"));
                         final HttpResult out = remote;
@@ -1994,6 +1997,8 @@ public class MainActivity extends Activity {
             case "WAITING_TODAY_RESEARCH": return "MENUNGGU RISET";
             case "DAILY_TARGET_MET": return "TARGET TERCAPAI";
             case "RENDERED": return "SELESAI";
+            case "SATURATED": return "JENUH — RISET DIPERLUAS";
+            case "RESEARCHED_GUARD_STOP": return "RISET PARSIAL — GUARD AKTIF";
             case "DATA_PENDING": return "MENUNGGU DATA";
             case "CONSENT_REQUIRED": return "PERLU IZIN";
             case "NOT_AVAILABLE": return "BELUM ADA DATA";
