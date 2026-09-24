@@ -9,9 +9,11 @@ from pathlib import Path
 
 DEFAULT_SPACE = os.getenv("AI_VIDEO_SPACE", "zerogpu-aoti/wan2-2-fp8da-aoti-faster")
 NEGATIVE = (
-    "static image, still frame, frozen motion, flicker, jitter, warped face, extra limbs, "
-    "deformed hands, changing clothes, changing character identity, duplicate character, "
-    "watermark, logo, subtitles, unreadable text, low quality, blur"
+    "static image, still frame, frozen motion, repeated loop, identical repeated gesture, "
+    "flicker, jitter, warped face, extra limbs, deformed hands, changing clothes, "
+    "changing character identity, duplicate character, unexpected extra character, "
+    "watermark, logo, subtitles, generated text, unreadable text, low quality, blur, "
+    "camera shake, sudden zoom, morphing object"
 )
 
 EXIT_WAIT_QUOTA = 75
