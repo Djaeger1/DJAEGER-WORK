@@ -290,7 +290,10 @@ public class MainActivity extends Activity {
 
         Button run = actionButton("JALANKAN RISET SEKARANG", true);
         stats.addView(run);
-        TextView runOut = mono("Siap.");
+        TextView runOut = text("Siap mencari ide baru.", 12, TEXT, false);
+        runOut.setLineSpacing(0, 1.18f);
+        runOut.setPadding(dp(12), dp(12), dp(12), dp(12));
+        runOut.setBackground(solidBg(Color.rgb(3, 9, 15), Color.rgb(18, 45, 70), dp(10)));
         stats.addView(runOut);
         body.addView(stats);
 
@@ -346,10 +349,10 @@ public class MainActivity extends Activity {
 
         run.setOnClickListener(v -> {
             run.setEnabled(false);
-            runOut.setText("Riset berjalan…");
+            runOut.setText("DJAEGER sedang mencari dan menyaring ide baru…");
             apiAsync("POST", "/api/work/run-research", null, true, (code, s) -> {
                 run.setEnabled(true);
-                runOut.setText(s.trim());
+                runOut.setText(formatResearchResult(code, s));
                 loadWorkData(modem, worker, sources, found, added, dup, last,
                         topTitle, briefScore, briefDemand, briefTrend, briefWhy,
                         briefFormat, briefAction, briefList, briefGenerated);
@@ -359,6 +362,91 @@ public class MainActivity extends Activity {
         loadWorkData(modem, worker, sources, found, added, dup, last,
                 topTitle, briefScore, briefDemand, briefTrend, briefWhy,
                 briefFormat, briefAction, briefList, briefGenerated);
+    }
+
+    private String formatResearchResult(int code, String body) {
+        if (code < 200 || code >= 300) {
+            String detail = body == null ? "" : body.trim();
+            if (detail.length() > 180) detail = detail.substring(0, 180) + "…";
+            return "Riset belum dapat diselesaikan.\n\nDJAEGER akan tetap menjaga data yang sudah ada."
+                    + (detail.isEmpty() ? "" : "\n\nDetail: " + detail);
+        }
+        try {
+            JSONObject j = new JSONObject(body == null ? "{}" : body);
+            if (!j.optBoolean("ok", false)) {
+                String reason = j.optString("reason", "").trim();
+                return "Riset ditunda sementara.\n\n"
+                        + (reason.isEmpty() ? "Perangkat sedang dilindungi oleh guard keamanan." : reason);
+            }
+
+            int sources = j.optInt("sources_checked", 0);
+            int found = j.optInt("found", 0);
+            int added = j.optInt("added", 0);
+            int duplicates = j.optInt("duplicates", 0);
+            int expansion = j.optInt("expansion_queries", 0);
+            int noveltyTarget = j.optInt("novelty_target", 0);
+            int truncated = j.optInt("candidates_truncated", 0);
+            int sourceErrors = j.optInt("source_errors", 0);
+            String state = j.optString("state", "RESEARCHED");
+            String novelty = j.optString("novelty_state", "");
+            String guardReason = j.optString("guard_stop_reason", "").trim();
+
+            StringBuilder out = new StringBuilder();
+            if ("RESEARCHED_GUARD_STOP".equals(state)) {
+                out.append("Riset selesai sebagian");
+            } else if ("SATURATED".equals(state)) {
+                out.append("Riset selesai — sumber mulai jenuh");
+            } else {
+                out.append("Riset selesai");
+            }
+
+            out.append("\n\nDJAEGER memeriksa ").append(sources)
+                    .append(" sumber dan menemukan ").append(found).append(" kandidat.");
+
+            if (added > 0) {
+                out.append("\n").append(added).append(" ide baru berhasil ditambahkan.");
+                if (duplicates > 0) {
+                    out.append(" ").append(duplicates).append(" lainnya sudah pernah ditemukan.");
+                }
+            } else {
+                out.append("\nBelum ada ide baru pada putaran ini.");
+                if (duplicates > 0) {
+                    out.append(" ").append(duplicates).append(" kandidat yang ditemukan sudah ada di basis riset.");
+                }
+            }
+
+            if (expansion > 0) {
+                out.append("\nPencarian diperluas ").append(expansion)
+                        .append(" kali agar DJAEGER tidak berhenti pada hasil yang sama.");
+            }
+
+            if ("TARGET_MET".equals(novelty)) {
+                out.append("\nTarget kebaruan");
+                if (noveltyTarget > 0) out.append(" (").append(noveltyTarget).append(")");
+                out.append(" tercapai.");
+            } else if ("SATURATED".equals(novelty)) {
+                out.append("\nSumber yang diperiksa mulai jenuh; tidak ada data baru yang layak dipaksakan.");
+            } else if ("PARTIAL_GUARD".equals(novelty)) {
+                out.append("\nRiset dihentikan aman oleh guard");
+                if (!guardReason.isEmpty()) out.append(": ").append(guardReason);
+                out.append(".");
+            } else if ("PARTIAL".equals(novelty) && noveltyTarget > 0) {
+                out.append("\nIde baru belum mencapai target ").append(noveltyTarget)
+                        .append(", tetapi hasil yang valid tetap disimpan.");
+            }
+
+            if (truncated > 0) {
+                out.append("\n").append(truncated)
+                        .append(" kandidat tambahan ditahan oleh batas aman pemrosesan.");
+            }
+            if (sourceErrors > 0) {
+                out.append("\n").append(sourceErrors)
+                        .append(" sumber gagal dibaca, tanpa membatalkan hasil yang berhasil.");
+            }
+            return out.toString();
+        } catch (Exception e) {
+            return "Riset selesai, tetapi ringkasan hasil belum dapat dibaca.\n\nData riset tetap tersimpan.";
+        }
     }
 
     private void loadWorkData(TextView modem, TextView worker, TextView sources, TextView found,
@@ -1387,7 +1475,7 @@ public class MainActivity extends Activity {
         io.execute(() -> {
             StringBuilder report = new StringBuilder();
             report.append("===== HASIL PEMBARUAN DJAEGER WORK =====\n");
-            report.append("APP_VERSION=1.4.4\n");
+            report.append("APP_VERSION=1.4.5\n");
             report.append("RUNTIME_URL=").append(runtimeUrl()).append("\n");
             report.append("GENERATED_AT=").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new java.util.Date())).append("\n\n");
 
