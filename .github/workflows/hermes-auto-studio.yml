@@ -28,8 +28,11 @@ jobs:
         if: github.event_name == 'push'
         run: |
           bash -n hermes-auto-studio/render.sh
-          python3 -m py_compile hermes-auto-studio/ai_video_scene.py
+          python3 -m py_compile hermes-auto-studio/ai_video_scene.py hermes-auto-studio/vector_scene.py hermes-auto-studio/quality_critic.py
           python3 hermes-auto-studio/ai_video_scene.py --selftest
+          grep -Fq 'ARTISTIC_QUALITY_GATE_V1' hermes-auto-studio/quality_critic.py
+          grep -Fq 'MULTI_SHOT_NO_STREAM_LOOP_SELECTIVE_RETRY' hermes-auto-studio/render.sh
+          ! grep -Fq -- '-stream_loop -1' hermes-auto-studio/render.sh
       - name: Run resumable zero-card Auto Studio
         env:
           GH_TOKEN: ${{ github.token }}

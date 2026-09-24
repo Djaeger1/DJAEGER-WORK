@@ -260,7 +260,7 @@ func (s *S) bridgeSnapshot() map[string]any {
 		"tether_state": ts, "temperature_c": temp(), "battery_temp_c": temp(), "cpu_usage": cpuUsageSummary(), "thermal": thermalSummary(), "mem_available_mb": mem(), "workd_rss_mb": selfRSS(), "mem_breakdown": memBreakdown(), "memory_pressure": memoryPressureSummary(), "swap": swapSummary(),
 		"zram": zramStats(), "top_rss": topRSSProcesses(10), "top_anon": topAnonProcesses(10),
 		"worker_state": worker, "safe_mode": exists(filepath.Join(s.Root, "state", "safe_mode")),
-		"research_total": s.researchTotal(), "last_research": strings.TrimSpace(readfile(filepath.Join(s.Root, "state", "last_research"))), "research_engine": "SUGGEST_MULTI_V2",
+		"research_total": s.researchTotal(), "last_research": strings.TrimSpace(readfile(filepath.Join(s.Root, "state", "last_research"))), "research_engine": "CREATIVE_RESEARCH_V3",
 		"daily_brief_state": db["state"], "ideas_ready": db["ideas_ready"], "top_opportunity": db["top_opportunity"], "opportunity_engine": "OPPORTUNITY_V1",
 		"planner_state": pl["state"], "planner_queue": pl["queue_total"], "next_for_script": pl["next_for_script"], "planner_engine": "PLANNER_V1",
 		"script_prep_state": "READY", "script_prep_ready": prepN, "script_topic": prepTopic, "script_prep_engine": "SCRIPT_PREP_V1",
@@ -268,7 +268,7 @@ func (s *S) bridgeSnapshot() map[string]any {
 		"production_pack_state": "READY", "production_ready": prodN, "production_topic": prodTopic, "production_engine": "PRODUCTION_PACK_V1",
 		"handoff_state": ho["state"], "handoff_queue": ho["queue_total"], "next_handoff_job": ho["next_job"], "handoff_engine": "HANDOFF_V1",
 		"production_desk_state": "READY", "production_desk_engine": "PRODUCTION_DESK_V1",
-		"studio_state": studio["state"], "studio_engine": "AUTO_STUDIO_V3_AI_VIDEO", "studio_job": studio["job"],
+		"studio_state": studio["state"], "studio_engine": "AUTO_STUDIO_V4_CREATIVE", "studio_job": studio["job"],
 		"publication_state": pub["state"], "publications_total": pub["records"], "publication_engine": "YOUTUBE_SCHEDULER_V2",
 		"feedback_state": fb["state"], "performance_records": fb["records"], "strong_signal": fb["strong_signal"], "weak_signal": fb["weak_signal"], "feedback_engine": "FEEDBACK_V3_CONFIDENCE", "youtube_feedback_last_sync": strings.TrimSpace(readfile(s.youtubeFeedbackLastSyncPath())),
 		"auto_update_state": au["state"], "auto_update_last_check": au["last_check"], "github_control_state": gc["state"], "github_control_reason": gc["reason"], "github_control_generation": gc["generation"], "github_control_writes_allowed": false, "process_convergence": s.processConvergenceInfo(), "bridge_agent": "HERMES_WORK_DATA_BRIDGE_v3", "bridge_state": s.bridgeInfo()["state"], "bridge_reason": s.bridgeInfo()["reason"], "bridge_last_sync": s.bridgeInfo()["last_sync"], "ai_used": false, "neurons_used": 0,
@@ -1262,7 +1262,7 @@ func (s *S) status(w http.ResponseWriter, r *http.Request) {
 		gcs = "DISABLED"
 	}
 	pc := s.processConvergenceInfo()
-	js(w, map[string]any{"service": "HERMES_WORK", "control_center": "v2.4.0", "release": cur, "configured_release": configured, "auto_update_state": aus, "auto_update": au, "github_control_state": gcs, "github_control": gc, "github_control_writes_allowed": false, "process_convergence": pc, "emergency_quarantine": readenv(filepath.Join(s.Rel, "config", "work.env"), "EMERGENCY_QUARANTINE") == "1", "temperature_c": temp(), "battery_temp_c": temp(), "cpu_usage": cpuUsageSummary(), "thermal": thermalSummary(), "mem_available_mb": mem(), "workd_rss_mb": selfRSS(), "tether_state": ts, "tether_ip": ip, "worker_paused": exists(filepath.Join(s.Root, "state", "worker_paused")), "safe_mode": exists(filepath.Join(s.Root, "state", "safe_mode")), "bridge_enabled": readenv(filepath.Join(s.Rel, "config", "work.env"), "BRIDGE_ENABLED") == "1", "bridge_state": bst, "bridge_last_sync": bi["last_sync"], "bridge_mode": "DATA_ONLY", "bridge_ai_used": false, "bridge_neurons_used": 0, "research_total": s.researchTotal(), "last_research": strings.TrimSpace(readfile(filepath.Join(s.Root, "state", "last_research"))), "research_engine": "SUGGEST_MULTI_V2", "components": map[string]string{"collector": "READY_V2", "dedup": "READY_V1", "categorizer": "READY_V1", "trend_scoring": "READY_V2", "opportunity_engine": "READY_V1", "reasoning": "DEFERRED", "content_planner": "READY_V3", "script_prep": "READY_V1", "script_engine": "READY_V1", "production_pack": "READY_V1", "handoff": "READY_V1", "production_desk": "READY_V1", "auto_studio": "READY_V1", "publication": "READY_V1", "channel_connector": "READY_V1", "feedback": "READY_V1", "knowledge": "READY_FOUNDATION", "scheduler": "READY_V2", "bridge": bst, "auto_updater": aus, "github_control": gcs}})
+	js(w, map[string]any{"service": "HERMES_WORK", "control_center": "v2.4.0", "release": cur, "configured_release": configured, "auto_update_state": aus, "auto_update": au, "github_control_state": gcs, "github_control": gc, "github_control_writes_allowed": false, "process_convergence": pc, "emergency_quarantine": readenv(filepath.Join(s.Rel, "config", "work.env"), "EMERGENCY_QUARANTINE") == "1", "temperature_c": temp(), "battery_temp_c": temp(), "cpu_usage": cpuUsageSummary(), "thermal": thermalSummary(), "mem_available_mb": mem(), "workd_rss_mb": selfRSS(), "tether_state": ts, "tether_ip": ip, "worker_paused": exists(filepath.Join(s.Root, "state", "worker_paused")), "safe_mode": exists(filepath.Join(s.Root, "state", "safe_mode")), "bridge_enabled": readenv(filepath.Join(s.Rel, "config", "work.env"), "BRIDGE_ENABLED") == "1", "bridge_state": bst, "bridge_last_sync": bi["last_sync"], "bridge_mode": "DATA_ONLY", "bridge_ai_used": false, "bridge_neurons_used": 0, "research_total": s.researchTotal(), "last_research": strings.TrimSpace(readfile(filepath.Join(s.Root, "state", "last_research"))), "research_engine": "CREATIVE_RESEARCH_V3", "components": map[string]string{"collector": "READY_V2", "dedup": "READY_V1", "categorizer": "READY_V1", "trend_scoring": "READY_V3", "benchmark": "YOUTUBE_BENCHMARK_V1", "creative_intelligence": "CREATIVE_DIRECTOR_V1", "opportunity_engine": "READY_V2", "reasoning": "CREATIVE_RULES_PLUS_FEEDBACK", "content_planner": "READY_V4", "script_prep": "READY_V1", "script_engine": "READY_V1", "production_pack": "READY_V1", "handoff": "READY_V1", "production_desk": "READY_V1", "auto_studio": "READY_V1", "publication": "READY_V1", "channel_connector": "READY_V1", "feedback": "READY_V1", "knowledge": "READY_FOUNDATION", "scheduler": "READY_V2", "bridge": bst, "auto_updater": aus, "github_control": gcs}})
 }
 func (s *S) action(w http.ResponseWriter, r *http.Request) {
 	if !s.auth(r) {
@@ -1902,6 +1902,276 @@ func suggest(q, ds string) ([]string, error) {
 }
 func ytSuggest(q string) ([]string, error)  { return suggest(q, "yt") }
 func webSuggest(q string) ([]string, error) { return suggest(q, "") }
+
+type BenchmarkVideo struct {
+	Query        string  `json:"query"`
+	Category     string  `json:"category"`
+	VideoID      string  `json:"video_id"`
+	Title        string  `json:"title"`
+	Channel      string  `json:"channel"`
+	PublishedAt  string  `json:"published_at"`
+	DurationSec  int     `json:"duration_sec"`
+	Views        int64   `json:"views"`
+	ViewVelocity float64 `json:"view_velocity_per_day"`
+	ThumbnailURL string  `json:"thumbnail_url"`
+	MadeForKids  bool    `json:"made_for_kids"`
+	CollectedAt  string  `json:"collected_at"`
+}
+
+func iso8601DurationSec(v string) int {
+	v = strings.TrimSpace(strings.ToUpper(v))
+	if !strings.HasPrefix(v, "PT") {
+		return 0
+	}
+	v = strings.TrimPrefix(v, "PT")
+	total := 0
+	n := 0
+	for _, r := range v {
+		if r >= '0' && r <= '9' {
+			n = n*10 + int(r-'0')
+			continue
+		}
+		switch r {
+		case 'H':
+			total += n * 3600
+		case 'M':
+			total += n * 60
+		case 'S':
+			total += n
+		}
+		n = 0
+	}
+	return total
+}
+
+func (s *S) benchmarkPath() string {
+	return filepath.Join(s.Root, "data", "database", "benchmark.jsonl")
+}
+
+func youtubeBenchmarkSearch(token, q, cat string) ([]BenchmarkVideo, error) {
+	v := url.Values{}
+	v.Set("part", "snippet")
+	v.Set("type", "video")
+	v.Set("maxResults", "5")
+	v.Set("order", "viewCount")
+	v.Set("safeSearch", "strict")
+	v.Set("videoDuration", "short")
+	v.Set("relevanceLanguage", "id")
+	v.Set("regionCode", "ID")
+	v.Set("q", q)
+	req, e := http.NewRequest("GET", "https://www.googleapis.com/youtube/v3/search?"+v.Encode(), nil)
+	if e != nil {
+		return nil, e
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	cl := androidHTTPClient()
+	cl.Timeout = 25 * time.Second
+	resp, e := cl.Do(req)
+	if e != nil {
+		return nil, e
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("youtube benchmark search http %d %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var sr struct {
+		Items []struct {
+			ID struct {
+				VideoID string `json:"videoId"`
+			} `json:"id"`
+			Snippet struct {
+				Title        string `json:"title"`
+				ChannelTitle string `json:"channelTitle"`
+				PublishedAt  string `json:"publishedAt"`
+				Thumbnails   map[string]struct {
+					URL string `json:"url"`
+				} `json:"thumbnails"`
+			} `json:"snippet"`
+		} `json:"items"`
+	}
+	if json.Unmarshal(body, &sr) != nil {
+		return nil, fmt.Errorf("youtube benchmark search invalid json")
+	}
+	ids := []string{}
+	seed := map[string]BenchmarkVideo{}
+	now := time.Now()
+	for _, it := range sr.Items {
+		id := strings.TrimSpace(it.ID.VideoID)
+		if id == "" {
+			continue
+		}
+		thumb := ""
+		if x, ok := it.Snippet.Thumbnails["medium"]; ok {
+			thumb = x.URL
+		} else if x, ok := it.Snippet.Thumbnails["default"]; ok {
+			thumb = x.URL
+		}
+		seed[id] = BenchmarkVideo{Query: q, Category: cat, VideoID: id, Title: it.Snippet.Title, Channel: it.Snippet.ChannelTitle, PublishedAt: it.Snippet.PublishedAt, ThumbnailURL: thumb, CollectedAt: now.Format(time.RFC3339)}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return []BenchmarkVideo{}, nil
+	}
+	dv := url.Values{}
+	dv.Set("part", "statistics,contentDetails,status")
+	dv.Set("id", strings.Join(ids, ","))
+	dreq, _ := http.NewRequest("GET", "https://www.googleapis.com/youtube/v3/videos?"+dv.Encode(), nil)
+	dreq.Header.Set("Authorization", "Bearer "+token)
+	dresp, e := cl.Do(dreq)
+	if e != nil {
+		return nil, e
+	}
+	defer dresp.Body.Close()
+	dbody, _ := io.ReadAll(io.LimitReader(dresp.Body, 1<<20))
+	if dresp.StatusCode < 200 || dresp.StatusCode >= 300 {
+		return nil, fmt.Errorf("youtube benchmark videos http %d %s", dresp.StatusCode, strings.TrimSpace(string(dbody)))
+	}
+	var vr struct {
+		Items []struct {
+			ID         string `json:"id"`
+			Statistics struct {
+				ViewCount string `json:"viewCount"`
+			} `json:"statistics"`
+			ContentDetails struct {
+				Duration string `json:"duration"`
+			} `json:"contentDetails"`
+			Status struct {
+				MadeForKids bool `json:"madeForKids"`
+			} `json:"status"`
+		} `json:"items"`
+	}
+	if json.Unmarshal(dbody, &vr) != nil {
+		return nil, fmt.Errorf("youtube benchmark videos invalid json")
+	}
+	out := []BenchmarkVideo{}
+	for _, it := range vr.Items {
+		b, ok := seed[it.ID]
+		if !ok {
+			continue
+		}
+		b.Views, _ = strconv.ParseInt(it.Statistics.ViewCount, 10, 64)
+		b.DurationSec = iso8601DurationSec(it.ContentDetails.Duration)
+		b.MadeForKids = it.Status.MadeForKids
+		days := 1.0
+		if pt, e := time.Parse(time.RFC3339, b.PublishedAt); e == nil {
+			days = time.Since(pt).Hours() / 24
+			if days < 1 {
+				days = 1
+			}
+		}
+		b.ViewVelocity = float64(b.Views) / days
+		out = append(out, b)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ViewVelocity == out[j].ViewVelocity {
+			return out[i].Views > out[j].Views
+		}
+		return out[i].ViewVelocity > out[j].ViewVelocity
+	})
+	return out, nil
+}
+
+func (s *S) refreshCreativeBenchmark(items []AutoItem) map[string]any {
+	day := time.Now().Format("2006-01-02")
+	statePath := filepath.Join(s.Root, "state", "last_benchmark_date")
+	if strings.TrimSpace(readfile(statePath)) == day && exists(s.benchmarkPath()) {
+		n := 0
+		if b, e := os.ReadFile(s.benchmarkPath()); e == nil {
+			for _, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+				if strings.TrimSpace(l) != "" {
+					n++
+				}
+			}
+		}
+		return map[string]any{"state": "READY_CACHED", "engine": "YOUTUBE_BENCHMARK_V1", "samples": n}
+	}
+	cred, ok := s.loadYouTubeOAuth()
+	if !ok {
+		return map[string]any{"state": "WAITING_YOUTUBE_OAUTH", "engine": "YOUTUBE_BENCHMARK_V1", "samples": 0}
+	}
+	token, _, e := youtubeAccessToken(cred)
+	if e != nil {
+		return map[string]any{"state": "WAITING_TOKEN", "engine": "YOUTUBE_BENCHMARK_V1", "error": e.Error(), "samples": 0}
+	}
+	queries := []AutoItem{}
+	seenCat := map[string]bool{}
+	for _, it := range items {
+		cat := classify(it.Title)
+		if cat == "other" || seenCat[cat] {
+			continue
+		}
+		seenCat[cat] = true
+		queries = append(queries, it)
+		if len(queries) >= 3 {
+			break
+		}
+	}
+	if len(queries) == 0 {
+		queries = []AutoItem{{Title: "belajar angka anak", Score: 50}, {Title: "nama hewan anak", Score: 50}, {Title: "belajar warna anak", Score: 50}}
+	}
+	all := []BenchmarkVideo{}
+	errors := []string{}
+	for _, q := range queries {
+		rows, e := youtubeBenchmarkSearch(token, q.Title, classify(q.Title))
+		if e != nil {
+			errors = append(errors, e.Error())
+			continue
+		}
+		all = append(all, rows...)
+		time.Sleep(150 * time.Millisecond)
+	}
+	if len(all) == 0 {
+		reason := strings.Join(errors, " | ")
+		state := "WAIT_PROVIDER"
+		if strings.Contains(strings.ToLower(reason), "quota") {
+			state = "WAIT_API_QUOTA"
+		}
+		return map[string]any{"state": state, "engine": "YOUTUBE_BENCHMARK_V1", "error": reason, "samples": 0}
+	}
+	if e := os.MkdirAll(filepath.Dir(s.benchmarkPath()), 0700); e != nil {
+		return map[string]any{"state": "WRITE_FAILED", "engine": "YOUTUBE_BENCHMARK_V1", "error": e.Error(), "samples": 0}
+	}
+	tmp := s.benchmarkPath() + ".tmp"
+	of, e := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+	if e != nil {
+		return map[string]any{"state": "WRITE_FAILED", "engine": "YOUTUBE_BENCHMARK_V1", "error": e.Error(), "samples": 0}
+	}
+	enc := json.NewEncoder(of)
+	for _, row := range all {
+		_ = enc.Encode(row)
+	}
+	_ = of.Close()
+	_ = os.Rename(tmp, s.benchmarkPath())
+	_ = os.WriteFile(statePath, []byte(day+"\n"), 0600)
+	return map[string]any{"state": "READY", "engine": "YOUTUBE_BENCHMARK_V1", "samples": len(all), "queries": len(queries), "errors": len(errors)}
+}
+
+func (s *S) benchmarkSummary(cat string) (int, int, float64) {
+	b, e := os.ReadFile(s.benchmarkPath())
+	if e != nil {
+		return 0, 0, 0
+	}
+	n, dur := 0, 0
+	velocity := 0.0
+	for _, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		var x BenchmarkVideo
+		if json.Unmarshal([]byte(l), &x) != nil || x.Category != cat {
+			continue
+		}
+		n++
+		if x.DurationSec > 0 && x.DurationSec <= 180 {
+			dur += x.DurationSec
+		}
+		velocity += x.ViewVelocity
+	}
+	avgDur := 0
+	if n > 0 {
+		avgDur = dur / n
+		velocity /= float64(n)
+	}
+	return n, avgDur, velocity
+}
 func (s *S) autoResearch() (map[string]any, error) {
 	ok, reason := guard(s)
 	if !ok {
@@ -1974,7 +2244,8 @@ func (s *S) autoResearch() (map[string]any, error) {
 	if e != nil {
 		return nil, e
 	}
-	res := map[string]any{"ok": true, "state": "RESEARCHED", "sources_checked": checked, "source_errors": errors, "found": len(items), "added": added, "duplicates": dup, "engine": "SUGGEST_MULTI_V2", "zero_neuron": true}
+	benchmark := s.refreshCreativeBenchmark(items)
+	res := map[string]any{"ok": true, "state": "RESEARCHED", "sources_checked": checked, "source_errors": errors, "found": len(items), "added": added, "duplicates": dup, "engine": "CREATIVE_RESEARCH_V3", "benchmark": benchmark, "zero_neuron": true}
 	b, _ := json.Marshal(res)
 	os.WriteFile(filepath.Join(s.Root, "state", "last_research_result.json"), b, 0600)
 	s.writeDailyBrief()
@@ -2067,6 +2338,144 @@ type Opportunity struct {
 	Keywords  []string `json:"keywords"`
 	SourceURL string   `json:"source_url"`
 }
+
+type CreativeBrief struct {
+	State                    string   `json:"state"`
+	Engine                   string   `json:"engine"`
+	PlannerID                string   `json:"planner_id"`
+	Topic                    string   `json:"topic"`
+	Category                 string   `json:"category"`
+	TargetAge                string   `json:"target_age"`
+	Format                   string   `json:"format"`
+	HookStrategy             string   `json:"hook_strategy"`
+	CharacterStrategy        string   `json:"character_strategy"`
+	VisualStyle              string   `json:"visual_style"`
+	Pacing                    string   `json:"pacing"`
+	InteractionStrategy      string   `json:"interaction_strategy"`
+	Subjects                 []string `json:"subjects"`
+	ProductionRules          []string `json:"production_rules"`
+	BenchmarkSamples         int      `json:"benchmark_samples"`
+	BenchmarkAvgDurationSec  int      `json:"benchmark_avg_duration_sec"`
+	BenchmarkViewVelocity    float64  `json:"benchmark_view_velocity_per_day"`
+	OwnChannelAdjustment     float64  `json:"own_channel_adjustment"`
+	ResearchSignals          []string `json:"research_signals"`
+	GeneratedAt              string   `json:"generated_at"`
+}
+
+func creativeSubjects(cat, lang string) []string {
+	if lang != "id" {
+		switch cat {
+		case "animals":
+			return []string{"orange cat", "gray elephant", "yellow chicken"}
+		case "colors":
+			return []string{"red ball", "blue toy car", "green leaf"}
+		case "numbers":
+			return []string{"one red apple", "two blue balls", "three yellow stars"}
+		case "shapes":
+			return []string{"red circle", "blue square", "yellow triangle"}
+		case "habits":
+			return []string{"washing hands", "brushing teeth", "putting toys away"}
+		}
+	}
+	switch cat {
+	case "animals":
+		return []string{"kucing oranye", "gajah abu-abu", "ayam kuning"}
+	case "colors":
+		return []string{"bola merah", "mobil mainan biru", "daun hijau"}
+	case "numbers":
+		return []string{"satu apel merah", "dua bola biru", "tiga bintang kuning"}
+	case "shapes":
+		return []string{"lingkaran merah", "persegi biru", "segitiga kuning"}
+	case "habits":
+		return []string{"mencuci tangan", "menyikat gigi", "merapikan mainan"}
+	case "alphabet":
+		return []string{"huruf A dan apel", "huruf B dan bola", "huruf C dan ceri"}
+	case "english":
+		return []string{"cat", "ball", "apple"}
+	case "stories":
+		return []string{"mainan yang hilang", "teman yang membutuhkan bantuan", "pilihan untuk berbagi"}
+	default:
+		return []string{cleanTopic(cat), "contoh kedua", "contoh ketiga"}
+	}
+}
+
+func (s *S) creativeBriefFor(plannerID, topic, cat, targetAge string) CreativeBrief {
+	lang := scriptLang(topic)
+	subjects := creativeSubjects(cat, lang)
+	n, avgDur, velocity := s.benchmarkSummary(cat)
+	own := s.performanceAdjustment(cat)
+	hook := "Show the learning object immediately and ask one simple question in the first two seconds."
+	interaction := "Question -> short child response pause -> positive reveal."
+	switch cat {
+	case "animals":
+		hook = "Start with a recognizable animal sound before revealing the animal."
+		interaction = "Sound -> guess -> reveal name -> repeat once."
+	case "numbers":
+		hook = "Start with a tiny counting challenge using one large group of objects."
+		interaction = "Count together -> pause -> reveal the number."
+	case "colors":
+		hook = "Start with one mystery object and ask for its color."
+		interaction = "Name -> compare -> choose the matching color."
+	case "shapes":
+		hook = "Start by finding one hidden shape in a familiar object."
+		interaction = "See shape -> name it -> find the matching shape."
+	case "habits":
+		hook = "Start with one everyday problem and a clear good-choice question."
+		interaction = "Problem -> choose -> show the positive result."
+	case "stories":
+		hook = "Start with a character problem within the first two seconds."
+		interaction = "Problem -> prediction -> simple resolution."
+	}
+	signals := []string{"Google/YouTube search suggestion demand", "category format heuristics", "own-channel performance feedback"}
+	if n > 0 {
+		signals = append(signals, "YouTube public benchmark metadata")
+	}
+	return CreativeBrief{
+		State: "READY",
+		Engine: "CREATIVE_DIRECTOR_V1",
+		PlannerID: plannerID,
+		Topic: topic,
+		Category: cat,
+		TargetAge: targetAge,
+		Format: formatFor(cat, topic),
+		HookStrategy: hook,
+		CharacterStrategy: "Use Nara + Pip as the default recurring pair; add support characters only when the story truly needs them.",
+		VisualStyle: "Premium clean 2D preschool animation, one large learning object per shot, soft bright palette, simple background, strong subject separation.",
+		Pacing: "Change composition or learning focus every 2-4 seconds; never fill a long scene by looping a one-second motion.",
+		InteractionStrategy: interaction,
+		Subjects: subjects,
+		ProductionRules: []string{
+			"Every teaching scene must name an explicit subject; generic phrases like 'this animal' are not enough.",
+			"Use multiple planned shots for long scenes and one clear action per shot.",
+			"AI-generated frames contain no captions; all readable text is composited in post.",
+			"Reject black, nearly static, highly repetitive, malformed, or technically invalid AI-video clips.",
+			"Retry only the failed shot, preserving successful checkpoints.",
+			"Do not publish when the artistic quality gate fails.",
+		},
+		BenchmarkSamples: n,
+		BenchmarkAvgDurationSec: avgDur,
+		BenchmarkViewVelocity: velocity,
+		OwnChannelAdjustment: own,
+		ResearchSignals: signals,
+		GeneratedAt: time.Now().Format(time.RFC3339),
+	}
+}
+
+func (s *S) creativeInfo() map[string]any {
+	plans := s.syncPlanner()
+	out := []CreativeBrief{}
+	for _, p := range plans {
+		if p.Stage == "HOLD" || p.Stage == "PUBLISHED" {
+			continue
+		}
+		out = append(out, s.creativeBriefFor(p.ID, p.Title, p.Category, p.TargetAge))
+		if len(out) >= 10 {
+			break
+		}
+	}
+	return map[string]any{"state": "READY", "engine": "CREATIVE_DIRECTOR_V1", "briefs": out, "count": len(out), "ai_used": false, "neurons_used": 0}
+}
+func (s *S) creative(w http.ResponseWriter, r *http.Request) { js(w, s.creativeInfo()) }
 
 func wordsFor(s string) []string {
 	stop := map[string]bool{"for": true, "kids": true, "kid": true, "anak": true, "untuk": true, "the": true, "a": true, "an": true, "and": true, "with": true, "learn": true, "learning": true, "belajar": true, "video": true, "videos": true, "of": true, "to": true, "in": true}
@@ -2542,14 +2951,26 @@ func (s *S) scriptPrepInfo() map[string]any {
 }
 func (s *S) scriptPrep(w http.ResponseWriter, r *http.Request) { js(w, s.scriptPrepInfo()) }
 
+type ShotPlan struct {
+	Number      int    `json:"number"`
+	DurationSec int    `json:"duration_sec"`
+	Subject     string `json:"subject"`
+	Action      string `json:"action"`
+	Camera      string `json:"camera"`
+	Prompt      string `json:"prompt"`
+}
+
 type FinalScene struct {
-	Number       int    `json:"number"`
-	DurationSec  int    `json:"duration_sec"`
-	Purpose      string `json:"purpose"`
-	VoiceOver    string `json:"voice_over"`
-	VisualPrompt string `json:"visual_prompt"`
-	OnScreenText string `json:"on_screen_text"`
-	EditNote     string `json:"edit_note"`
+	Number       int        `json:"number"`
+	DurationSec  int        `json:"duration_sec"`
+	Purpose      string     `json:"purpose"`
+	VoiceOver    string     `json:"voice_over"`
+	Subject      string     `json:"subject"`
+	VisualGoal   string     `json:"visual_goal"`
+	VisualPrompt string     `json:"visual_prompt"`
+	OnScreenText string     `json:"on_screen_text"`
+	EditNote     string     `json:"edit_note"`
+	Shots        []ShotPlan `json:"shots"`
 }
 type ScriptPackage struct {
 	State             string       `json:"state"`
@@ -2673,9 +3094,93 @@ func hashtagsFor(cat string) []string {
 	return base
 }
 func (s *S) scriptDir() string { return filepath.Join(s.Root, "data", "scripts", "final") }
+func creativeSceneSubject(brief CreativeBrief, scene int) string {
+	if len(brief.Subjects) == 0 {
+		return brief.Topic
+	}
+	switch scene {
+	case 1, 3:
+		return brief.Subjects[0]
+	case 4:
+		if len(brief.Subjects) > 1 {
+			return brief.Subjects[1]
+		}
+	case 5:
+		if len(brief.Subjects) > 2 {
+			return brief.Subjects[2]
+		}
+	case 2, 6:
+		return strings.Join(brief.Subjects, ", ")
+	}
+	return brief.Subjects[0]
+}
+
+func creativeVoiceLines(lang, cat string, subjects []string) []string {
+	get := func(i int, fallback string) string {
+		if i >= 0 && i < len(subjects) && strings.TrimSpace(subjects[i]) != "" {
+			return subjects[i]
+		}
+		return fallback
+	}
+	a, b, d := get(0, "contoh pertama"), get(1, "contoh kedua"), get(2, "contoh ketiga")
+	if lang == "id" {
+		switch cat {
+		case "animals":
+			return []string{"Dengar... meong! Hewan apa itu?", "Hari ini kita kenalan dengan kucing, gajah, dan ayam.", "Ini kucing. Kucing berbulu dan mengeong. Kucing!", "Ini gajah. Gajah punya belalai panjang. Gajah!", "Mana yang ayam? Dengarkan: kukuruyuk! Pilih dulu...", "Hebat! Kucing, gajah, dan ayam sudah kita kenal."}
+		case "colors":
+			return []string{"Wah, warna apa ini?", "Hari ini kita mencari merah, biru, dan hijau.", "Ini "+a+". Warnanya merah. Merah!", "Sekarang "+b+". Warnanya biru. Biru!", "Mana yang hijau? Cari "+d+"... bagus!", "Hebat! Merah, biru, dan hijau sudah kita kenal."}
+		case "numbers":
+			return []string{"Ayo hitung cepat! Ada berapa?", "Hari ini kita belajar satu, dua, dan tiga.", "Lihat "+a+". Satu. Ayo bilang: satu!", "Sekarang "+b+". Kita hitung: satu, dua!", "Giliran kamu. Hitung "+d+"... satu, dua, tiga!", "Hebat! Kita sudah menghitung satu, dua, dan tiga."}
+		case "shapes":
+			return []string{"Bentuk apa yang bersembunyi di sini?", "Hari ini kita mencari lingkaran, persegi, dan segitiga.", "Ini "+a+". Bentuknya lingkaran.", "Sekarang "+b+". Bentuknya persegi.", "Mana segitiga? Cari "+d+"... ketemu!", "Hebat! Lingkaran, persegi, dan segitiga sudah kita kenal."}
+		case "habits":
+			return []string{"Kalau tangan kotor, apa yang harus kita lakukan?", "Hari ini kita belajar kebiasaan baik.", "Pertama, "+a+". Lakukan pelan dan bersih.", "Berikutnya, "+b+". Ini membantu gigi tetap bersih.", "Mana pilihan yang baik? "+d+"... iya!", "Hebat! Kebiasaan baik membuat hari kita lebih nyaman."}
+		}
+	}
+	return voLines(lang, cat, strings.Join(subjects, " "))
+}
+
+func buildSceneShots(scene int, dur int, subject, purpose, visual string) []ShotPlan {
+	count := 1
+	if scene == 3 || scene == 4 || scene == 5 {
+		count = 2
+	}
+	first := dur
+	second := 0
+	if count == 2 {
+		first = dur / 2
+		second = dur - first
+	}
+	base := "Premium clean 2D preschool animation. Explicit learning subject: " + subject + ". " + visual
+	shots := []ShotPlan{{
+		Number: 1,
+		DurationSec: first,
+		Subject: subject,
+		Action: "discover and point",
+		Camera: "stable medium shot",
+		Prompt: base + " Nara and Pip discover the subject; Nara points clearly toward it while Pip gives one small reaction. One clear action, simple background, no generated text.",
+	}}
+	if count == 2 {
+		action := "close-up reveal"
+		if purpose == "INTERACTIVE_RECALL" {
+			action = "choice and positive reveal"
+		}
+		shots = append(shots, ShotPlan{
+			Number: 2,
+			DurationSec: second,
+			Subject: subject,
+			Action: action,
+			Camera: "clean close-up with a new composition",
+			Prompt: base + " Change to a clearly different close-up composition. The learning subject performs one recognizable motion while Nara reacts positively. Keep identity and colors unchanged; no generated text.",
+		})
+	}
+	return shots
+}
+
 func (s *S) writeFinalScript(p ScriptPrep) (ScriptPackage, error) {
 	lang := scriptLang(p.Topic)
-	lines := voLines(lang, p.Category, p.Topic)
+	brief := s.creativeBriefFor(p.PlannerID, p.Topic, p.Category, p.TargetAge)
+	lines := creativeVoiceLines(lang, p.Category, brief.Subjects)
 	sc := []FinalScene{}
 	for i, g := range p.Scenes {
 		vo := ""
@@ -2684,15 +3189,25 @@ func (s *S) writeFinalScript(p ScriptPrep) (ScriptPackage, error) {
 		} else {
 			vo = g.NarrationGuide
 		}
-		visual := "Create a clean 2D preschool cartoon scene, bright but soft colors, large simple shapes, minimal background clutter. " + g.VisualGuide + " Keep the same recurring character design, clothes, proportions, and facial style across all scenes. No logos, no text except requested on-screen text."
-		edit := "Use gentle cuts, readable pacing, no flashing, and leave a short response pause when the scene asks a question."
-		sc = append(sc, FinalScene{Number: g.Number, DurationSec: g.DurationSec, Purpose: g.Purpose, VoiceOver: vo, VisualPrompt: visual, OnScreenText: g.OnScreenText, EditNote: edit})
+		subject := creativeSceneSubject(brief, g.Number)
+		visual := brief.VisualStyle + " Explicit learning subject: " + subject + ". " + g.VisualGuide + " Keep Nara and Pip visually identical across shots. No logos, no generated captions."
+		edit := "Change composition or focus every 2-4 seconds; no one-second motion loops. Use gentle cuts, readable pacing, and a short response pause after questions."
+		onText := g.OnScreenText
+		if lang == "id" {
+			if g.Number == 5 {
+				onText = "Giliran kamu!"
+			} else if g.Number == 6 {
+				onText = "Hebat!"
+			}
+		}
+		shots := buildSceneShots(g.Number, g.DurationSec, subject, g.Purpose, g.VisualGuide)
+		sc = append(sc, FinalScene{Number: g.Number, DurationSec: g.DurationSec, Purpose: g.Purpose, VoiceOver: vo, Subject: subject, VisualGoal: g.VisualGuide, VisualPrompt: visual, OnScreenText: onText, EditNote: edit, Shots: shots})
 	}
 	close := "Great job! See you in the next lesson!"
 	if lang == "id" {
 		close = "Hebat! Sampai jumpa di pelajaran berikutnya!"
 	}
-	out := ScriptPackage{State: "SCRIPT_READY", Engine: "SCRIPT_ENGINE_V1", PlannerID: p.PlannerID, Topic: p.Topic, Category: p.Category, Language: lang, TargetAge: p.TargetAge, DurationSec: p.DurationSec, VideoTitle: videoTitleFor(lang, p.Topic), Description: descriptionFor(lang, p.Topic), Hook: lines[0], LearningObjective: p.LearningObjective, SceneCount: len(sc), Scenes: sc, ClosingLine: close, Keywords: p.Keywords, Hashtags: hashtagsFor(p.Category), CharacterRule: "Use one original recurring preschool-friendly character identity consistently across every scene; no imitation of copyrighted characters.", GeneratedAt: time.Now().Format(time.RFC3339), AIUsed: false, NeuronsUsed: 0}
+	out := ScriptPackage{State: "SCRIPT_READY", Engine: "SCRIPT_ENGINE_V2_CREATIVE", PlannerID: p.PlannerID, Topic: p.Topic, Category: p.Category, Language: lang, TargetAge: p.TargetAge, DurationSec: p.DurationSec, VideoTitle: videoTitleFor(lang, p.Topic), Description: descriptionFor(lang, p.Topic), Hook: lines[0], LearningObjective: p.LearningObjective, SceneCount: len(sc), Scenes: sc, ClosingLine: close, Keywords: p.Keywords, Hashtags: hashtagsFor(p.Category), CharacterRule: "Character Bible V2: Nara + Pip default cast; preserve exact identity and wardrobe across every shot. Support characters are optional only when the creative brief requires them.", GeneratedAt: time.Now().Format(time.RFC3339), AIUsed: false, NeuronsUsed: 0}
 	os.MkdirAll(s.scriptDir(), 0700)
 	b, _ := json.MarshalIndent(out, "", "  ")
 	path := filepath.Join(s.scriptDir(), p.PlannerID+".json")
@@ -2725,7 +3240,7 @@ func (s *S) ensureScripts() []ScriptPackage {
 		}
 		path := filepath.Join(s.scriptDir(), p.PlannerID+".json")
 		var sp ScriptPackage
-		if b, e := os.ReadFile(path); e == nil && json.Unmarshal(b, &sp) == nil && sp.PlannerID == p.PlannerID {
+		if b, e := os.ReadFile(path); e == nil && json.Unmarshal(b, &sp) == nil && sp.PlannerID == p.PlannerID && (sp.Engine == "SCRIPT_ENGINE_V2_CREATIVE" || stage == "PUBLISHED") {
 			out = append(out, sp)
 			if stage == "SCRIPT_PREP_READY" {
 				plans[i].Stage = "SCRIPT_READY"
@@ -2734,12 +3249,14 @@ func (s *S) ensureScripts() []ScriptPackage {
 			}
 			continue
 		}
-		if stage == "SCRIPT_PREP_READY" {
+		if stage != "PUBLISHED" {
 			if ns, e := s.writeFinalScript(p); e == nil {
 				out = append(out, ns)
-				plans[i].Stage = "SCRIPT_READY"
-				plans[i].UpdatedAt = time.Now().Format(time.RFC3339)
-				changed = true
+				if stage == "SCRIPT_PREP_READY" {
+					plans[i].Stage = "SCRIPT_READY"
+					plans[i].UpdatedAt = time.Now().Format(time.RFC3339)
+					changed = true
+				}
 			}
 		}
 	}
@@ -2756,7 +3273,7 @@ func (s *S) scriptInfo() map[string]any {
 		topic = a[0].Topic
 		pid = a[0].PlannerID
 	}
-	return map[string]any{"state": "READY", "engine": "SCRIPT_ENGINE_V1", "ready": len(a), "current_topic": topic, "current_planner_id": pid, "packages": a, "ai_used": false, "neurons_used": 0}
+	return map[string]any{"state": "READY", "engine": "SCRIPT_ENGINE_V2_CREATIVE", "ready": len(a), "current_topic": topic, "current_planner_id": pid, "packages": a, "ai_used": false, "neurons_used": 0}
 }
 func (s *S) scripts(w http.ResponseWriter, r *http.Request) { js(w, s.scriptInfo()) }
 
@@ -2870,7 +3387,12 @@ func (s *S) writeProductionPack(sp ScriptPackage) (ProductionPack, error) {
 	dir := s.productionDir(sp.PlannerID)
 	os.MkdirAll(dir, 0700)
 	narration, visuals, captions, metadata := productionTexts(sp)
-	files := []string{"script.json", "narration.txt", "visual_prompts.txt", "captions.srt", "metadata.txt", "manifest.json"}
+	files := []string{"creative_brief.json", "script.json", "narration.txt", "visual_prompts.txt", "captions.srt", "metadata.txt", "manifest.json"}
+	brief := s.creativeBriefFor(sp.PlannerID, sp.Topic, sp.Category, sp.TargetAge)
+	bb, _ := json.MarshalIndent(brief, "", "  ")
+	if e := os.WriteFile(filepath.Join(dir, "creative_brief.json"), bb, 0600); e != nil {
+		return ProductionPack{}, e
+	}
 	sb, _ := json.MarshalIndent(sp, "", "  ")
 	if e := os.WriteFile(filepath.Join(dir, "script.json"), sb, 0600); e != nil {
 		return ProductionPack{}, e
@@ -2887,7 +3409,7 @@ func (s *S) writeProductionPack(sp ScriptPackage) (ProductionPack, error) {
 	if e := writeSimple(filepath.Join(dir, "metadata.txt"), metadata); e != nil {
 		return ProductionPack{}, e
 	}
-	p := ProductionPack{State: "READY_FOR_PRODUCTION", Engine: "PRODUCTION_PACK_V1", PlannerID: sp.PlannerID, Topic: sp.Topic, Language: sp.Language, TargetAge: sp.TargetAge, DurationSec: sp.DurationSec, VideoTitle: sp.VideoTitle, SceneCount: sp.SceneCount, Files: files, DownloadEndpoint: "/api/work/production/download?id=" + sp.PlannerID, GeneratedAt: time.Now().Format(time.RFC3339), AIUsed: false, NeuronsUsed: 0}
+	p := ProductionPack{State: "READY_FOR_PRODUCTION", Engine: "PRODUCTION_PACK_V2_CREATIVE", PlannerID: sp.PlannerID, Topic: sp.Topic, Language: sp.Language, TargetAge: sp.TargetAge, DurationSec: sp.DurationSec, VideoTitle: sp.VideoTitle, SceneCount: sp.SceneCount, Files: files, DownloadEndpoint: "/api/work/production/download?id=" + sp.PlannerID, GeneratedAt: time.Now().Format(time.RFC3339), AIUsed: false, NeuronsUsed: 0}
 	pb, _ := json.MarshalIndent(p, "", "  ")
 	if e := os.WriteFile(filepath.Join(dir, "manifest.json"), pb, 0600); e != nil {
 		return p, e
@@ -2918,7 +3440,7 @@ func (s *S) ensureProductionPacks() []ProductionPack {
 		mp := filepath.Join(s.productionDir(sp.PlannerID), "manifest.json")
 		zp := s.productionZip(sp.PlannerID)
 		var pp ProductionPack
-		if b, e := os.ReadFile(mp); e == nil && json.Unmarshal(b, &pp) == nil && pp.PlannerID == sp.PlannerID && exists(zp) {
+		if b, e := os.ReadFile(mp); e == nil && json.Unmarshal(b, &pp) == nil && pp.PlannerID == sp.PlannerID && exists(zp) && (pp.Engine == "PRODUCTION_PACK_V2_CREATIVE" || stage == "PUBLISHED") {
 			out = append(out, pp)
 			if stage == "SCRIPT_READY" {
 				plans[i].Stage = "PRODUCTION_READY"
@@ -2953,7 +3475,7 @@ func (s *S) productionInfo() map[string]any {
 		pid = a[0].PlannerID
 		download = a[0].DownloadEndpoint
 	}
-	return map[string]any{"state": "READY", "engine": "PRODUCTION_PACK_V1", "ready": len(a), "current_topic": topic, "current_planner_id": pid, "download_endpoint": download, "packs": a, "ai_used": false, "neurons_used": 0}
+	return map[string]any{"state": "READY", "engine": "PRODUCTION_PACK_V2_CREATIVE", "ready": len(a), "current_topic": topic, "current_planner_id": pid, "download_endpoint": download, "packs": a, "ai_used": false, "neurons_used": 0}
 }
 func (s *S) production(w http.ResponseWriter, r *http.Request) { js(w, s.productionInfo()) }
 func (s *S) productionDownload(w http.ResponseWriter, r *http.Request) {
@@ -3255,23 +3777,26 @@ type StudioJob struct {
 	NeuronsUsed    int          `json:"neurons_used"`
 }
 type StudioResult struct {
-	State                   string `json:"state"`
-	PlannerID               string `json:"planner_id"`
-	RenderTag               string `json:"render_tag"`
-	VideoURL                string `json:"video_url"`
-	ThumbnailURL            string `json:"thumbnail_url"`
-	MetadataURL             string `json:"metadata_url"`
-	CompletedAt             string `json:"completed_at"`
-	Engine                  string `json:"engine"`
-	QualityGate             string `json:"quality_gate"`
-	RenderGeneration        string `json:"render_generation"`
-	CharacterBible          string `json:"character_bible"`
-	RequiredAIVideoScenes   int    `json:"required_ai_video_scenes"`
-	SuccessfulAIVideoScenes int    `json:"successful_ai_video_scenes"`
-	FinalVectorVideoScenes  int    `json:"final_vector_video_scenes"`
-	ProvenanceState         string `json:"provenance_state"`
-	AIUsed                  bool   `json:"ai_used"`
-	NeuronsUsed             int    `json:"neurons_used"`
+	State                   string  `json:"state"`
+	PlannerID               string  `json:"planner_id"`
+	RenderTag               string  `json:"render_tag"`
+	VideoURL                string  `json:"video_url"`
+	ThumbnailURL            string  `json:"thumbnail_url"`
+	MetadataURL             string  `json:"metadata_url"`
+	CompletedAt             string  `json:"completed_at"`
+	Engine                  string  `json:"engine"`
+	QualityGate             string  `json:"quality_gate"`
+	ArtisticQualityScore    float64 `json:"artistic_quality_score"`
+	RenderGeneration        string  `json:"render_generation"`
+	CharacterBible          string  `json:"character_bible"`
+	RequiredAIVideoScenes   int     `json:"required_ai_video_scenes"`
+	SuccessfulAIVideoScenes int     `json:"successful_ai_video_scenes"`
+	RequiredAIVideoShots    int     `json:"required_ai_video_shots"`
+	SuccessfulAIVideoShots  int     `json:"successful_ai_video_shots"`
+	FinalVectorVideoScenes  int     `json:"final_vector_video_scenes"`
+	ProvenanceState         string  `json:"provenance_state"`
+	AIUsed                  bool    `json:"ai_used"`
+	NeuronsUsed             int     `json:"neurons_used"`
 }
 type StudioProviderWait struct {
 	State                string `json:"state"`
@@ -3328,7 +3853,9 @@ func (s *S) studioResultCount() int {
 		if e != nil || json.Unmarshal(b, &r) != nil {
 			continue
 		}
-		if r.State == "RENDERED_VALIDATED" && r.ProvenanceState == "PASS" && r.QualityGate == "PASS" && r.RenderGeneration == "DJAEGER_STUDIO_V3_AI_VIDEO" && r.CharacterBible == "DJAEGER_WORK_KIDS_V1" && r.RequiredAIVideoScenes > 0 && r.SuccessfulAIVideoScenes == r.RequiredAIVideoScenes && r.FinalVectorVideoScenes == 0 {
+		legacyOK := r.RenderGeneration == "DJAEGER_STUDIO_V3_AI_VIDEO" && r.CharacterBible == "DJAEGER_WORK_KIDS_V1" && r.RequiredAIVideoScenes > 0 && r.SuccessfulAIVideoScenes == r.RequiredAIVideoScenes
+		creativeOK := r.RenderGeneration == "DJAEGER_STUDIO_V4_CREATIVE" && r.CharacterBible == "DJAEGER_WORK_KIDS_V2" && r.RequiredAIVideoShots > 0 && r.SuccessfulAIVideoShots == r.RequiredAIVideoShots && r.ArtisticQualityScore >= 62
+		if r.State == "RENDERED_VALIDATED" && r.ProvenanceState == "PASS" && r.QualityGate == "PASS" && r.FinalVectorVideoScenes == 0 && (legacyOK || creativeOK) {
 			n++
 		}
 	}
@@ -3444,7 +3971,7 @@ func (s *S) buildStudioJobForTopic(target string) (StudioJob, bool) {
 		if !ok {
 			continue
 		}
-		j := StudioJob{State: "WAITING_RENDER", Engine: "AUTO_STUDIO_V3_AI_VIDEO", PlannerID: p.ID, Topic: p.Title, Category: p.Category, Language: sp.Language, VideoTitle: sp.VideoTitle, Description: sp.Description, DurationSec: sp.DurationSec, Scenes: sp.Scenes, Hashtags: sp.Hashtags, RenderTag: studioTag(p.ID), VisualProvider: "CHARACTER_BIBLE_TO_WAN_AI_VIDEO_REQUIRED", VoiceProvider: "NO_CARD_TTS_WITH_LOCAL_FALLBACK", RenderProvider: "GITHUB_ACTIONS_WAN_FFMPEG", CreatedAt: time.Now().Format(time.RFC3339), AIUsed: false, NeuronsUsed: 0}
+		j := StudioJob{State: "WAITING_RENDER", Engine: "AUTO_STUDIO_V4_CREATIVE", PlannerID: p.ID, Topic: p.Title, Category: p.Category, Language: sp.Language, VideoTitle: sp.VideoTitle, Description: sp.Description, DurationSec: sp.DurationSec, Scenes: sp.Scenes, Hashtags: sp.Hashtags, RenderTag: studioTag(p.ID), VisualProvider: "CHARACTER_BIBLE_TO_WAN_AI_VIDEO_REQUIRED", VoiceProvider: "NO_CARD_TTS_WITH_LOCAL_FALLBACK", RenderProvider: "GITHUB_ACTIONS_WAN_FFMPEG", CreatedAt: time.Now().Format(time.RFC3339), AIUsed: false, NeuronsUsed: 0}
 		return j, true
 	}
 	return StudioJob{}, false
@@ -3470,27 +3997,27 @@ func (s *S) ensureStudioPending() bool {
 func (s *S) studioInfo() map[string]any {
 	if j, ok := s.loadStudioPending(); ok {
 		if r, done := s.loadStudioResult(j.PlannerID); done {
-			return map[string]any{"state": "RENDERED", "engine": "AUTO_STUDIO_V3_AI_VIDEO", "job": j, "result": r, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
+			return map[string]any{"state": "RENDERED", "engine": "AUTO_STUDIO_V4_CREATIVE", "job": j, "result": r, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
 		}
 		if pw, waiting := s.loadStudioProviderWait(j.PlannerID); waiting {
-			return map[string]any{"state": pw.State, "engine": "AUTO_STUDIO_V3_AI_VIDEO", "job": j, "provider_wait": pw, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
+			return map[string]any{"state": pw.State, "engine": "AUTO_STUDIO_V4_CREATIVE", "job": j, "provider_wait": pw, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
 		}
-		return map[string]any{"state": "WAITING_RENDER", "engine": "AUTO_STUDIO_V3_AI_VIDEO", "job": j, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
+		return map[string]any{"state": "WAITING_RENDER", "engine": "AUTO_STUDIO_V4_CREATIVE", "job": j, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
 	}
 	s.clearStudioProviderWait()
 	if s.studioRenderedToday() {
-		return map[string]any{"state": "DAILY_TARGET_MET", "engine": "AUTO_STUDIO_V3_AI_VIDEO", "job": nil, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
+		return map[string]any{"state": "DAILY_TARGET_MET", "engine": "AUTO_STUDIO_V4_CREATIVE", "job": nil, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
 	}
 	if !s.researchCompletedToday() {
-		return map[string]any{"state": "WAITING_TODAY_RESEARCH", "engine": "AUTO_STUDIO_V3_AI_VIDEO", "job": nil, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
+		return map[string]any{"state": "WAITING_TODAY_RESEARCH", "engine": "AUTO_STUDIO_V4_CREATIVE", "job": nil, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
 	}
 	j, ok := s.buildStudioJob()
 	if !ok {
-		return map[string]any{"state": "WAITING_PRODUCTION_JOB", "engine": "AUTO_STUDIO_V3_AI_VIDEO", "job": nil, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
+		return map[string]any{"state": "WAITING_PRODUCTION_JOB", "engine": "AUTO_STUDIO_V4_CREATIVE", "job": nil, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
 	}
 	os.MkdirAll(filepath.Dir(s.studioPendingPath()), 0700)
 	_ = s.saveStudioPending(j)
-	return map[string]any{"state": "WAITING_RENDER", "engine": "AUTO_STUDIO_V3_AI_VIDEO", "job": j, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
+	return map[string]any{"state": "WAITING_RENDER", "engine": "AUTO_STUDIO_V4_CREATIVE", "job": j, "daily_target": 1, "rendered_total": s.studioResultCount(), "ai_used": false, "neurons_used": 0}
 }
 func (s *S) studio(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
@@ -3593,18 +4120,21 @@ func (s *S) pollStudioResult() {
 		return
 	}
 	var md struct {
-		QualityGate             string `json:"quality_gate"`
-		RenderGeneration        string `json:"render_generation"`
-		CharacterBible          string `json:"character_bible"`
-		RequiredAIVideoScenes   int    `json:"required_ai_video_scenes"`
-		SuccessfulAIVideoScenes int    `json:"successful_ai_video_scenes"`
-		FinalVectorVideoScenes  int    `json:"final_vector_video_scenes"`
-		PublicationInvariant    string `json:"publication_invariant"`
+		QualityGate             string  `json:"quality_gate"`
+		ArtisticQualityScore    float64 `json:"artistic_quality_score"`
+		RenderGeneration        string  `json:"render_generation"`
+		CharacterBible          string  `json:"character_bible"`
+		RequiredAIVideoScenes   int     `json:"required_ai_video_scenes"`
+		SuccessfulAIVideoScenes int     `json:"successful_ai_video_scenes"`
+		RequiredAIVideoShots    int     `json:"required_ai_video_shots"`
+		SuccessfulAIVideoShots  int     `json:"successful_ai_video_shots"`
+		FinalVectorVideoScenes  int     `json:"final_vector_video_scenes"`
+		PublicationInvariant    string  `json:"publication_invariant"`
 	}
 	if json.Unmarshal(mb, &md) != nil {
 		return
 	}
-	valid := md.QualityGate == "PASS" && md.RenderGeneration == "DJAEGER_STUDIO_V3_AI_VIDEO" && md.CharacterBible == "DJAEGER_WORK_KIDS_V1" && md.PublicationInvariant == "PASS" && md.RequiredAIVideoScenes > 0 && md.SuccessfulAIVideoScenes == md.RequiredAIVideoScenes && md.FinalVectorVideoScenes == 0
+	valid := md.QualityGate == "PASS" && md.ArtisticQualityScore >= 62 && md.RenderGeneration == "DJAEGER_STUDIO_V4_CREATIVE" && md.CharacterBible == "DJAEGER_WORK_KIDS_V2" && md.PublicationInvariant == "PASS" && md.RequiredAIVideoShots > 0 && md.SuccessfulAIVideoShots == md.RequiredAIVideoShots && md.FinalVectorVideoScenes == 0
 	if !valid {
 		_ = os.WriteFile(filepath.Join(s.Root, "state", "studio_provenance_error"), []byte("PUBLICATION_BLOCKED "+j.PlannerID+"\n"), 0600)
 		return
@@ -3613,7 +4143,7 @@ func (s *S) pollStudioResult() {
 	if done == "" {
 		done = time.Now().Format(time.RFC3339)
 	}
-	r := StudioResult{State: "RENDERED_VALIDATED", PlannerID: j.PlannerID, RenderTag: j.RenderTag, VideoURL: video, ThumbnailURL: thumb, MetadataURL: meta, CompletedAt: done, Engine: "AUTO_STUDIO_V3_AI_VIDEO", QualityGate: md.QualityGate, RenderGeneration: md.RenderGeneration, CharacterBible: md.CharacterBible, RequiredAIVideoScenes: md.RequiredAIVideoScenes, SuccessfulAIVideoScenes: md.SuccessfulAIVideoScenes, FinalVectorVideoScenes: md.FinalVectorVideoScenes, ProvenanceState: "PASS", AIUsed: false, NeuronsUsed: 0}
+	r := StudioResult{State: "RENDERED_VALIDATED", PlannerID: j.PlannerID, RenderTag: j.RenderTag, VideoURL: video, ThumbnailURL: thumb, MetadataURL: meta, CompletedAt: done, Engine: "AUTO_STUDIO_V4_CREATIVE", QualityGate: md.QualityGate, ArtisticQualityScore: md.ArtisticQualityScore, RenderGeneration: md.RenderGeneration, CharacterBible: md.CharacterBible, RequiredAIVideoScenes: md.RequiredAIVideoScenes, SuccessfulAIVideoScenes: md.SuccessfulAIVideoScenes, RequiredAIVideoShots: md.RequiredAIVideoShots, SuccessfulAIVideoShots: md.SuccessfulAIVideoShots, FinalVectorVideoScenes: md.FinalVectorVideoScenes, ProvenanceState: "PASS", AIUsed: false, NeuronsUsed: 0}
 	b, _ := json.MarshalIndent(r, "", "  ")
 	os.MkdirAll(filepath.Dir(s.studioResultPath(j.PlannerID)), 0700)
 	if writeSimple(s.studioResultPath(j.PlannerID), string(b)+"\n") != nil {
@@ -4150,7 +4680,7 @@ func (s *S) youtubeCandidate(id string) (PlanItem, StudioResult, ScriptPackage, 
 	if !ok || strings.TrimSpace(sr.VideoURL) == "" {
 		return p, sr, ScriptPackage{}, fmt.Errorf("rendered video not found")
 	}
-	if sr.State != "RENDERED_VALIDATED" || sr.ProvenanceState != "PASS" || sr.QualityGate != "PASS" || sr.RenderGeneration != "DJAEGER_STUDIO_V3_AI_VIDEO" || sr.CharacterBible != "DJAEGER_WORK_KIDS_V1" || sr.RequiredAIVideoScenes <= 0 || sr.SuccessfulAIVideoScenes != sr.RequiredAIVideoScenes || sr.FinalVectorVideoScenes != 0 {
+	if sr.State != "RENDERED_VALIDATED" || sr.ProvenanceState != "PASS" || sr.QualityGate != "PASS" || sr.ArtisticQualityScore < 62 || sr.RenderGeneration != "DJAEGER_STUDIO_V4_CREATIVE" || sr.CharacterBible != "DJAEGER_WORK_KIDS_V2" || sr.RequiredAIVideoShots <= 0 || sr.SuccessfulAIVideoShots != sr.RequiredAIVideoShots || sr.FinalVectorVideoScenes != 0 {
 		return p, sr, ScriptPackage{}, fmt.Errorf("PUBLICATION_BLOCKED: AI-video provenance invariant failed")
 	}
 	if !youtubeAssetAllowed(sr.VideoURL) || !youtubeAssetAllowed(sr.ThumbnailURL) {
@@ -6260,6 +6790,7 @@ func main() {
 	m.HandleFunc("/api/work/collect", s.collect)
 	m.HandleFunc("/api/work/research", s.research)
 	m.HandleFunc("/api/work/brief", s.brief)
+	m.HandleFunc("/api/work/creative", s.creative)
 	m.HandleFunc("/api/work/opportunities", s.opportunities)
 	m.HandleFunc("/api/work/planner", s.planner)
 	m.HandleFunc("/api/work/script-prep", s.scriptPrep)
