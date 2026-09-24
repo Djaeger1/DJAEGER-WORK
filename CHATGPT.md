@@ -105,3 +105,14 @@ This file is ONLY for DJAEGER WORK / HERMES WORK. Do not mix it with DJAEGER Gam
 - Redmi 5A is directly connected through Remote Desktop Commander as Redmi-5A and can be audited/maintained without asking the user to type HERMES terminal commands for normal operations.
 - Storage cleanup on 2026-09-24 reduced /data/adb/hermes_work from about 560 MB to about 110 MB by removing obsolete releases/update ZIPs while preserving current+previous rollback. At that point /data improved from ~89% used (~1.0 GB free) to ~85% used (~1.5 GB free).
 - Hardware note: Redmi 5A is operationally stable, but eMMC lifetime registers read 0x08/0x08 with pre_eol_info=01; avoid unnecessary write amplification and do not let releases/logs accumulate indefinitely.
+
+
+## V4.1 semantic render validation — 2026-09-24
+- A real V4 production job was manually queued for planner `830c43a839ea` / topic `belajar angka anak paud` without changing the public publishing guard.
+- Live Redmi 5A verification before render: runtime `v2.6.0-creative-director`, `SCRIPT_ENGINE_V2_CREATIVE`, `PRODUCTION_PACK_V2_CREATIVE`, and `CREATIVE_DIRECTOR_V1` were active. Example explicit subjects: `satu apel merah`, `dua bola biru`, `tiga bintang kuning`.
+- First V4 render test proved ARTISTIC_QUALITY_GATE_V1 is active: scene 1 shot 1 attempt 1 was rejected, then only that shot was retried and the second attempt passed/checkpointed.
+- The test exposed a relay schema mismatch: the currently deployed Railway relay snapshot strips new `subject`, `visual_goal`, and `shots` fields from Studio jobs. Source fix is committed in `railway-relay/server.js`, but the live Railway service is still running an older source snapshot because Railway `redeploy` reuses the existing commit.
+- Renderer contract `V4.1_SEMANTIC_FALLBACK` now makes Auto Studio robust to that mismatch: when explicit shot fields are missing it extracts `Explicit learning subject: ...` from the preserved visual prompt and synthesizes the intended shot split locally. It also ignores pre-V4.1 wait/checkpoint state and uses versioned `ai_v41_*.mp4` checkpoint assets so semantically wrong old clips are never reused.
+- Verified V4.1 run logs now show correct subjects reaching the renderer: scene 1 shot 1 = `satu apel merah`; scene 2 shot 1 = `satu apel merah, dua bola biru, tiga bintang kuning`; scene 3 shot 1 = `satu apel merah`.
+- V4.1 successfully checkpointed scene 1 shot 1 and scene 2 shot 1, then ZeroGPU returned `WAIT_QUOTA` at scene 3 shot 1. Latest retry boundary: `2026-09-24T09:25:15Z` (16:25:15 WIB). Publication invariant remains BLOCKED until all required shots pass and final artistic score is >=62.
+- Hourly automation `DJAEGER Work V4.1 Watch` tracks this exact job and must resume only after provider backoff, preserve successful V4.1 checkpoints, and never resume the obsolete V3 scene-5 job.
