@@ -3861,8 +3861,14 @@ type YouTubeOAuthUpgradeRequest struct {
 	CodeVerifier string `json:"code_verifier"`
 }
 
-func validLoopbackRedirect(raw string) bool {
-	u, e := url.Parse(strings.TrimSpace(raw))
+const youtubeOAuthPlaygroundRedirect = "https://developers.google.com/oauthplayground"
+
+func validYouTubeUpgradeRedirect(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == youtubeOAuthPlaygroundRedirect {
+		return true
+	}
+	u, e := url.Parse(raw)
 	if e != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.Port() == "" || (u.Path != "" && u.Path != "/") {
 		return false
 	}
@@ -3874,8 +3880,11 @@ func youtubeUpgradeAnalyticsToken(c YouTubeOAuthCredential, q YouTubeOAuthUpgrad
 	q.Code = strings.TrimSpace(q.Code)
 	q.RedirectURI = strings.TrimSpace(q.RedirectURI)
 	q.CodeVerifier = strings.TrimSpace(q.CodeVerifier)
-	if q.Code == "" || !validLoopbackRedirect(q.RedirectURI) || len(q.CodeVerifier) < 43 || len(q.CodeVerifier) > 128 {
+	if q.Code == "" || !validYouTubeUpgradeRedirect(q.RedirectURI) {
 		return c, nil, fmt.Errorf("invalid oauth upgrade request")
+	}
+	if q.RedirectURI != youtubeOAuthPlaygroundRedirect && (len(q.CodeVerifier) < 43 || len(q.CodeVerifier) > 128) {
+		return c, nil, fmt.Errorf("invalid oauth pkce verifier")
 	}
 
 	v := url.Values{}
@@ -3883,7 +3892,9 @@ func youtubeUpgradeAnalyticsToken(c YouTubeOAuthCredential, q YouTubeOAuthUpgrad
 	v.Set("client_secret", strings.TrimSpace(c.ClientSecret))
 	v.Set("code", q.Code)
 	v.Set("redirect_uri", q.RedirectURI)
-	v.Set("code_verifier", q.CodeVerifier)
+	if q.CodeVerifier != "" {
+		v.Set("code_verifier", q.CodeVerifier)
+	}
 	v.Set("grant_type", "authorization_code")
 	req, e := http.NewRequest("POST", "https://oauth2.googleapis.com/token", strings.NewReader(v.Encode()))
 	if e != nil {
