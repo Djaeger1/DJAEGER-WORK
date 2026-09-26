@@ -35,7 +35,7 @@ jobs:
           grep -Fq 'UPDATE_CHANNEL_URL=https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json' runtime/config/work.env
           grep -Fq '"version": "v2.6.1-adaptive-research"' runtime/manifest.json
           bash -n hermes-auto-studio/render.sh
-          python3 -m py_compile hermes-auto-studio/ai_video_scene.py hermes-auto-studio/vector_scene.py hermes-auto-studio/quality_critic.py
+          python3 -m py_compile hermes-auto-studio/ai_video_scene.py hermes-auto-studio/vector_scene.py hermes-auto-studio/quality_critic.py hermes-auto-studio/quota_policy.py
           grep -Fq 'CREATIVE_RESEARCH_V4_ADAPTIVE' runtime/workd.go
           grep -Fq 'RESEARCH_MIN_NEW_ITEMS=40' runtime/config/work.env
           grep -Fq 'RESEARCH_MAX_QUERIES=64' runtime/config/work.env
