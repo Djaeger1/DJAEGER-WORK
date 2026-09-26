@@ -40,7 +40,7 @@ def raw_scene_shots(scene: dict) -> int:
     return 2 if purpose in {"TEACH_1", "TEACH_2", "INTERACTIVE_RECALL"} else 1
 
 
-def pick_profile(authenticated: bool, scene_count: int, raw_shots: int) -> dict:
+def pick_profile(authenticated: bool, scene_count: int, scene_raw_shots: list[int]) -> dict:
     if authenticated:
         budget = AUTH_BUDGET
         quota = PROVIDER_QUOTA_FREE
@@ -60,10 +60,13 @@ def pick_profile(authenticated: bool, scene_count: int, raw_shots: int) -> dict:
         max_retries = 0
         mode = "ANONYMOUS_COMPACT_RESERVE"
 
-    # First preserve multi-shot only when the entire job can fit.
-    effective_shots = max(scene_count, min(raw_shots, scene_count * max_per_scene, max_total))
-    if scene_count > max_total:
+    raw_shots = sum(scene_raw_shots)
+    # Preserve explicit multi-shot scenes only while the whole job fits the profile.
+    effective_counts = [min(max(1, n), max_per_scene) for n in scene_raw_shots]
+    effective_shots = sum(effective_counts)
+    if effective_shots > max_total:
         max_per_scene = 1
+        effective_counts = [1] * scene_count
         effective_shots = scene_count
 
     # Fit all scenes before allowing any retries. Shrink clip duration first,
@@ -136,8 +139,8 @@ def main() -> None:
     if not isinstance(scenes, list) or not scenes:
         raise SystemExit("QUOTA_PLAN_FAIL no scenes")
 
-    raw = sum(raw_scene_shots(s) if isinstance(s, dict) else 1 for s in scenes)
-    plan = pick_profile(bool(args.authenticated), len(scenes), raw)
+    scene_raw_shots = [raw_scene_shots(s) if isinstance(s, dict) else 1 for s in scenes]
+    plan = pick_profile(bool(args.authenticated), len(scenes), scene_raw_shots)
     print(json.dumps(plan, separators=(",", ":")))
 
 
