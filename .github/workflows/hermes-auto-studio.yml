@@ -34,7 +34,7 @@ jobs:
           python3 hermes-auto-studio/quota_policy.py --feed /tmp/quota-fixture.json
           python3 hermes-auto-studio/quota_policy.py --feed /tmp/quota-fixture.json --authenticated
           grep -Fq 'ARTISTIC_QUALITY_GATE_V1' hermes-auto-studio/quality_critic.py
-          grep -Fq 'MULTI_SHOT_NO_STREAM_LOOP_SELECTIVE_RETRY' hermes-auto-studio/render.sh
+          grep -Fq 'MULTI_SHOT_NO_STREAM_LOOP_QUOTA_AWARE' hermes-auto-studio/render.sh
           ! grep -Fq -- '-stream_loop -1' hermes-auto-studio/render.sh
       - name: Run resumable zero-card Auto Studio
         env:
