@@ -204,6 +204,35 @@ if [ "$COUNT" -lt 1 ]; then
   exit 1
 fi
 
+HF_AUTHENTICATED=0
+if [ -n "${HF_TOKEN:-}" ]; then
+  HF_AUTHENTICATED=1
+fi
+if [ "$HF_AUTHENTICATED" -eq 1 ]; then
+  QUOTA_PLAN_JSON="$(python3 hermes-auto-studio/quota_policy.py --feed studio/feed.json --authenticated)"
+else
+  QUOTA_PLAN_JSON="$(python3 hermes-auto-studio/quota_policy.py --feed studio/feed.json)"
+fi
+printf '%s\n' "$QUOTA_PLAN_JSON" > studio/quota-plan.json
+
+QUOTA_PLAN_FITS="$(printf '%s' "$QUOTA_PLAN_JSON" | jq -r '.fits')"
+QUOTA_MODE="$(printf '%s' "$QUOTA_PLAN_JSON" | jq -r '.mode')"
+QUOTA_BUDGET_SECONDS="$(printf '%s' "$QUOTA_PLAN_JSON" | jq -r '.planner_budget_seconds')"
+QUOTA_ESTIMATED_SECONDS="$(printf '%s' "$QUOTA_PLAN_JSON" | jq -r '.estimated_total_seconds')"
+QUOTA_SECONDS_PER_SHOT="$(printf '%s' "$QUOTA_PLAN_JSON" | jq -r '.estimated_seconds_per_shot')"
+AI_VIDEO_DURATION="$(printf '%s' "$QUOTA_PLAN_JSON" | jq -r '.duration_seconds')"
+AI_VIDEO_STEPS="$(printf '%s' "$QUOTA_PLAN_JSON" | jq -r '.steps')"
+MAX_SHOTS_PER_SCENE="$(printf '%s' "$QUOTA_PLAN_JSON" | jq -r '.max_shots_per_scene')"
+MAX_SELECTIVE_RETRIES="$(printf '%s' "$QUOTA_PLAN_JSON" | jq -r '.max_selective_retries')"
+
+echo "AUTO_STUDIO_QUOTA_PLAN mode=$QUOTA_MODE scenes=$COUNT estimated_seconds=$QUOTA_ESTIMATED_SECONDS budget_seconds=$QUOTA_BUDGET_SECONDS per_shot=$QUOTA_SECONDS_PER_SHOT duration=$AI_VIDEO_DURATION steps=$AI_VIDEO_STEPS max_shots_per_scene=$MAX_SHOTS_PER_SCENE retries=$MAX_SELECTIVE_RETRIES"
+
+if [ "$QUOTA_PLAN_FITS" != "true" ]; then
+  echo "AUTO_STUDIO_QUOTA_PLAN_UNFIT: refusing a provider request that cannot fit the protected daily budget."
+  record_provider_wait "WAIT_QUOTA" "1"
+  exit 0
+fi
+
 VOICE=""
 if command -v edge-tts >/dev/null 2>&1; then
   edge-tts --list-voices >/tmp/hermes-studio/voices.txt 2>/dev/null || true
@@ -269,6 +298,9 @@ PY
       TEACH_1|TEACH_2|INTERACTIVE_RECALL) shot_count=2 ;;
       *) shot_count=1 ;;
     esac
+  fi
+  if [ "$shot_count" -gt "$MAX_SHOTS_PER_SCENE" ]; then
+    shot_count="$MAX_SHOTS_PER_SCENE"
   fi
   PLANNED_SHOTS=$((PLANNED_SHOTS+shot_count))
   scene_list="studio/scenes/scene_$(printf '%02d' "$n")_shots.txt"
@@ -341,11 +373,15 @@ PY
 
     if [ "$clip_ready" -ne 1 ]; then
       rm -f "$ai_clip" "$quality_json"
-      for attempt in 1 2; do
+      ATTEMPTS_THIS_SHOT=1
+      if [ "$MAX_SELECTIVE_RETRIES" -gt 0 ]; then
+        ATTEMPTS_THIS_SHOT=2
+      fi
+      for attempt in $(seq 1 "$ATTEMPTS_THIS_SHOT"); do
         seed="$((CHANNEL_SEED+n*100+sn+(attempt-1)*10000))"
-        echo "AI-video scene=$n shot=$sn attempt=$attempt provider=$AI_VIDEO_SPACE"
+        echo "AI-video scene=$n shot=$sn attempt=$attempt provider=$AI_VIDEO_SPACE duration=$AI_VIDEO_DURATION steps=$AI_VIDEO_STEPS"
         set +e
-        python3 hermes-auto-studio/ai_video_scene.py           --image "$img" --prompt "$motion_prompt" --output "$ai_clip"           --seed "$seed" --duration 2.0 --space "$AI_VIDEO_SPACE"
+        python3 hermes-auto-studio/ai_video_scene.py           --image "$img" --prompt "$motion_prompt" --output "$ai_clip"           --seed "$seed" --duration "$AI_VIDEO_DURATION" --steps "$AI_VIDEO_STEPS" --space "$AI_VIDEO_SPACE"
         ai_rc=$?
         set -e
 
@@ -357,7 +393,7 @@ PY
           exit 0
         elif [ "$ai_rc" -ne 0 ]; then
           echo "AI_VIDEO_REQUIRED: scene=$n shot=$sn failed rc=$ai_rc"
-          if [ "$attempt" -ge 2 ]; then
+          if [ "$attempt" -ge "$ATTEMPTS_THIS_SHOT" ]; then
             exit 1
           fi
           SELECTIVE_RETRIES=$((SELECTIVE_RETRIES+1))
@@ -371,7 +407,7 @@ PY
         fi
         echo "ARTISTIC_CLIP_REJECT scene=$n shot=$sn attempt=$attempt"
         rm -f "$ai_clip"
-        if [ "$attempt" -lt 2 ]; then
+        if [ "$attempt" -lt "$ATTEMPTS_THIS_SHOT" ]; then
           SELECTIVE_RETRIES=$((SELECTIVE_RETRIES+1))
         fi
       done
@@ -467,7 +503,7 @@ if [ "$critic_rc" -ne 0 ]; then
 fi
 ARTISTIC_SCORE="$(jq -r '.score // 0' studio/quality-report.json)"
 
-jq '{
+jq --arg quota_mode "$QUOTA_MODE" --argjson quota_budget "$QUOTA_BUDGET_SECONDS" --argjson quota_estimated "$QUOTA_ESTIMATED_SECONDS" --argjson quota_per_shot "$QUOTA_SECONDS_PER_SHOT" --argjson clip_duration "$AI_VIDEO_DURATION" --argjson inference_steps "$AI_VIDEO_STEPS" '{
   state:"RENDERED",
   engine:"AUTO_STUDIO_V4_CREATIVE",
   planner_id:.job.planner_id,
@@ -486,9 +522,13 @@ jq '{
   hermes_ai_used:false,
   external_ai_video_used:true,
   ai_video_provider:"HUGGINGFACE_ZERO_GPU_WAN2_2_AOTI_FAST",
-  ai_video_clip_duration_sec:2.0,
-  ai_video_strategy:"MULTI_SHOT_NO_STREAM_LOOP_SELECTIVE_RETRY",
-  zerogpu_quota_mode:"ANONYMOUS_ZERO_COST_RESUMABLE_CHECKPOINTS",
+  ai_video_clip_duration_sec:$clip_duration,
+  ai_video_inference_steps:$inference_steps,
+  ai_video_strategy:"MULTI_SHOT_NO_STREAM_LOOP_QUOTA_AWARE",
+  zerogpu_quota_mode:$quota_mode,
+  zerogpu_planner_budget_seconds:$quota_budget,
+  zerogpu_estimated_total_seconds:$quota_estimated,
+  zerogpu_estimated_seconds_per_shot:$quota_per_shot,
   neurons_used:0,
   character_bible:"DJAEGER_WORK_KIDS_V2",
   recurring_cast:["Nara","Pip"],
