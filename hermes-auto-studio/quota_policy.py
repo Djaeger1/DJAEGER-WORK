@@ -53,12 +53,12 @@ def pick_profile(authenticated: bool, scene_count: int, scene_raw_shots: list[in
     else:
         budget = ANON_BUDGET
         quota = PROVIDER_QUOTA_ANON
-        steps = 2
-        duration = 2.0
+        steps = 4
+        duration = 1.5
         max_per_scene = 1
         max_total = 6
         max_retries = 0
-        mode = "ANONYMOUS_COMPACT_RESERVE"
+        mode = "ANONYMOUS_COMPACT_4STEP_RESERVE"
 
     raw_shots = sum(scene_raw_shots)
     # Preserve explicit multi-shot scenes only while the whole job fits the profile.
