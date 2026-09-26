@@ -231,7 +231,7 @@ def main():
                 )
                 raise SystemExit(exit_code)
             raise
-                info["steps"] = steps
+        info["steps"] = steps
         print("AI_VIDEO_OK " + json.dumps(info, separators=(",", ":")))
     finally:
         if tmp:
