@@ -61,7 +61,7 @@ def pick_profile(authenticated: bool, scene_count: int, raw_shots: int) -> dict:
         mode = "ANONYMOUS_COMPACT_RESERVE"
 
     # First preserve multi-shot only when the entire job can fit.
-    effective_shots = min(raw_shots, scene_count * max_per_scene, max_total)
+    effective_shots = max(scene_count, min(raw_shots, scene_count * max_per_scene, max_total))
     if scene_count > max_total:
         max_per_scene = 1
         effective_shots = scene_count
