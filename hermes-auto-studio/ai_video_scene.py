@@ -101,7 +101,7 @@ def extract_path(value):
                 return p
     return None
 
-def generate(image, prompt, output, seed, duration, space):
+def generate(image, prompt, output, seed, duration, steps, space):
     from gradio_client import Client, handle_file
 
     client = Client(space, hf_token=os.getenv("HF_TOKEN") or None, verbose=False)
@@ -122,7 +122,7 @@ def generate(image, prompt, output, seed, duration, space):
             return client.predict(
                 handle_file(image),
                 prompt,
-                4,
+                int(steps),
                 NEGATIVE,
                 float(duration),
                 1.0,
@@ -182,6 +182,7 @@ def main():
     ap.add_argument("--output")
     ap.add_argument("--seed", type=int, default=314160)
     ap.add_argument("--duration", type=float, default=2.0)
+    ap.add_argument("--steps", type=int, default=int(os.getenv("AI_VIDEO_STEPS", "4")))
     ap.add_argument("--space", default=DEFAULT_SPACE)
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--selftest", action="store_true")
@@ -214,7 +215,8 @@ def main():
             prompt = args.prompt
 
         try:
-            info = generate(image, prompt, args.output, args.seed, args.duration, args.space)
+            steps = max(1, min(30, int(args.steps)))
+            info = generate(image, prompt, args.output, args.seed, args.duration, steps, args.space)
         except Exception as exc:
             state, exit_code = classify_provider_error(exc)
             if state:
@@ -229,6 +231,7 @@ def main():
                 )
                 raise SystemExit(exit_code)
             raise
+                info["steps"] = steps
         print("AI_VIDEO_OK " + json.dumps(info, separators=(",", ":")))
     finally:
         if tmp:
