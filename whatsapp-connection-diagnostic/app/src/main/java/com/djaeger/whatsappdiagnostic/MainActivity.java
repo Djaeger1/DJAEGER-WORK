@@ -24,6 +24,8 @@ public class MainActivity extends Activity {
     private TextView status;
     private TextView chatResult, voiceResult, videoResult, allResult;
     private EditText chatInput, voiceInput, videoInput, allInput;
+    private Button chatTest, voiceTest, videoTest, allTest;
+    private ProgressBar chatProgress, voiceProgress, videoProgress, allProgress;
 
     @Override public void onCreate(Bundle b) {
         super.onCreate(b);
@@ -87,6 +89,32 @@ public class MainActivity extends Activity {
         return c;
     }
 
+    private ProgressBar progressBar() {
+        ProgressBar p = new ProgressBar(this);
+        p.setIndeterminate(true);
+        p.setVisibility(View.GONE);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(34));
+        lp.gravity = Gravity.CENTER_HORIZONTAL;
+        p.setLayoutParams(lp);
+        return p;
+    }
+
+    private void beginTest(Button b, ProgressBar p, TextView result, String phase) {
+        b.setEnabled(false);
+        b.setText("⏳ SEDANG MENGUJI…");
+        p.setVisibility(View.VISIBLE);
+        result.setText("TEST DIMULAI\n\n" + phase + "\n\nSedang bekerja…");
+        postStatus("▶ " + phase);
+    }
+
+    private void finishTest(Button b, ProgressBar p, TextView result, String buttonText, String out, String finalStatus) {
+        p.setVisibility(View.GONE);
+        b.setEnabled(true);
+        b.setText("↻ " + buttonText);
+        setResult(result, out);
+        postStatus(finalStatus);
+    }
+
     private TextView resultBox(String initial) {
         TextView t = label(initial, 13, DARK, false);
         t.setTextIsSelectable(true); t.setBackgroundColor(Color.rgb(248,250,250));
@@ -101,8 +129,10 @@ public class MainActivity extends Activity {
 
         LinearLayout header = card();
         LinearLayout titleRow = new LinearLayout(this); titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView logo = label("◉", 34, GREEN, true);
-        titleRow.addView(logo, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.ic_launcher_foreground);
+        logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        titleRow.addView(logo, new LinearLayout.LayoutParams(dp(52), dp(52)));
         LinearLayout titleCol = new LinearLayout(this); titleCol.setOrientation(LinearLayout.VERTICAL);
         titleCol.addView(label("WhatsApp Connection Diagnostic", 22, TEAL, true));
         titleCol.addView(label("DJAEGER • Passive Network Test", 13, MUTED, false));
@@ -116,7 +146,8 @@ public class MainActivity extends Activity {
         LinearLayout chat = card();
         chat.addView(label("1  CHAT", 19, TEAL, true));
         chat.addView(label("DNS + HTTPS untuk jalur pesan.", 13, MUTED, false));
-        Button chatTest = button("▶ TES CHAT"); chat.addView(chatTest);
+        chatTest = button("▶ TES CHAT"); chat.addView(chatTest);
+        chatProgress = progressBar(); chat.addView(chatProgress);
         chatResult = resultBox("Belum ada hasil CHAT.");
         chat.addView(chatResult);
         chatInput = input("Tempel catatan/hasil CHAT di sini…"); chat.addView(chatInput);
@@ -131,7 +162,8 @@ public class MainActivity extends Activity {
         LinearLayout voice = card();
         voice.addView(label("2  VOICE NETWORK", 19, TEAL, true));
         voice.addView(label("UDP/STUN, NAT, packet loss, RTT, dan jitter. Tidak menelepon.", 13, MUTED, false));
-        Button voiceTest = button("▶ TES VOICE NETWORK"); voice.addView(voiceTest);
+        voiceTest = button("▶ TES VOICE NETWORK"); voice.addView(voiceTest);
+        voiceProgress = progressBar(); voice.addView(voiceProgress);
         voiceResult = resultBox("Belum ada hasil VOICE.");
         voice.addView(voiceResult);
         voiceInput = input("Tempel catatan/hasil VOICE di sini…"); voice.addView(voiceInput);
@@ -146,7 +178,8 @@ public class MainActivity extends Activity {
         LinearLayout video = card();
         video.addView(label("3  VIDEO NETWORK", 19, TEAL, true));
         video.addView(label("UDP real-time + download + upload. Tidak melakukan video call.", 13, MUTED, false));
-        Button videoTest = button("▶ TES VIDEO NETWORK"); video.addView(videoTest);
+        videoTest = button("▶ TES VIDEO NETWORK"); video.addView(videoTest);
+        videoProgress = progressBar(); video.addView(videoProgress);
         videoResult = resultBox("Belum ada hasil VIDEO.");
         video.addView(videoResult);
         videoInput = input("Tempel catatan/hasil VIDEO di sini…"); video.addView(videoInput);
@@ -161,7 +194,8 @@ public class MainActivity extends Activity {
         LinearLayout all = card();
         all.addView(label("HASIL GABUNGAN", 19, TEAL, true));
         all.addView(label("Satu tempat untuk seluruh diagnosis.", 13, MUTED, false));
-        Button allTest = button("▶ JALANKAN SEMUA TES"); all.addView(allTest);
+        allTest = button("▶ JALANKAN SEMUA TES"); all.addView(allTest);
+        allProgress = progressBar(); all.addView(allProgress);
         allResult = resultBox("Belum ada hasil gabungan.");
         all.addView(allResult);
         allInput = input("Tempel laporan lengkap / hasil dari aplikasi lain…"); all.addView(allInput);
@@ -196,39 +230,39 @@ public class MainActivity extends Activity {
     private String ok(boolean b){ return b?"PASS":"FAIL"; }
 
     private void runChat(){
-        postStatus("CHAT: menguji DNS + HTTPS…");
+        beginTest(chatTest, chatProgress, chatResult, "CHAT • DNS + HTTPS");
         pool.submit(()->{
             long t0=System.nanoTime();
             Check a=resolve("web.whatsapp.com"), b=resolve("whatsapp.net");
             HttpCheck h=https("https://web.whatsapp.com/");
             long ms=(System.nanoTime()-t0)/1_000_000;
             String out="CHAT\nDNS web.whatsapp.com : "+ok(a.ok)+" ("+a.detail+")\nDNS whatsapp.net      : "+ok(b.ok)+" ("+b.detail+")\nHTTPS web.whatsapp    : "+ok(h.ok)+" ("+h.code+", "+h.ms+" ms)\nWaktu total           : "+ms+" ms\n\n"+(a.ok&&b.ok&&h.ok?"HASIL CHAT: PASS\nJalur dasar DNS + HTTPS dapat dijangkau.":"HASIL CHAT: FAIL\nAda kegagalan DNS/TLS/HTTPS.");
-            setResult(chatResult,out); postStatus(a.ok&&b.ok&&h.ok?"CHAT: PASS":"CHAT: FAIL");
+            finishTest(chatTest, chatProgress, chatResult, "TES CHAT LAGI", out, a.ok&&b.ok&&h.ok?"CHAT: PASS":"CHAT: FAIL");
         });
     }
 
     private void runVoice(){
-        postStatus("VOICE: menguji UDP/STUN 24 sampel…");
+        beginTest(voiceTest, voiceProgress, voiceResult, "VOICE • UDP/STUN 24 sampel");
         pool.submit(()->{
             StunResult r=stunTest(24,350); HttpCheck h=https("https://web.whatsapp.com/");
             String out=renderStun("VOICE",r)+"\nHTTPS baseline: "+ok(h.ok)+" ("+h.ms+" ms)\n\n"+voiceVerdict(r);
-            setResult(voiceResult,out); postStatus(r.received>0?"VOICE NETWORK: "+r.grade:"VOICE NETWORK: UDP FAIL");
+            finishTest(voiceTest, voiceProgress, voiceResult, "TES VOICE LAGI", out, r.received>0?"VOICE NETWORK: "+r.grade:"VOICE NETWORK: UDP FAIL");
         });
     }
 
     private void runVideo(){
-        postStatus("VIDEO: menguji UDP + download + upload…");
+        beginTest(videoTest, videoProgress, videoResult, "VIDEO • UDP + download + upload");
         pool.submit(()->{
             StunResult r=stunTest(20,300);
             Transfer d=download("https://postman-echo.com/bytes/1048576",1048576);
             Transfer u=upload("https://postman-echo.com/post",262144);
             String out=renderStun("VIDEO",r)+"\nDOWNLINK 1 MiB  : "+transfer(d)+"\nUPLINK 256 KiB   : "+transfer(u)+"\n\n"+videoVerdict(r,d,u);
-            setResult(videoResult,out); postStatus((r.received>0&&d.ok&&u.ok)?"VIDEO NETWORK: "+r.grade:"VIDEO NETWORK: CHECK");
+            finishTest(videoTest, videoProgress, videoResult, "TES VIDEO LAGI", out, (r.received>0&&d.ok&&u.ok)?"VIDEO NETWORK: "+r.grade:"VIDEO NETWORK: CHECK");
         });
     }
 
     private void runAll(){
-        postStatus("Menjalankan CHAT → VOICE → VIDEO…");
+        beginTest(allTest, allProgress, allResult, "SEMUA TES • CHAT → VOICE → VIDEO");
         pool.submit(()->{
             Check a=resolve("web.whatsapp.com"), b=resolve("whatsapp.net"); HttpCheck h=https("https://web.whatsapp.com/");
             StunResult r=stunTest(24,300);
@@ -238,8 +272,8 @@ public class MainActivity extends Activity {
             String voice=renderStun("VOICE",r)+"\nHTTPS baseline: "+ok(h.ok)+" ("+h.ms+" ms)\n\n"+voiceVerdict(r);
             String video=renderStun("VIDEO",r)+"\nDOWNLINK 1 MiB  : "+transfer(d)+"\nUPLINK 256 KiB   : "+transfer(u)+"\n\n"+videoVerdict(r,d,u);
             String all="WHATSAPP CONNECTION DIAGNOSTIC\n\n"+chat+"\n\n"+voice+"\n\n"+video+"\n\nDIAGNOSIS\n"+allVerdict(a,b,h,r,d,u);
-            setResult(chatResult,chat); setResult(voiceResult,voice); setResult(videoResult,video); setResult(allResult,all);
-            postStatus("SEMUA TES SELESAI");
+            setResult(chatResult,chat); setResult(voiceResult,voice); setResult(videoResult,video);
+            finishTest(allTest, allProgress, allResult, "JALANKAN SEMUA LAGI", all, "SEMUA TES SELESAI");
         });
     }
 
