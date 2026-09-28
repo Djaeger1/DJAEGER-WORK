@@ -2,9 +2,12 @@ package com.djaeger.whatsappdiagnostic;
 
 import android.app.*;
 import android.content.*;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.*;
 import android.os.*;
-import android.graphics.Color;
+import android.view.*;
 import android.widget.*;
 import java.io.*;
 import java.net.*;
@@ -12,101 +15,236 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public class MainActivity extends Activity {
-    private LinearLayout root;
-    private TextView status, results;
     private final ExecutorService pool = Executors.newFixedThreadPool(4);
+    private final int TEAL = Color.rgb(7,94,84);
+    private final int GREEN = Color.rgb(37,211,102);
+    private final int DARK = Color.rgb(30,41,44);
+    private final int MUTED = Color.rgb(92,108,111);
+    private LinearLayout root;
+    private TextView status;
+    private TextView chatResult, voiceResult, videoResult, allResult;
+    private EditText chatInput, voiceInput, videoInput, allInput;
 
-    @Override public void onCreate(Bundle b) { super.onCreate(b); buildUi(); }
-
-    private TextView text(String s,int sp){
-        TextView v=new TextView(this); v.setText(s); v.setTextSize(sp);
-        v.setTextColor(Color.DKGRAY); v.setPadding(16,10,16,10); return v;
-    }
-    private Button button(String s){ Button b=new Button(this); b.setText(s); return b; }
-
-    private void buildUi(){
-        ScrollView sc=new ScrollView(this);
-        root=new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(18,16,18,28); sc.addView(root); setContentView(sc);
-
-        TextView title=text("WhatsApp Network Diagnostic",24);
-        title.setTextColor(Color.rgb(7,94,84)); root.addView(title);
-        root.addView(text("Redmi Note 8 Pro • TES TANPA TELEPON / VIDEO CALL",15));
-        status=text("Siap. Pilih salah satu tes.",16); root.addView(status);
-
-        root.addView(section("1 • CHAT — jalur pesan / HTTPS"));
-        Button c=button("TES CHAT"); root.addView(c); c.setOnClickListener(v->runChat());
-
-        root.addView(section("2 • VOICE — kesiapan UDP real-time"));
-        root.addView(text("Tes UDP/STUN, NAT, packet loss, RTT, dan jitter. Tidak menelepon WhatsApp.",14));
-        Button vo=button("TES VOICE NETWORK"); root.addView(vo); vo.setOnClickListener(v->runVoice());
-
-        root.addView(section("3 • VIDEO — kesiapan real-time + bandwidth"));
-        root.addView(text("Tes UDP real-time + download + upload stabilitas. Tidak melakukan video call.",14));
-        Button vi=button("TES VIDEO NETWORK"); root.addView(vi); vi.setOnClickListener(v->runVideo());
-
-        root.addView(section("HASIL"));
-        results=text("Belum ada hasil.",15); root.addView(results);
-
-        Button all=button("JALANKAN SEMUA TES"); root.addView(all); all.setOnClickListener(v->runAll());
+    @Override public void onCreate(Bundle b) {
+        super.onCreate(b);
+        getWindow().setStatusBarColor(TEAL);
+        buildUi();
     }
 
-    private TextView section(String s){ TextView v=text(s,18); v.setTextColor(Color.rgb(7,94,84)); v.setPadding(8,22,8,6); return v; }
+    private int dp(int v) { return (int)(v * getResources().getDisplayMetrics().density + .5f); }
+
+    private TextView label(String s, float sp, int color, boolean bold) {
+        TextView v = new TextView(this);
+        v.setText(s); v.setTextSize(sp); v.setTextColor(color);
+        v.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL);
+        v.setPadding(dp(2), dp(4), dp(2), dp(4));
+        return v;
+    }
+
+    private Button button(String s) {
+        Button b = new Button(this);
+        b.setText(s); b.setTextSize(13); b.setAllCaps(false);
+        b.setTextColor(Color.WHITE);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(TEAL); bg.setCornerRadius(dp(12));
+        b.setBackground(bg);
+        b.setPadding(dp(10), 0, dp(10), 0);
+        return b;
+    }
+
+    private EditText input(String hint) {
+        EditText e = new EditText(this);
+        e.setHint(hint); e.setTextSize(13); e.setTextColor(DARK); e.setHintTextColor(MUTED);
+        e.setGravity(Gravity.TOP|Gravity.START); e.setMinLines(2); e.setMaxLines(7);
+        e.setPadding(dp(12), dp(10), dp(12), dp(10));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.WHITE); bg.setCornerRadius(dp(12));
+        bg.setStroke(dp(1), Color.rgb(215,225,225));
+        e.setBackground(bg);
+        return e;
+    }
+
+    private LinearLayout row() {
+        LinearLayout r = new LinearLayout(this); r.setOrientation(LinearLayout.HORIZONTAL);
+        r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(0, dp(6), 0, dp(2));
+        return r;
+    }
+
+    private void addButton(LinearLayout r, Button b, int weight) {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, dp(46), weight);
+        p.setMargins(dp(4),0,dp(4),0); r.addView(b,p);
+    }
+
+    private LinearLayout card() {
+        LinearLayout c = new LinearLayout(this); c.setOrientation(LinearLayout.VERTICAL);
+        c.setPadding(dp(14), dp(14), dp(14), dp(14));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.WHITE); bg.setCornerRadius(dp(18)); bg.setStroke(dp(1), Color.rgb(225,232,232));
+        c.setBackground(bg);
+        c.setElevation(dp(3));
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
+        p.setMargins(0, dp(8), 0, dp(8)); c.setLayoutParams(p);
+        return c;
+    }
+
+    private TextView resultBox(String initial) {
+        TextView t = label(initial, 13, DARK, false);
+        t.setTextIsSelectable(true); t.setBackgroundColor(Color.rgb(248,250,250));
+        t.setPadding(dp(12), dp(12), dp(12), dp(12));
+        return t;
+    }
+
+    private void buildUi() {
+        ScrollView sc = new ScrollView(this);
+        root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(14), dp(12), dp(14), dp(22)); sc.addView(root); setContentView(sc);
+
+        LinearLayout header = card();
+        LinearLayout titleRow = new LinearLayout(this); titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView logo = label("◉", 34, GREEN, true);
+        titleRow.addView(logo, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        LinearLayout titleCol = new LinearLayout(this); titleCol.setOrientation(LinearLayout.VERTICAL);
+        titleCol.addView(label("WhatsApp Connection Diagnostic", 22, TEAL, true));
+        titleCol.addView(label("DJAEGER • Passive Network Test", 13, MUTED, false));
+        titleRow.addView(titleCol, new LinearLayout.LayoutParams(0,-2,1));
+        header.addView(titleRow);
+        header.addView(label("Redmi Note 8 Pro • TANPA TELEPON / VIDEO CALL", 13, DARK, true));
+        status = label("Siap. Pilih tes atau jalankan semuanya.", 14, TEAL, true);
+        header.addView(status);
+        root.addView(header);
+
+        LinearLayout chat = card();
+        chat.addView(label("1  CHAT", 19, TEAL, true));
+        chat.addView(label("DNS + HTTPS untuk jalur pesan.", 13, MUTED, false));
+        Button chatTest = button("▶ TES CHAT"); chat.addView(chatTest);
+        chatResult = resultBox("Belum ada hasil CHAT.");
+        chat.addView(chatResult);
+        chatInput = input("Tempel catatan/hasil CHAT di sini…"); chat.addView(chatInput);
+        LinearLayout cr = row();
+        Button chatCopy = button("⧉ SALIN"); Button chatPaste = button("↧ TEMPEL");
+        addButton(cr, chatCopy,1); addButton(cr, chatPaste,1); chat.addView(cr);
+        chatTest.setOnClickListener(v->runChat());
+        chatCopy.setOnClickListener(v->copy("CHAT", chatResult.getText().toString()));
+        chatPaste.setOnClickListener(v->paste(chatInput));
+        root.addView(chat);
+
+        LinearLayout voice = card();
+        voice.addView(label("2  VOICE NETWORK", 19, TEAL, true));
+        voice.addView(label("UDP/STUN, NAT, packet loss, RTT, dan jitter. Tidak menelepon.", 13, MUTED, false));
+        Button voiceTest = button("▶ TES VOICE NETWORK"); voice.addView(voiceTest);
+        voiceResult = resultBox("Belum ada hasil VOICE.");
+        voice.addView(voiceResult);
+        voiceInput = input("Tempel catatan/hasil VOICE di sini…"); voice.addView(voiceInput);
+        LinearLayout vr = row();
+        Button voiceCopy = button("⧉ SALIN"); Button voicePaste = button("↧ TEMPEL");
+        addButton(vr, voiceCopy,1); addButton(vr, voicePaste,1); voice.addView(vr);
+        voiceTest.setOnClickListener(v->runVoice());
+        voiceCopy.setOnClickListener(v->copy("VOICE", voiceResult.getText().toString()));
+        voicePaste.setOnClickListener(v->paste(voiceInput));
+        root.addView(voice);
+
+        LinearLayout video = card();
+        video.addView(label("3  VIDEO NETWORK", 19, TEAL, true));
+        video.addView(label("UDP real-time + download + upload. Tidak melakukan video call.", 13, MUTED, false));
+        Button videoTest = button("▶ TES VIDEO NETWORK"); video.addView(videoTest);
+        videoResult = resultBox("Belum ada hasil VIDEO.");
+        video.addView(videoResult);
+        videoInput = input("Tempel catatan/hasil VIDEO di sini…"); video.addView(videoInput);
+        LinearLayout vir = row();
+        Button videoCopy = button("⧉ SALIN"); Button videoPaste = button("↧ TEMPEL");
+        addButton(vir, videoCopy,1); addButton(vir, videoPaste,1); video.addView(vir);
+        videoTest.setOnClickListener(v->runVideo());
+        videoCopy.setOnClickListener(v->copy("VIDEO", videoResult.getText().toString()));
+        videoPaste.setOnClickListener(v->paste(videoInput));
+        root.addView(video);
+
+        LinearLayout all = card();
+        all.addView(label("HASIL GABUNGAN", 19, TEAL, true));
+        all.addView(label("Satu tempat untuk seluruh diagnosis.", 13, MUTED, false));
+        Button allTest = button("▶ JALANKAN SEMUA TES"); all.addView(allTest);
+        allResult = resultBox("Belum ada hasil gabungan.");
+        all.addView(allResult);
+        allInput = input("Tempel laporan lengkap / hasil dari aplikasi lain…"); all.addView(allInput);
+        LinearLayout ar = row();
+        Button allCopy = button("⧉ SALIN SEMUA"); Button allPaste = button("↧ TEMPEL SEMUA");
+        addButton(ar, allCopy,1); addButton(ar, allPaste,1); all.addView(ar);
+        allTest.setOnClickListener(v->runAll());
+        allCopy.setOnClickListener(v->copy("HASIL SEMUA", buildAllCopy()));
+        allPaste.setOnClickListener(v->paste(allInput));
+        root.addView(all);
+
+        TextView note = label("Catatan: tes ini mengukur karakteristik jaringan yang dibutuhkan WhatsApp; aplikasi tidak membaca trafik WhatsApp yang terenkripsi.", 12, MUTED, false);
+        note.setPadding(dp(8), dp(12), dp(8), 0); root.addView(note);
+    }
+
+    private void toast(String s) { runOnUiThread(()->Toast.makeText(this,s,Toast.LENGTH_SHORT).show()); }
+    private void copy(String label, String value) {
+        ClipboardManager cm=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+        cm.setPrimaryClip(ClipData.newPlainText(label,value));
+        toast("Hasil "+label+" disalin.");
+    }
+    private void paste(EditText e) {
+        ClipboardManager cm=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+        if(cm.hasPrimaryClip() && cm.getPrimaryClip().getItemCount()>0) {
+            CharSequence x=cm.getPrimaryClip().getItemAt(0).coerceToText(this); e.setText(x); e.setSelection(e.length());
+            toast("Teks ditempel.");
+        } else toast("Clipboard kosong.");
+    }
+
+    private void setResult(TextView v, String s) { runOnUiThread(()->v.setText(s)); }
     private void postStatus(String s){ runOnUiThread(()->status.setText(s)); }
-    private void postResults(String s){ runOnUiThread(()->results.setText(s)); }
     private String ok(boolean b){ return b?"PASS":"FAIL"; }
 
     private void runChat(){
-        postStatus("CHAT: menguji DNS + TCP/TLS + HTTPS...");
+        postStatus("CHAT: menguji DNS + HTTPS…");
         pool.submit(()->{
             long t0=System.nanoTime();
             Check a=resolve("web.whatsapp.com"), b=resolve("whatsapp.net");
             HttpCheck h=https("https://web.whatsapp.com/");
             long ms=(System.nanoTime()-t0)/1_000_000;
-            String out="CHAT\n"+
-                "DNS web.whatsapp.com : "+ok(a.ok)+" ("+a.detail+")\n"+
-                "DNS whatsapp.net      : "+ok(b.ok)+" ("+b.detail+")\n"+
-                "HTTPS web.whatsapp    : "+ok(h.ok)+" ("+h.code+", "+h.ms+" ms)\n"+
-                "Waktu total           : "+ms+" ms\n\n"+
-                (a.ok&&b.ok&&h.ok?"HASIL CHAT: PASS\nJalur dasar DNS + HTTPS dapat dijangkau."
-                    :"HASIL CHAT: FAIL\nAda kegagalan DNS/TLS/HTTPS.");
-            postResults(out); postStatus(a.ok&&b.ok&&h.ok?"CHAT: PASS":"CHAT: FAIL");
+            String out="CHAT\nDNS web.whatsapp.com : "+ok(a.ok)+" ("+a.detail+")\nDNS whatsapp.net      : "+ok(b.ok)+" ("+b.detail+")\nHTTPS web.whatsapp    : "+ok(h.ok)+" ("+h.code+", "+h.ms+" ms)\nWaktu total           : "+ms+" ms\n\n"+(a.ok&&b.ok&&h.ok?"HASIL CHAT: PASS\nJalur dasar DNS + HTTPS dapat dijangkau.":"HASIL CHAT: FAIL\nAda kegagalan DNS/TLS/HTTPS.");
+            setResult(chatResult,out); postStatus(a.ok&&b.ok&&h.ok?"CHAT: PASS":"CHAT: FAIL");
         });
     }
 
     private void runVoice(){
-        postStatus("VOICE: menguji UDP/STUN 24 sampel...");
+        postStatus("VOICE: menguji UDP/STUN 24 sampel…");
         pool.submit(()->{
-            StunResult r=stunTest(24,350);
-            HttpCheck h=https("https://web.whatsapp.com/");
+            StunResult r=stunTest(24,350); HttpCheck h=https("https://web.whatsapp.com/");
             String out=renderStun("VOICE",r)+"\nHTTPS baseline: "+ok(h.ok)+" ("+h.ms+" ms)\n\n"+voiceVerdict(r);
-            postResults(out); postStatus(r.received>0?"VOICE NETWORK: "+r.grade:"VOICE NETWORK: UDP FAIL");
+            setResult(voiceResult,out); postStatus(r.received>0?"VOICE NETWORK: "+r.grade:"VOICE NETWORK: UDP FAIL");
         });
     }
 
     private void runVideo(){
-        postStatus("VIDEO: menguji UDP + download + upload...");
+        postStatus("VIDEO: menguji UDP + download + upload…");
         pool.submit(()->{
             StunResult r=stunTest(20,300);
             Transfer d=download("https://postman-echo.com/bytes/1048576",1048576);
             Transfer u=upload("https://postman-echo.com/post",262144);
             String out=renderStun("VIDEO",r)+"\nDOWNLINK 1 MiB  : "+transfer(d)+"\nUPLINK 256 KiB   : "+transfer(u)+"\n\n"+videoVerdict(r,d,u);
-            postResults(out); postStatus((r.received>0&&d.ok&&u.ok)?"VIDEO NETWORK: "+r.grade:"VIDEO NETWORK: CHECK");
+            setResult(videoResult,out); postStatus((r.received>0&&d.ok&&u.ok)?"VIDEO NETWORK: "+r.grade:"VIDEO NETWORK: CHECK");
         });
     }
 
     private void runAll(){
-        postStatus("Menjalankan CHAT → VOICE → VIDEO...");
+        postStatus("Menjalankan CHAT → VOICE → VIDEO…");
         pool.submit(()->{
             Check a=resolve("web.whatsapp.com"), b=resolve("whatsapp.net"); HttpCheck h=https("https://web.whatsapp.com/");
             StunResult r=stunTest(24,300);
             Transfer d=download("https://postman-echo.com/bytes/1048576",1048576);
             Transfer u=upload("https://postman-echo.com/post",262144);
-            String out="WHATSAPP CONNECTION DIAGNOSTIC\n\n"+
-                "CHAT\nDNS web.whatsapp.com : "+ok(a.ok)+"\nDNS whatsapp.net      : "+ok(b.ok)+"\nHTTPS baseline        : "+ok(h.ok)+" ("+h.ms+" ms)\n\n"+
-                renderStun("VOICE / VIDEO UDP",r)+"\nDOWNLINK 1 MiB : "+transfer(d)+"\nUPLINK 256 KiB  : "+transfer(u)+"\n\nDIAGNOSIS\n"+allVerdict(a,b,h,r,d,u);
-            postResults(out); postStatus("SEMUA TES SELESAI");
+            String chat="CHAT\nDNS web.whatsapp.com : "+ok(a.ok)+"\nDNS whatsapp.net      : "+ok(b.ok)+"\nHTTPS baseline        : "+ok(h.ok)+" ("+h.ms+" ms)\n\nHASIL CHAT: "+(a.ok&&b.ok&&h.ok?"PASS":"FAIL");
+            String voice=renderStun("VOICE",r)+"\nHTTPS baseline: "+ok(h.ok)+" ("+h.ms+" ms)\n\n"+voiceVerdict(r);
+            String video=renderStun("VIDEO",r)+"\nDOWNLINK 1 MiB  : "+transfer(d)+"\nUPLINK 256 KiB   : "+transfer(u)+"\n\n"+videoVerdict(r,d,u);
+            String all="WHATSAPP CONNECTION DIAGNOSTIC\n\n"+chat+"\n\n"+voice+"\n\n"+video+"\n\nDIAGNOSIS\n"+allVerdict(a,b,h,r,d,u);
+            setResult(chatResult,chat); setResult(voiceResult,voice); setResult(videoResult,video); setResult(allResult,all);
+            postStatus("SEMUA TES SELESAI");
         });
+    }
+
+    private String buildAllCopy(){
+        return "WHATSAPP CONNECTION DIAGNOSTIC\n\nCHAT\n"+chatResult.getText()+"\n\nVOICE\n"+voiceResult.getText()+"\n\nVIDEO\n"+videoResult.getText()+"\n\n"+allResult.getText();
     }
 
     private String voiceVerdict(StunResult r){
@@ -138,13 +276,7 @@ public class MainActivity extends Activity {
     }
 
     private String renderStun(String title,StunResult r){
-        return title+"\nUDP response : "+r.received+"/"+r.sent+"\n"+
-            "Packet loss  : "+String.format(Locale.US,"%.1f%%",r.lossPct)+"\n"+
-            "RTT avg      : "+String.format(Locale.US,"%.1f ms",r.avgMs)+"\n"+
-            "RTT p95      : "+String.format(Locale.US,"%.1f ms",r.p95Ms)+"\n"+
-            "Jitter       : "+String.format(Locale.US,"%.1f ms",r.jitterMs)+"\n"+
-            "NAT mapping  : "+(r.mapped==null?"tidak terbaca":r.mapped)+"\n"+
-            "Grade        : "+r.grade;
+        return title+"\nUDP response : "+r.received+"/"+r.sent+"\nPacket loss  : "+String.format(Locale.US,"%.1f%%",r.lossPct)+"\nRTT avg      : "+String.format(Locale.US,"%.1f ms",r.avgMs)+"\nRTT p95      : "+String.format(Locale.US,"%.1f ms",r.p95Ms)+"\nJitter       : "+String.format(Locale.US,"%.1f ms",r.jitterMs)+"\nNAT mapping  : "+(r.mapped==null?"tidak terbaca":r.mapped)+"\nGrade        : "+r.grade;
     }
 
     private String transfer(Transfer t){
