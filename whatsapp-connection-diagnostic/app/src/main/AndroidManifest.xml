@@ -4,7 +4,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <application android:theme="@style/AppTheme" android:label="WhatsApp Connection Diagnostic" android:allowBackup="false" android:supportsRtl="true">
+    <application
+        android:theme="@style/AppTheme"
+        android:label="WhatsApp Connection Diagnostic"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:supportsRtl="true">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
