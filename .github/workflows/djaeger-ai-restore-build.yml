@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/djaeger-ai-restore-build.yml'
-      - 'tools/djaeger-restore-build/djaeger_restore_project.tar.gz'
+      - 'tools/djaeger-restore-build/project/**'
   workflow_dispatch:
 
 permissions:
@@ -24,20 +24,14 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-      - name: Unpack project
-        run: |
-          set -euo pipefail
-          rm -rf /tmp/djaeger_restore_project
-          mkdir -p /tmp/djaeger_restore_project
-          tar -xzf tools/djaeger-restore-build/djaeger_restore_project.tar.gz -C /tmp/djaeger_restore_project
       - name: Build
-        working-directory: /tmp/djaeger_restore_project
+        working-directory: tools/djaeger-restore-build/project
         run: gradle :app:assembleRelease --no-daemon --stacktrace
       - name: Verify APK
         shell: bash
         run: |
           set -euo pipefail
-          APK=/tmp/djaeger_restore_project/app/build/outputs/apk/release/app-release-unsigned.apk
+          APK=tools/djaeger-restore-build/project/app/build/outputs/apk/release/app-release-unsigned.apk
           test -s "$APK"
           unzip -t "$APK" >/dev/null
           BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
@@ -49,8 +43,9 @@ jobs:
           unzip -p "$APK" classes.dex >/tmp/classes.dex
           strings /tmp/classes.dex | grep -Fq "PILIH FILE BACKUP"
           strings /tmp/classes.dex | grep -Fq "ACTION_OPEN_DOCUMENT"
+          unzip -p "$APK" assets/restore.sh | grep -Fq "RESTORE_STATUS=PASS"
       - uses: actions/upload-artifact@v4
         with:
           name: DJAEGER-AI-State-Restore-v1.0.1-choose-file-unsigned
-          path: /tmp/djaeger_restore_project/app/build/outputs/apk/release/app-release-unsigned.apk
+          path: tools/djaeger-restore-build/project/app/build/outputs/apk/release/app-release-unsigned.apk
           retention-days: 30
