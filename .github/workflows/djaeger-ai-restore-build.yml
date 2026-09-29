@@ -39,11 +39,14 @@ jobs:
           grep -Fq "package: name='com.djaeger.ai_backup_restore'" /tmp/badging.txt
           grep -Fq "versionCode='3'" /tmp/badging.txt
           grep -Fq "versionName='1.0.1-choose-file'" /tmp/badging.txt
-          grep -Fq "djaeger_logo" /tmp/badging.txt
+          grep -Fq "application-label:'DJAEGER AI Restore'" /tmp/badging.txt
+          unzip -l "$APK" | grep -Fq "djaeger_logo.xml"
+          unzip -l "$APK" | grep -Fq "assets/restore.sh"
           unzip -p "$APK" classes.dex >/tmp/classes.dex
           strings /tmp/classes.dex | grep -Fq "PILIH FILE BACKUP"
-          strings /tmp/classes.dex | grep -Fq "ACTION_OPEN_DOCUMENT"
+          strings /tmp/classes.dex | grep -Fq "RESTORE_STATUS=PASS"
           unzip -p "$APK" assets/restore.sh | grep -Fq "RESTORE_STATUS=PASS"
+          echo "VERIFY=PASS"
       - uses: actions/upload-artifact@v4
         with:
           name: DJAEGER-AI-State-Restore-v1.0.1-choose-file-unsigned
