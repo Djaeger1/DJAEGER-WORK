@@ -11,6 +11,9 @@ android {
         versionName = "1.0.1-choose-file"
     }
     buildTypes {
-        release { minifyEnabled = false; shrinkResources = false }
+        getByName("release") {
+            isMinifyEnabled = false
+            isShrinkResources = false
+        }
     }
 }
