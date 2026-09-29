@@ -40,7 +40,7 @@ jobs:
           grep -Fq "versionCode='3'" /tmp/badging.txt
           grep -Fq "versionName='1.0.1-choose-file'" /tmp/badging.txt
           grep -Fq "application-label:'DJAEGER AI Restore'" /tmp/badging.txt
-          unzip -l "$APK" | grep -Fq "djaeger_logo.xml"
+          grep -Eq "application-icon-160:'res/[^']+'" /tmp/badging.txt
           unzip -l "$APK" | grep -Fq "assets/restore.sh"
           grep -Fq "PILIH FILE BACKUP" tools/djaeger-restore-build/project/app/src/main/java/com/djaeger/ai_backup_restore/MainActivity.java
           grep -Fq "Intent.ACTION_OPEN_DOCUMENT" tools/djaeger-restore-build/project/app/src/main/java/com/djaeger/ai_backup_restore/MainActivity.java
