@@ -1,5 +1,5 @@
 {
-  "version": "v2.6.1-adaptive-research",
-  "description": "Replaces the fixed 200-item research ceiling with guarded novelty-aware expansion, prioritizes unseen candidates, and preserves thermal/resource safety.",
+  "version": "v2.7.0-muse-render",
+  "description": "Muse sebagai render engine utama (RENDER_STANDARD.md). Hapus pipeline WAN2.2 usang (ai_video_scene.py, quota_policy.py).",
   "restart": false
 }
