@@ -1,3 +1,9 @@
+# DEPRECATED (2026-10-04): Pipeline ini tidak lagi dipakai sebagai primary.
+# Render engine utama sekarang adalah Muse mengikuti RENDER_STANDARD.md
+# (konsep presenter, klip full-length, voice Indonesia tetap).
+# File ini disimpan sebagai fallback darurat saja.
+# Lihat: hermes-auto-studio/RENDER_STANDARD.md
+
 #!/usr/bin/env python3
 import argparse
 import json
