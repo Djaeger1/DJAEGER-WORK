@@ -1262,7 +1262,11 @@ func (s *S) status(w http.ResponseWriter, r *http.Request) {
 		gcs = "DISABLED"
 	}
 	pc := s.processConvergenceInfo()
-	js(w, map[string]any{"service": "HERMES_WORK", "control_center": "v2.4.0", "release": cur, "configured_release": configured, "auto_update_state": aus, "auto_update": au, "github_control_state": gcs, "github_control": gc, "github_control_writes_allowed": false, "process_convergence": pc, "emergency_quarantine": readenv(filepath.Join(s.Rel, "config", "work.env"), "EMERGENCY_QUARANTINE") == "1", "temperature_c": temp(), "battery_temp_c": temp(), "cpu_usage": cpuUsageSummary(), "thermal": thermalSummary(), "mem_available_mb": mem(), "workd_rss_mb": selfRSS(), "tether_state": ts, "tether_ip": ip, "worker_paused": exists(filepath.Join(s.Root, "state", "worker_paused")), "safe_mode": exists(filepath.Join(s.Root, "state", "safe_mode")), "bridge_enabled": readenv(filepath.Join(s.Rel, "config", "work.env"), "BRIDGE_ENABLED") == "1", "bridge_state": bst, "bridge_last_sync": bi["last_sync"], "bridge_mode": "DATA_ONLY", "bridge_ai_used": false, "bridge_neurons_used": 0, "research_total": s.researchTotal(), "last_research": strings.TrimSpace(readfile(filepath.Join(s.Root, "state", "last_research"))), "research_engine": "CREATIVE_RESEARCH_V4_ADAPTIVE", "components": map[string]string{"collector": "READY_V2", "dedup": "READY_V1", "categorizer": "READY_V1", "trend_scoring": "READY_V3", "benchmark": "YOUTUBE_BENCHMARK_V1", "creative_intelligence": "CREATIVE_DIRECTOR_V1", "opportunity_engine": "READY_V2", "reasoning": "CREATIVE_RULES_PLUS_FEEDBACK", "content_planner": "READY_V4", "script_prep": "READY_V1", "script_engine": "READY_V1", "production_pack": "READY_V1", "handoff": "READY_V1", "production_desk": "READY_V1", "auto_studio": "READY_V1", "publication": "READY_V1", "channel_connector": "READY_V1", "feedback": "READY_V1", "knowledge": "READY_FOUNDATION", "scheduler": "READY_V2", "bridge": bst, "auto_updater": aus, "github_control": gcs}})
+	hermesKeyOK := false
+	if kb, kerr := os.ReadFile(hermesMuseKeyFile()); kerr == nil && len(bytes.TrimSpace(kb)) > 0 {
+		hermesKeyOK = true
+	}
+	js(w, map[string]any{"service": "HERMES_WORK", "control_center": "v2.4.0", "release": cur, "configured_release": configured, "auto_update_state": aus, "auto_update": au, "github_control_state": gcs, "github_control": gc, "github_control_writes_allowed": false, "process_convergence": pc, "emergency_quarantine": readenv(filepath.Join(s.Rel, "config", "work.env"), "EMERGENCY_QUARANTINE") == "1", "temperature_c": temp(), "battery_temp_c": temp(), "cpu_usage": cpuUsageSummary(), "thermal": thermalSummary(), "mem_available_mb": mem(), "workd_rss_mb": selfRSS(), "tether_state": ts, "tether_ip": ip, "worker_paused": exists(filepath.Join(s.Root, "state", "worker_paused")), "safe_mode": exists(filepath.Join(s.Root, "state", "safe_mode")), "bridge_enabled": readenv(filepath.Join(s.Rel, "config", "work.env"), "BRIDGE_ENABLED") == "1", "bridge_state": bst, "bridge_last_sync": bi["last_sync"], "bridge_mode": "DATA_ONLY", "bridge_ai_used": false, "bridge_neurons_used": 0, "research_total": s.researchTotal(), "last_research": strings.TrimSpace(readfile(filepath.Join(s.Root, "state", "last_research"))), "research_engine": "CREATIVE_RESEARCH_V4_ADAPTIVE", "components": map[string]string{"collector": "READY_V2", "dedup": "READY_V1", "categorizer": "READY_V1", "trend_scoring": "READY_V3", "benchmark": "YOUTUBE_BENCHMARK_V1", "creative_intelligence": "CREATIVE_DIRECTOR_V1", "opportunity_engine": "READY_V2", "reasoning": "CREATIVE_RULES_PLUS_FEEDBACK", "content_planner": "READY_V4", "script_prep": "READY_V1", "script_engine": "READY_V1", "production_pack": "READY_V1", "handoff": "READY_V1", "production_desk": "READY_V1", "auto_studio": "READY_V1", "publication": "READY_V1", "channel_connector": "READY_V1", "feedback": "READY_V1", "knowledge": "READY_FOUNDATION", "scheduler": "READY_V2", "bridge": bst, "auto_updater": aus, "github_control": gcs, "hermes_muse": "EMBEDDED_CORE_V1"}, "hermes_muse_embedded": true, "hermes_muse_key": hermesKeyOK, "hermes_muse_engine": "HERMES_MUSE_CORE_V1"})
 }
 func (s *S) action(w http.ResponseWriter, r *http.Request) {
 	if !s.auth(r) {
@@ -2733,6 +2737,115 @@ func whyFor(sc float64, cat string) string {
 	}
 	return "Discovery query kept for exploration; lower priority than core learning categories."
 }
+// =====================================================================
+// Hermes Muse — otak pendamping di dalam core DJAEGER WORK (2026-10-07)
+// ---------------------------------------------------------------------
+// workd memanggil Hermes Muse langsung via 9Router/dash untuk ide kreatif.
+// Fail-open: setiap kegagalan (key hilang, jaringan, timeout, respons buruk)
+// mengembalikan "" dan pemanggil lanjut dengan heuristik lokal seperti biasa.
+// Key TIDAK PERNAH di-hardcode dan TIDAK PERNAH ditulis ke log.
+// =====================================================================
+
+func hermesMuseKeyFile() string {
+	if p := os.Getenv("HERMES_REASON_KEY_FILE"); p != "" {
+		return p
+	}
+	return "/data/adb/muse-sidecar/hermes_reason_key"
+}
+
+func hermesMuseAsk(prompt string) string {
+	keyB, err := os.ReadFile(hermesMuseKeyFile())
+	if err != nil {
+		return ""
+	}
+	key := strings.TrimSpace(string(keyB))
+	if key == "" {
+		return ""
+	}
+	sysPrompt := "HERMES_SIDECAR_DEEP Kamu adalah Hermes Muse, otak pendamping DJAEGER WORK. Jawab singkat, konkret, dalam Bahasa Indonesia. JANGAN pakai tanda kutip ganda di jawaban."
+	body, _ := json.Marshal(map[string]any{
+		"model":      "muse-local/muse-spark",
+		"max_tokens": 400,
+		"messages": []map[string]string{
+			{"role": "system", "content": sysPrompt},
+			{"role": "user", "content": prompt},
+		},
+	})
+	req, err := http.NewRequest("POST", "https://dash.djaeger.dpdns.org/v1/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+key)
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	respB, err := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	if err != nil || resp.StatusCode != 200 {
+		return ""
+	}
+	// Ekstrak choices[0].message.content secara defensif.
+	var parsed map[string]any
+	dec := json.NewDecoder(bytes.NewReader(respB))
+	if err := dec.Decode(&parsed); err != nil {
+		return ""
+	}
+	choices, _ := parsed["choices"].([]any)
+	if len(choices) == 0 {
+		return ""
+	}
+	c0, _ := choices[0].(map[string]any)
+	msg, _ := c0["message"].(map[string]any)
+	content, _ := msg["content"].(string)
+	return strings.TrimSpace(content)
+}
+
+// hermesMuseIdeas meminta 3 ide video ke Hermes Muse, dikembalikan sebagai
+// Opportunity. Format jawaban yang diminta: "JUDUL | kategori" per baris.
+func (s *S) hermesMuseIdeas(topCats string) []Opportunity {
+	prompt := "Berikan 3 ide video edukasi anak usia 3-6 tahun. "
+	if topCats != "" {
+		prompt += "Kategori yang sedang bagus: " + topCats + ". "
+	}
+	prompt += "Format: JUDUL | kategori, satu ide per baris, tanpa nomor, tanpa kutip."
+	raw := hermesMuseAsk(prompt)
+	if raw == "" {
+		return nil
+	}
+	out := []Opportunity{}
+	seen := map[string]bool{}
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Bersihkan prefix numbering bila ada ("1. ", "- ", dst).
+		line = strings.TrimLeft(line, "-0123456789. ")
+		parts := strings.SplitN(line, "|", 2)
+		title := strings.TrimSpace(parts[0])
+		cat := "other"
+		if len(parts) == 2 {
+			cat = strings.ToLower(strings.TrimSpace(parts[1]))
+		}
+		if title == "" || seen[strings.ToLower(title)] {
+			continue
+		}
+		seen[strings.ToLower(title)] = true
+		out = append(out, Opportunity{
+			Rank: 0, Title: title, Category: cat, Score: 75,
+			Demand: "medium", TargetAge: "3-6", Format: formatFor(cat, title),
+			Why: "Hermes Muse idea", Keywords: wordsFor(title), SourceURL: "",
+		})
+		if len(out) >= 3 {
+			break
+		}
+	}
+	return out
+}
+
 func (s *S) opportunityList(limit int) []Opportunity {
 	b, _ := os.ReadFile(filepath.Join(s.Root, "data", "database", "research.jsonl"))
 	type raw struct {
@@ -2910,6 +3023,34 @@ func (s *S) syncPlanner() []PlanItem {
 	byID := map[string]int{}
 	for i := range a {
 		byID[a[i].ID] = i
+	}
+	// Hermes Muse di core (2026-10-07): bila ide aktif sedikit (<5), minta
+	// ide segar ke Hermes Muse. Fail-open: gagal = lanjut heuristik saja.
+	activeCount := 0
+	for _, p := range a {
+		if p.Stage != "PUBLISHED" && p.Stage != "HOLD" {
+			activeCount++
+		}
+	}
+	if activeCount < 5 {
+		topCats := ""
+		catSeen := map[string]bool{}
+		for _, o := range ideas {
+			if !catSeen[o.Category] && o.Category != "other" {
+				catSeen[o.Category] = true
+				if topCats != "" {
+					topCats += ", "
+				}
+				topCats += o.Category
+			}
+			if len(catSeen) >= 3 {
+				break
+			}
+		}
+		for _, ho := range s.hermesMuseIdeas(topCats) {
+			ho.Rank = len(ideas) + 1
+			ideas = append(ideas, ho)
+		}
 	}
 	now := time.Now().Format(time.RFC3339)
 	for _, o := range ideas {

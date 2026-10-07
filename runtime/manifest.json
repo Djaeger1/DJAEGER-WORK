@@ -1,5 +1,5 @@
 {
-  "version": "v2.7.0-muse-render",
-  "description": "Muse sebagai render engine utama (RENDER_STANDARD.md). Hapus pipeline WAN2.2 usang (ai_video_scene.py, quota_policy.py).",
+  "version": "v2.7.1-hermes-core",
+  "description": "Hermes Muse tertanam di core workd (HERMES_MUSE_CORE_V1): ide planner dari Hermes Muse saat antrean <5, fail-open ke heuristik. Status: hermes_muse_embedded.",
   "restart": false
 }
