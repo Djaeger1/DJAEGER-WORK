@@ -1,5 +1,1 @@
-{
-  "version": "v2.7.1-hermes-core",
-  "description": "Hermes Muse tertanam di core workd (HERMES_MUSE_CORE_V1): ide planner dari Hermes Muse saat antrean <5, fail-open ke heuristik. Status: hermes_muse_embedded.",
-  "restart": false
-}
+{"description":"Validasi jalur resmi autoupdate (HERMES_MUSE_CORE_V2): observability log [hermes-muse] di syncPlanner. Tidak ada perubahan perilaku.","restart":false,"version":"v2.7.2-hermes-official"}

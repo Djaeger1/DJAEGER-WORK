@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -1266,7 +1267,7 @@ func (s *S) status(w http.ResponseWriter, r *http.Request) {
 	if kb, kerr := os.ReadFile(hermesMuseKeyFile()); kerr == nil && len(bytes.TrimSpace(kb)) > 0 {
 		hermesKeyOK = true
 	}
-	js(w, map[string]any{"service": "HERMES_WORK", "control_center": "v2.4.0", "release": cur, "configured_release": configured, "auto_update_state": aus, "auto_update": au, "github_control_state": gcs, "github_control": gc, "github_control_writes_allowed": false, "process_convergence": pc, "emergency_quarantine": readenv(filepath.Join(s.Rel, "config", "work.env"), "EMERGENCY_QUARANTINE") == "1", "temperature_c": temp(), "battery_temp_c": temp(), "cpu_usage": cpuUsageSummary(), "thermal": thermalSummary(), "mem_available_mb": mem(), "workd_rss_mb": selfRSS(), "tether_state": ts, "tether_ip": ip, "worker_paused": exists(filepath.Join(s.Root, "state", "worker_paused")), "safe_mode": exists(filepath.Join(s.Root, "state", "safe_mode")), "bridge_enabled": readenv(filepath.Join(s.Rel, "config", "work.env"), "BRIDGE_ENABLED") == "1", "bridge_state": bst, "bridge_last_sync": bi["last_sync"], "bridge_mode": "DATA_ONLY", "bridge_ai_used": false, "bridge_neurons_used": 0, "research_total": s.researchTotal(), "last_research": strings.TrimSpace(readfile(filepath.Join(s.Root, "state", "last_research"))), "research_engine": "CREATIVE_RESEARCH_V4_ADAPTIVE", "components": map[string]string{"collector": "READY_V2", "dedup": "READY_V1", "categorizer": "READY_V1", "trend_scoring": "READY_V3", "benchmark": "YOUTUBE_BENCHMARK_V1", "creative_intelligence": "CREATIVE_DIRECTOR_V1", "opportunity_engine": "READY_V2", "reasoning": "CREATIVE_RULES_PLUS_FEEDBACK", "content_planner": "READY_V4", "script_prep": "READY_V1", "script_engine": "READY_V1", "production_pack": "READY_V1", "handoff": "READY_V1", "production_desk": "READY_V1", "auto_studio": "READY_V1", "publication": "READY_V1", "channel_connector": "READY_V1", "feedback": "READY_V1", "knowledge": "READY_FOUNDATION", "scheduler": "READY_V2", "bridge": bst, "auto_updater": aus, "github_control": gcs, "hermes_muse": "EMBEDDED_CORE_V1"}, "hermes_muse_embedded": true, "hermes_muse_key": hermesKeyOK, "hermes_muse_engine": "HERMES_MUSE_CORE_V1"})
+	js(w, map[string]any{"service": "HERMES_WORK", "control_center": "v2.4.0", "release": cur, "configured_release": configured, "auto_update_state": aus, "auto_update": au, "github_control_state": gcs, "github_control": gc, "github_control_writes_allowed": false, "process_convergence": pc, "emergency_quarantine": readenv(filepath.Join(s.Rel, "config", "work.env"), "EMERGENCY_QUARANTINE") == "1", "temperature_c": temp(), "battery_temp_c": temp(), "cpu_usage": cpuUsageSummary(), "thermal": thermalSummary(), "mem_available_mb": mem(), "workd_rss_mb": selfRSS(), "tether_state": ts, "tether_ip": ip, "worker_paused": exists(filepath.Join(s.Root, "state", "worker_paused")), "safe_mode": exists(filepath.Join(s.Root, "state", "safe_mode")), "bridge_enabled": readenv(filepath.Join(s.Rel, "config", "work.env"), "BRIDGE_ENABLED") == "1", "bridge_state": bst, "bridge_last_sync": bi["last_sync"], "bridge_mode": "DATA_ONLY", "bridge_ai_used": false, "bridge_neurons_used": 0, "research_total": s.researchTotal(), "last_research": strings.TrimSpace(readfile(filepath.Join(s.Root, "state", "last_research"))), "research_engine": "CREATIVE_RESEARCH_V4_ADAPTIVE", "components": map[string]string{"collector": "READY_V2", "dedup": "READY_V1", "categorizer": "READY_V1", "trend_scoring": "READY_V3", "benchmark": "YOUTUBE_BENCHMARK_V1", "creative_intelligence": "CREATIVE_DIRECTOR_V1", "opportunity_engine": "READY_V2", "reasoning": "CREATIVE_RULES_PLUS_FEEDBACK", "content_planner": "READY_V4", "script_prep": "READY_V1", "script_engine": "READY_V1", "production_pack": "READY_V1", "handoff": "READY_V1", "production_desk": "READY_V1", "auto_studio": "READY_V1", "publication": "READY_V1", "channel_connector": "READY_V1", "feedback": "READY_V1", "knowledge": "READY_FOUNDATION", "scheduler": "READY_V2", "bridge": bst, "auto_updater": aus, "github_control": gcs, "hermes_muse": "EMBEDDED_CORE_V2"}, "hermes_muse_embedded": true, "hermes_muse_key": hermesKeyOK, "hermes_muse_engine": "HERMES_MUSE_CORE_V2"})
 }
 func (s *S) action(w http.ResponseWriter, r *http.Request) {
 	if !s.auth(r) {
@@ -3047,10 +3048,13 @@ func (s *S) syncPlanner() []PlanItem {
 				break
 			}
 		}
-		for _, ho := range s.hermesMuseIdeas(topCats) {
+		hIdeas := s.hermesMuseIdeas(topCats)
+		for _, ho := range hIdeas {
 			ho.Rank = len(ideas) + 1
 			ideas = append(ideas, ho)
 		}
+		// Observabilitas v2.7.2: catat bila Hermes Muse dipanggil (tanpa isi key).
+		log.Printf("[hermes-muse] syncPlanner: active=%d topCats=%q ideas=%d", activeCount, topCats, len(hIdeas))
 	}
 	now := time.Now().Format(time.RFC3339)
 	for _, o := range ideas {
